@@ -1,0 +1,55 @@
+# .NET
+bin/
+obj/
+*.user
+*.suo
+*.db
+*.pdb
+*.dll
+*.exe
+
+# Rider / VS
+.idea/
+.vs/
+.vscode/
+
+# Logs
+logs/
+*.log
+
+# Secrets
+appsettings.Development.json
+.env
+.env.*
+*.env
+password.txt
+secrets.json
+appsettings.Production.json
+appsettings.Local.json
+
+# Flutter / Dart
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.pub-cache/
+.pub/
+build/
+*.lock
+
+# Flutter generated
+**/ios/Flutter/.last_build_id
+**/android/app/debug
+**/android/app/profile
+**/android/app/release
+
+# Mac / Windows
+.DS_Store
+Thumbs.db
+
+# Test / Coverage
+coverage/
+test-results/
+
+# Misc
+*.iml
+.metadata
