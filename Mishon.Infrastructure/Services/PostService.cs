@@ -136,6 +136,30 @@ public class PostService : IPostService
         }
     }
 
+    public async Task<Result> DeleteAsync(int userId, int postId, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            // Получаем пост с данными пользователя
+            var post = await _postRepository.GetByIdWithUserAsync(postId);
+            if (post == null)
+                return Result.Failure("Пост не найден", ResultError.NotFound);
+
+            // Проверяем владельца поста
+            if (post.UserId != userId)
+                return Result.Failure("У вас нет прав для удаления этого поста", ResultError.Forbidden);
+
+            // Удаляем пост (CASCADE удалит связанные лайки)
+            await _postRepository.DeleteAsync(post);
+
+            return Result.Success();
+        }
+        catch (Exception ex)
+        {
+            return Result.Failure($"Ошибка удаления поста: {ex.Message}", ResultError.InternalError);
+        }
+    }
+
     private PostDto MapToDto(Post post, int currentUserId, int likesCount, bool isLiked)
     {
         return new PostDto(

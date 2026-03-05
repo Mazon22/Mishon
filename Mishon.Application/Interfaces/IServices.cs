@@ -18,6 +18,7 @@ public interface IPostService
     Task<Result<PagedResult<PostDto>>> GetFeedAsync(int userId, int page, int pageSize);
     Task<Result<PostDto>> ToggleLikeAsync(int userId, int postId);
     Task<Result<PostDto>> GetPostAsync(int postId, int userId);
+    Task<Result> DeleteAsync(int userId, int postId, CancellationToken cancellationToken = default);
 }
 
 public interface IFollowService

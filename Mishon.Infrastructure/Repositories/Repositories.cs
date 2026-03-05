@@ -120,6 +120,12 @@ public class PostRepository : IPostRepository
 
     public async Task<int> GetTotalCountAsync() =>
         await _context.Posts.CountAsync();
+
+    public async Task<Post?> GetByIdWithUserAsync(int id) =>
+        await _context.Posts
+            .AsNoTracking()
+            .Include(p => p.User)
+            .FirstOrDefaultAsync(p => p.Id == id);
 }
 
 public class LikeRepository : ILikeRepository

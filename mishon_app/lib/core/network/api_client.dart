@@ -183,7 +183,7 @@ class ApiClient {
               DioException(
                 requestOptions: error.requestOptions,
                 type: error.type,
-                error: ApiException(apiError),
+                error: ApiException(apiError, statusCode: error.response?.statusCode),
                 response: error.response,
               ),
             );

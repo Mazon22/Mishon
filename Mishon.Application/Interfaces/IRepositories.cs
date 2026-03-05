@@ -24,6 +24,7 @@ public interface IPostRepository
     Task<IEnumerable<Post>> GetUserPostsAsync(int userId, int page, int pageSize);
     Task DeleteAsync(Post post);
     Task<int> GetTotalCountAsync();
+    Task<Post?> GetByIdWithUserAsync(int id);
 }
 
 public interface ILikeRepository

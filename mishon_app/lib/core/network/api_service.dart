@@ -16,6 +16,7 @@ abstract class ApiService {
   Future<Post> createPost(String content, String? imageUrl);
   Future<Post?> getPost(int postId);
   Future<Post> toggleLike(int postId);
+  Future<void> deletePost(int postId);
 
   // Follows
   Future<Follow> toggleFollow(int userId);
@@ -109,6 +110,11 @@ class ApiServiceImpl implements ApiService {
   Future<Post> toggleLike(int postId) async {
     final response = await _dio.post('/posts/$postId/like');
     return Post.fromJson(response.data);
+  }
+
+  @override
+  Future<void> deletePost(int postId) async {
+    await _dio.delete('/posts/$postId');
   }
 
   @override

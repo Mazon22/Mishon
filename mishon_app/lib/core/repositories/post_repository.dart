@@ -90,6 +90,21 @@ class PostRepository {
     }
   }
 
+  Future<void> deletePost(int postId) async {
+    try {
+      await _apiService.deletePost(postId);
+    } on ApiException catch (e) {
+      _logger.e('Delete post failed: ${e.apiError.message}');
+      rethrow;
+    } on OfflineException {
+      _logger.w('No connection deleting post');
+      rethrow;
+    } catch (e, st) {
+      _logger.e('Unexpected delete post error', error: e, stackTrace: st);
+      rethrow;
+    }
+  }
+
   Future<Follow> toggleFollow(int userId) async {
     try {
       return await _apiService.toggleFollow(userId);

@@ -116,7 +116,7 @@ class ProfileScreen extends ConsumerWidget {
                       itemCount: posts.length,
                       itemBuilder: (context, index) {
                         final post = posts[index];
-                        return _PostCard(post: post);
+                        return _PostCard(post: post, userId: userId);
                       },
                     ),
               loading: () => const Center(child: CircularProgressIndicator()),
@@ -311,25 +311,45 @@ class ProfileScreen extends ConsumerWidget {
 }
 
 // Виджет для отображения поста в профиле
-class _PostCard extends StatelessWidget {
+class _PostCard extends ConsumerWidget {
   final dynamic post;
+  final int? userId;
 
-  const _PostCard({required this.post});
+  const _PostCard({required this.post, this.userId});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final dateFormat = DateFormat('dd MMM yyyy, HH:mm');
+    final isOwnPost = userId != null && userId == post.userId;
 
     return Card(
       margin: const EdgeInsets.symmetric(vertical: 6),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Padding(
-            padding: const EdgeInsets.all(12),
-            child: Text(
-              post.content,
-              style: const TextStyle(fontSize: 15),
+          Container(
+            width: double.infinity,
+            child: Stack(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Text(
+                    post.content,
+                    style: const TextStyle(fontSize: 15),
+                  ),
+                ),
+                if (isOwnPost)
+                  Positioned(
+                    top: 4,
+                    right: 4,
+                    child: IconButton(
+                      icon: const Icon(Icons.delete_outline, color: Colors.red, size: 22),
+                      onPressed: () => _showDeleteDialog(context, ref, post),
+                      padding: const EdgeInsets.all(8),
+                      constraints: const BoxConstraints(),
+                    ),
+                  ),
+              ],
             ),
           ),
           if (post.imageUrl != null && post.imageUrl!.isNotEmpty) ...[
@@ -378,5 +398,75 @@ class _PostCard extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  void _showDeleteDialog(BuildContext context, WidgetRef ref, dynamic post) {
+    showDialog(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Удалить пост?'),
+        content: const Text('Это действие нельзя отменить'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Отмена'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              Navigator.pop(dialogContext);
+              await _deletePost(context, ref, post.id);
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Удалить'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _deletePost(BuildContext context, WidgetRef ref, int postId) async {
+    try {
+      await ref.read(userPostsProvider.notifier).deletePost(postId);
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Post deleted'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } on ApiException catch (e) {
+      // Проверяем код ошибки через apiError
+      final isForbidden = e.apiError.statusCode == 403;
+      if (isForbidden) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('You cannot delete this post'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      } else if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Ошибка: ${e.apiError.message}'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Ошибка удаления поста'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
   }
 }

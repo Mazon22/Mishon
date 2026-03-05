@@ -30,11 +30,12 @@ class ApiError extends Equatable {
 
 class ApiException implements Exception {
   final ApiError apiError;
+  final int? statusCode;
 
-  const ApiException(this.apiError);
+  const ApiException(this.apiError, {this.statusCode});
 
   @override
-  String toString() => 'ApiException: ${apiError.error} - ${apiError.message}';
+  String toString() => 'ApiException: ${apiError.error} - ${apiError.message} (Status: ${statusCode ?? 'N/A'})';
 }
 
 class OfflineException implements Exception {

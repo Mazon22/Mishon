@@ -101,15 +101,37 @@ public class PostsController : ControllerBase
     {
         var userId = GetUserId();
         var result = await _postService.ToggleLikeAsync(userId, id);
-        
+
         if (!result.IsSuccess)
         {
-            return result.ResultError == ResultError.NotFound 
-                ? NotFound(new { error = result.Error }) 
+            return result.ResultError == ResultError.NotFound
+                ? NotFound(new { error = result.Error })
                 : StatusCode(500, new { error = result.Error });
         }
 
         return Ok(result.Data);
+    }
+
+    [HttpDelete("{id:int}")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]
+    public async Task<ActionResult> Delete(int id, CancellationToken cancellationToken)
+    {
+        var userId = GetUserId();
+        var result = await _postService.DeleteAsync(userId, id, cancellationToken);
+
+        if (!result.IsSuccess)
+        {
+            return result.ResultError switch
+            {
+                ResultError.NotFound => NotFound(new { error = result.Error }),
+                ResultError.Forbidden => StatusCode(403, new { error = result.Error }),
+                _ => StatusCode(500, new { error = result.Error })
+            };
+        }
+
+        return NoContent();
     }
 
     private int GetUserId() =>
