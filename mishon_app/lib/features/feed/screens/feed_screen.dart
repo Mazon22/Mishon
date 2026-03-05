@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:mishon_app/core/widgets/post_card.dart';
 import 'package:mishon_app/core/widgets/states.dart';
+import 'package:mishon_app/features/comments/screens/comments_screen.dart';
 import '../providers/feed_provider.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../../../core/network/exceptions.dart';
@@ -58,6 +59,10 @@ class FeedScreen extends ConsumerWidget {
                           onFollow: () => ref
                               .read(feedNotifierProvider.notifier)
                               .toggleFollow(post.userId),
+                          onComment: () => context.push('/comments', extra: CommentsScreenArgs(
+                            postId: post.id,
+                            postUserId: post.userId,
+                          )),
                         ),
                       ),
                     );

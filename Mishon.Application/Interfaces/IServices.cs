@@ -8,6 +8,7 @@ public interface IAuthService
     Task<Result<AuthResponseDto>> LoginAsync(LoginDto dto);
     Task<Result<AuthResponseDto>> RefreshTokenAsync(string refreshToken);
     Task<Result<UserProfileDto>> GetProfileAsync(int userId);
+    Task<Result<UserProfileDto>> GetProfileForUserAsync(int userId, int currentUserId);
     Task<Result<UserProfileDto>> UpdateProfileAsync(int userId, UpdateProfileDto dto);
     Task<Result> LogoutAsync(int userId);
 }
@@ -23,8 +24,15 @@ public interface IPostService
 
 public interface IFollowService
 {
-    Task<Result<FollowDto>> ToggleFollowAsync(int followerId, int followingId);
-    Task<Result<IEnumerable<FollowDto>>> GetFollowingsAsync(int userId);
-    Task<Result<IEnumerable<FollowDto>>> GetFollowersAsync(int userId);
+    Task<Result<ToggleFollowResponseDto>> ToggleFollowAsync(int followerId, int followingId);
+    Task<Result<IEnumerable<UserFollowDto>>> GetFollowingsAsync(int userId);
+    Task<Result<IEnumerable<UserFollowDto>>> GetFollowersAsync(int userId);
     Task<Result<bool>> IsFollowingAsync(int followerId, int followingId);
+    Task<Result<int>> GetFollowersCountAsync(int userId);
+}
+
+public interface ICommentService
+{
+    Task<Result<CommentDto>> CreateAsync(int userId, int postId, CreateCommentDto dto, CancellationToken cancellationToken = default);
+    Task<Result<IEnumerable<CommentDto>>> GetByPostIdAsync(int postId, CancellationToken cancellationToken = default);
 }

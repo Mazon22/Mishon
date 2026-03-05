@@ -101,6 +101,12 @@ class ApiClient {
           options.headers['Authorization'] = 'Bearer $token';
         }
 
+        // Не переопределяем Content-Type для multipart запросов
+        // Dio автоматически установит правильный Content-Type с boundary
+        if (options.data is FormData) {
+          options.headers.remove('Content-Type');
+        }
+
         _logger.d('Request: ${options.method} ${options.path}');
         return handler.next(options);
       },

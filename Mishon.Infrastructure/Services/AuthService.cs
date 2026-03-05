@@ -145,12 +145,59 @@ public class AuthService : IAuthService
             if (user == null)
                 return Result<UserProfileDto>.Failure("Пользователь не найден", ResultError.NotFound);
 
+            var followersCount = await _context.Follows
+                .AsNoTracking()
+                .CountAsync(f => f.FollowingId == userId);
+
+            var followingCount = await _context.Follows
+                .AsNoTracking()
+                .CountAsync(f => f.FollowerId == userId);
+
             return Result<UserProfileDto>.Success(new UserProfileDto(
                 user.Id,
                 user.Username,
                 user.Email,
                 user.AvatarUrl,
-                user.CreatedAt
+                user.CreatedAt,
+                followersCount,
+                followingCount
+            ));
+        }
+        catch (Exception ex)
+        {
+            return Result<UserProfileDto>.Failure($"Ошибка получения профиля: {ex.Message}", ResultError.InternalError);
+        }
+    }
+
+    public async Task<Result<UserProfileDto>> GetProfileForUserAsync(int userId, int currentUserId)
+    {
+        try
+        {
+            var user = await _userRepository.GetByIdAsync(userId);
+            if (user == null)
+                return Result<UserProfileDto>.Failure("Пользователь не найден", ResultError.NotFound);
+
+            var followersCount = await _context.Follows
+                .AsNoTracking()
+                .CountAsync(f => f.FollowingId == userId);
+
+            var followingCount = await _context.Follows
+                .AsNoTracking()
+                .CountAsync(f => f.FollowerId == userId);
+
+            var isFollowing = await _context.Follows
+                .AsNoTracking()
+                .AnyAsync(f => f.FollowerId == currentUserId && f.FollowingId == userId);
+
+            return Result<UserProfileDto>.Success(new UserProfileDto(
+                user.Id,
+                user.Username,
+                user.Email,
+                user.AvatarUrl,
+                user.CreatedAt,
+                followersCount,
+                followingCount,
+                isFollowing
             ));
         }
         catch (Exception ex)
@@ -179,12 +226,22 @@ public class AuthService : IAuthService
 
             await _userRepository.UpdateAsync(user);
 
+            var followersCount = await _context.Follows
+                .AsNoTracking()
+                .CountAsync(f => f.FollowingId == userId);
+
+            var followingCount = await _context.Follows
+                .AsNoTracking()
+                .CountAsync(f => f.FollowerId == userId);
+
             return Result<UserProfileDto>.Success(new UserProfileDto(
                 user.Id,
                 user.Username,
                 user.Email,
                 user.AvatarUrl,
-                user.CreatedAt
+                user.CreatedAt,
+                followersCount,
+                followingCount
             ));
         }
         catch (Exception ex)

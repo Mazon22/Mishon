@@ -33,6 +33,9 @@ class UserProfile {
   final String email;
   final String? avatarUrl;
   final DateTime createdAt;
+  final int followersCount;
+  final int followingCount;
+  final bool? isFollowing;
 
   UserProfile({
     required this.id,
@@ -40,6 +43,9 @@ class UserProfile {
     required this.email,
     required this.avatarUrl,
     required this.createdAt,
+    required this.followersCount,
+    required this.followingCount,
+    this.isFollowing,
   });
 
   factory UserProfile.fromJson(Map<String, dynamic> json) =>

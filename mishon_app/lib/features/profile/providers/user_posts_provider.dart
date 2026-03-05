@@ -43,4 +43,42 @@ class UserPosts extends _$UserPosts {
       rethrow;
     }
   }
+
+  Future<void> toggleLike(int postId) async {
+    final posts = state.value;
+    if (posts == null) return;
+
+    // Находим пост и обновляем оптимистично
+    final postIndex = posts.indexWhere((p) => p.id == postId);
+    if (postIndex == -1) return;
+
+    final oldPost = posts[postIndex];
+    final newLikeState = !oldPost.isLiked;
+    final newLikesCount = oldPost.likesCount + (newLikeState ? 1 : -1);
+
+    final updatedPosts = List<Post>.from(posts);
+    updatedPosts[postIndex] = Post(
+      id: oldPost.id,
+      userId: oldPost.userId,
+      username: oldPost.username,
+      userAvatarUrl: oldPost.userAvatarUrl,
+      content: oldPost.content,
+      imageUrl: oldPost.imageUrl,
+      createdAt: oldPost.createdAt,
+      likesCount: newLikesCount,
+      isLiked: newLikeState,
+      isFollowingAuthor: oldPost.isFollowingAuthor,
+    );
+
+    state = AsyncValue.data(updatedPosts);
+
+    try {
+      final repository = ref.read(postRepositoryProvider);
+      await repository.toggleLike(postId);
+    } catch (e) {
+      // Rollback при ошибке
+      state = AsyncValue.data(posts);
+      rethrow;
+    }
+  }
 }

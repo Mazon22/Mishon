@@ -63,7 +63,10 @@ public record UserProfileDto(
     string Username,
     string Email,
     string? AvatarUrl,
-    DateTime CreatedAt
+    DateTime CreatedAt,
+    int FollowersCount,
+    int FollowingCount,
+    bool? IsFollowing = null
 );
 
 public record UpdateProfileDto(

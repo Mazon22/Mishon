@@ -1,3 +1,4 @@
+import 'dart:typed_data';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:mishon_app/core/models/post_model.dart';
@@ -60,9 +61,9 @@ class PostRepository {
     }
   }
 
-  Future<Post> createPost(String content, String? imageUrl) async {
+  Future<Post> createPost(String content, String? imageUrl, Uint8List? imageBytes) async {
     try {
-      return await _apiService.createPost(content, imageUrl);
+      return await _apiService.createPost(content, imageUrl, imageBytes);
     } on ApiException catch (e) {
       _logger.e('Create post failed: ${e.apiError.message}');
       rethrow;
@@ -105,7 +106,7 @@ class PostRepository {
     }
   }
 
-  Future<Follow> toggleFollow(int userId) async {
+  Future<ToggleFollowResponse> toggleFollow(int userId) async {
     try {
       return await _apiService.toggleFollow(userId);
     } on ApiException catch (e) {
@@ -116,6 +117,36 @@ class PostRepository {
       rethrow;
     } catch (e, st) {
       _logger.e('Unexpected toggle follow error', error: e, stackTrace: st);
+      rethrow;
+    }
+  }
+
+  Future<List<Follow>> getFollowing(int userId) async {
+    try {
+      return await _apiService.getFollowing(userId);
+    } on ApiException catch (e) {
+      _logger.e('Get following failed: ${e.apiError.message}');
+      rethrow;
+    } on OfflineException {
+      _logger.w('No connection getting following');
+      rethrow;
+    } catch (e, st) {
+      _logger.e('Unexpected get following error', error: e, stackTrace: st);
+      rethrow;
+    }
+  }
+
+  Future<List<Follow>> getFollowers(int userId) async {
+    try {
+      return await _apiService.getFollowers(userId);
+    } on ApiException catch (e) {
+      _logger.e('Get followers failed: ${e.apiError.message}');
+      rethrow;
+    } on OfflineException {
+      _logger.w('No connection getting followers');
+      rethrow;
+    } catch (e, st) {
+      _logger.e('Unexpected get followers error', error: e, stackTrace: st);
       rethrow;
     }
   }
@@ -131,6 +162,36 @@ class PostRepository {
       rethrow;
     } catch (e, st) {
       _logger.e('Unexpected get followings error', error: e, stackTrace: st);
+      rethrow;
+    }
+  }
+
+  Future<List<Comment>> getComments(int postId) async {
+    try {
+      return await _apiService.getComments(postId);
+    } on ApiException catch (e) {
+      _logger.e('Get comments failed: ${e.apiError.message}');
+      rethrow;
+    } on OfflineException {
+      _logger.w('No connection getting comments');
+      rethrow;
+    } catch (e, st) {
+      _logger.e('Unexpected get comments error', error: e, stackTrace: st);
+      rethrow;
+    }
+  }
+
+  Future<Comment> createComment(int postId, String content) async {
+    try {
+      return await _apiService.createComment(postId, content);
+    } on ApiException catch (e) {
+      _logger.e('Create comment failed: ${e.apiError.message}');
+      rethrow;
+    } on OfflineException {
+      _logger.w('No connection creating comment');
+      rethrow;
+    } catch (e, st) {
+      _logger.e('Unexpected create comment error', error: e, stackTrace: st);
       rethrow;
     }
   }

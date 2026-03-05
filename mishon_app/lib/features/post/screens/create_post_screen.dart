@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -14,7 +15,8 @@ class CreatePostScreen extends ConsumerStatefulWidget {
 
 class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
   final _contentController = TextEditingController();
-  File? _selectedImage;
+  File? _selectedImageFile;
+  Uint8List? _selectedImageBytes;
   String? _errorMessage;
   bool _isSubmitting = false;
 
@@ -34,7 +36,21 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
         imageQuality: 85,
       );
       if (image != null) {
-        setState(() => _selectedImage = File(image.path));
+        if (kIsWeb) {
+          // Для web читаем байты изображения
+          final bytes = await image.readAsBytes();
+          setState(() {
+            _selectedImageBytes = bytes;
+            _selectedImageFile = null;
+          });
+        } else {
+          // Для mobile читаем файл и сохраняем байты для отправки
+          final bytes = await image.readAsBytes();
+          setState(() {
+            _selectedImageFile = File(image.path);
+            _selectedImageBytes = bytes; // Сохраняем байты для отправки
+          });
+        }
       }
     } catch (e) {
       if (mounted) {
@@ -61,9 +77,13 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
       _isSubmitting = true;
     });
 
+    // Передаём изображение на сервер
+    // Для web и mobile используем байты
+    final imageBytes = _selectedImageBytes;
+    
     final success = await ref.read(createPostNotifierProvider.notifier).createPost(
           _contentController.text.trim(),
-          null, // imageUrl - для MVP не используем загрузку файлов
+          imageBytes,
         );
 
     if (mounted) {
@@ -151,18 +171,58 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
                 enabled: !_isSubmitting,
               ),
               const SizedBox(height: 16),
-              if (_selectedImage != null) ...[
+              if (_selectedImageFile != null || _selectedImageBytes != null) ...[
                 Stack(
                   children: [
                     ClipRRect(
                       borderRadius: BorderRadius.circular(12),
-                      child: Image.file(
-                        _selectedImage!,
+                      child: kIsWeb
+                          ? Image.memory(
+                              _selectedImageBytes!,
+                              height: 200,
+                              width: double.infinity,
+                              fit: BoxFit.cover,
+                              errorBuilder: (context, error, stackTrace) {
+                                return Container(
+                                  height: 200,
+                                  width: double.infinity,
+                                  color: Colors.grey.shade100,
+                                  child: const Center(
+                                    child: Icon(Icons.broken_image, size: 48, color: Colors.grey),
+                                  ),
+                                );
+                              },
+                            )
+                          : Image.file(
+                              _selectedImageFile!,
+                              height: 200,
+                              width: double.infinity,
+                              fit: BoxFit.cover,
+                              errorBuilder: (context, error, stackTrace) {
+                                return Container(
+                                  height: 200,
+                                  width: double.infinity,
+                                  color: Colors.grey.shade100,
+                                  child: const Center(
+                                    child: Icon(Icons.broken_image, size: 48, color: Colors.grey),
+                                  ),
+                                );
+                              },
+                            ),
+                    ),
+                    // Индикатор загрузки для web
+                    if (kIsWeb && _selectedImageBytes == null)
+                      Container(
                         height: 200,
                         width: double.infinity,
-                        fit: BoxFit.cover,
+                        decoration: BoxDecoration(
+                          color: Colors.grey.shade200,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: const Center(
+                          child: CircularProgressIndicator(),
+                        ),
                       ),
-                    ),
                     Positioned(
                       top: 8,
                       right: 8,
@@ -172,32 +232,26 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
                           backgroundColor: Colors.black54,
                           foregroundColor: Colors.white,
                         ),
-                        onPressed: () => setState(() => _selectedImage = null),
+                        onPressed: () => setState(() {
+                          _selectedImageFile = null;
+                          _selectedImageBytes = null;
+                        }),
                       ),
                     ),
                   ],
                 ),
                 const SizedBox(height: 16),
               ],
-              Row(
-                children: [
-                  ElevatedButton.icon(
-                    onPressed: _isSubmitting ? null : _pickImage,
-                    icon: const Icon(Icons.photo),
-                    label: const Text('Добавить фото'),
-                    style: ElevatedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 12,
-                      ),
-                    ),
+              ElevatedButton.icon(
+                onPressed: _isSubmitting ? null : _pickImage,
+                icon: const Icon(Icons.photo),
+                label: const Text('Добавить фото'),
+                style: ElevatedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 12,
                   ),
-                  const Spacer(),
-                  Text(
-                    '${_contentController.text.length}/1000',
-                    style: TextStyle(color: Colors.grey.shade600),
-                  ),
-                ],
+                ),
               ),
             ],
           ),

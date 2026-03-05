@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:image_picker/image_picker.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:mishon_app/core/repositories/post_repository.dart';
@@ -16,11 +17,11 @@ class CreatePostNotifier extends _$CreatePostNotifier {
     return const AsyncValue.data(null);
   }
 
-  Future<bool> createPost(String content, String? imageUrl) async {
+  Future<bool> createPost(String content, Uint8List? imageBytes) async {
     state = const AsyncValue.loading();
     try {
       final repository = ref.read(postRepositoryProvider);
-      await repository.createPost(content, imageUrl);
+      await repository.createPost(content, null, imageBytes);
       state = const AsyncValue.data(null);
       return true;
     } on ApiException catch (e, st) {

@@ -84,19 +84,52 @@ public class PostRepository : IPostRepository
             .Select(f => f.FollowingId)
             .ToListAsync();
 
-        var query = _context.Posts
-            .AsNoTracking()
-            .Include(p => p.User)
-            .Include(p => p.Likes)
-            .Where(p => followingIds.Contains(p.UserId) || p.UserId == userId)
-            .OrderByDescending(p => p.CreatedAt);
+        IQueryable<Post> query;
+
+        if (followingIds.Count > 0)
+        {
+            // У пользователя есть подписки — показываем посты подписок + свои
+            query = _context.Posts
+                .AsNoTracking()
+                .Include(p => p.User)
+                .Include(p => p.Likes)
+                .Where(p => followingIds.Contains(p.UserId) || p.UserId == userId)
+                .OrderByDescending(p => p.CreatedAt);
+        }
+        else
+        {
+            // Cold Start: у пользователя нет подписок — показываем все посты, отсортированные по популярности
+            query = _context.Posts
+                .AsNoTracking()
+                .Include(p => p.User)
+                .Include(p => p.Likes)
+                .OrderByDescending(p => p.Likes.Count)
+                .ThenByDescending(p => p.CreatedAt);
+        }
 
         var totalCount = await query.CountAsync();
 
+        // Fallback: если после пагинации результат пустой, но в БД есть посты — возвращаем все посты по CreatedAt
         var posts = await query
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
             .ToListAsync();
+
+        if (posts.Count == 0 && totalCount > 0)
+        {
+            // Fallback-запрос: все посты, отсортированные по CreatedAt DESC
+            var fallbackQuery = _context.Posts
+                .AsNoTracking()
+                .Include(p => p.User)
+                .Include(p => p.Likes)
+                .OrderByDescending(p => p.CreatedAt);
+
+            totalCount = await fallbackQuery.CountAsync();
+            posts = await fallbackQuery
+                .Skip((page - 1) * pageSize)
+                .Take(pageSize)
+                .ToListAsync();
+        }
 
         return new PagedResult<Post>(posts, page, pageSize, totalCount);
     }
@@ -182,7 +215,7 @@ public class FollowRepository : IFollowRepository
     }
 
     public async Task<Follow?> GetAsync(int followerId, int followingId) =>
-        await _context.Follows.AsNoTracking().FirstOrDefaultAsync(f => f.FollowerId == followerId && f.FollowingId == followingId);
+        await _context.Follows.FirstOrDefaultAsync(f => f.FollowerId == followerId && f.FollowingId == followingId);
 
     public async Task<Follow> AddAsync(Follow follow)
     {
@@ -213,4 +246,37 @@ public class FollowRepository : IFollowRepository
 
     public async Task<bool> IsFollowingAsync(int followerId, int followingId) =>
         await _context.Follows.AnyAsync(f => f.FollowerId == followerId && f.FollowingId == followingId);
+
+    public async Task<HashSet<int>> GetFollowingIdsAsync(int userId) =>
+        (await _context.Follows
+            .AsNoTracking()
+            .Where(f => f.FollowerId == userId)
+            .Select(f => f.FollowingId)
+            .ToListAsync())
+        .ToHashSet();
+}
+
+public class CommentRepository : ICommentRepository
+{
+    private readonly MishonDbContext _context;
+
+    public CommentRepository(MishonDbContext context)
+    {
+        _context = context;
+    }
+
+    public async Task<Comment> CreateAsync(Comment comment)
+    {
+        await _context.Comments.AddAsync(comment);
+        await _context.SaveChangesAsync();
+        return comment;
+    }
+
+    public async Task<IEnumerable<Comment>> GetByPostIdAsync(int postId) =>
+        await _context.Comments
+            .AsNoTracking()
+            .Include(c => c.User)
+            .Where(c => c.PostId == postId)
+            .OrderBy(c => c.CreatedAt)
+            .ToListAsync();
 }

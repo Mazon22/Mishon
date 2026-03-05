@@ -55,6 +55,7 @@ class FeedNotifier extends _$FeedNotifier {
       createdAt: oldPost.createdAt,
       likesCount: newLikesCount,
       isLiked: newLikeState,
+      isFollowingAuthor: oldPost.isFollowingAuthor,
     );
 
     state = AsyncValue.data(updatedPosts);
@@ -70,11 +71,31 @@ class FeedNotifier extends _$FeedNotifier {
   }
 
   Future<void> toggleFollow(int userId) async {
+    final posts = state.value;
+    if (posts == null) return;
+
+    // Находим все посты этого автора и обновляем оптимистично
+    final updatedPosts = posts.map((post) {
+      if (post.userId == userId) {
+        return post.copyWith(
+          isFollowingAuthor: !post.isFollowingAuthor,
+        );
+      }
+      return post;
+    }).toList();
+
+    state = AsyncValue.data(updatedPosts);
+
     try {
       final repository = ref.read(postRepositoryProvider);
       await repository.toggleFollow(userId);
+      
+      // После успешного запроса можно обновить ленту для актуальных данных
+      // Но не делаем этого для лучшего UX
     } catch (e) {
-      // Игнорируем ошибку для UX
+      // Rollback при ошибке
+      state = AsyncValue.data(posts);
+      rethrow;
     }
   }
 }

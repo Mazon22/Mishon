@@ -6,6 +6,7 @@ import 'package:mishon_app/features/auth/screens/register_screen.dart';
 import 'package:mishon_app/features/feed/screens/feed_screen.dart';
 import 'package:mishon_app/features/profile/screens/profile_screen.dart';
 import 'package:mishon_app/features/post/screens/create_post_screen.dart';
+import 'package:mishon_app/features/comments/screens/comments_screen.dart';
 import 'package:mishon_app/core/repositories/auth_repository.dart';
 
 final goRouterProvider = Provider<GoRouter>((ref) {
@@ -55,6 +56,14 @@ final goRouterProvider = Provider<GoRouter>((ref) {
         path: '/create-post',
         name: 'createPost',
         builder: (context, state) => const CreatePostScreen(),
+      ),
+      GoRoute(
+        path: '/comments',
+        name: 'comments',
+        builder: (context, state) {
+          final args = state.extra as CommentsScreenArgs;
+          return CommentsScreen(args: args);
+        },
       ),
     ],
     errorPageBuilder: (context, state) => MaterialPage(

@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:intl/intl.dart';
 import '../models/post_model.dart';
+import '../constants/api_constants.dart';
+import 'fullscreen_image_screen.dart';
 
 /// Карточка поста для ленты и профиля
 class PostCard extends StatelessWidget {
@@ -10,6 +12,7 @@ class PostCard extends StatelessWidget {
   final VoidCallback? onLike;
   final VoidCallback? onFollow;
   final VoidCallback? onDelete;
+  final VoidCallback? onComment;
   final bool showActions;
 
   const PostCard({
@@ -19,6 +22,7 @@ class PostCard extends StatelessWidget {
     this.onLike,
     this.onFollow,
     this.onDelete,
+    this.onComment,
     this.showActions = true,
   });
 
@@ -127,8 +131,14 @@ class PostCard extends StatelessWidget {
                       style: ElevatedButton.styleFrom(
                         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                         minimumSize: const Size(0, 36),
+                        backgroundColor: post.isFollowingAuthor
+                            ? Colors.grey.shade300
+                            : Theme.of(context).colorScheme.primary,
+                        foregroundColor: post.isFollowingAuthor
+                            ? Colors.black87
+                            : Colors.white,
                       ),
-                      child: const Text('Подписаться'),
+                      child: Text(post.isFollowingAuthor ? 'Подписан' : 'Подписаться'),
                     ),
                 ],
               ),
@@ -143,32 +153,51 @@ class PostCard extends StatelessWidget {
                     ),
               ),
 
-              // Изображение (если есть)
+              // Изображение (если есть) - фиксированный размер 180dp
               if (post.imageUrl != null && post.imageUrl!.isNotEmpty) ...[
                 const SizedBox(height: 12),
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(12),
-                  child: CachedNetworkImage(
-                    imageUrl: post.imageUrl!,
-                    width: double.infinity,
-                    fit: BoxFit.cover,
-                    placeholder: (context, url) => Container(
-                      height: 200,
-                      color: Colors.grey.shade200,
-                      child: const Center(child: CircularProgressIndicator()),
-                    ),
-                    errorWidget: (context, url, error) => Container(
-                      height: 200,
-                      color: Colors.grey.shade100,
-                      child: const Center(
-                        child: Icon(Icons.broken_image, size: 48, color: Colors.grey),
+                GestureDetector(
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => FullscreenImageScreen(
+                          imageUrl: post.imageUrl!.startsWith('http')
+                              ? post.imageUrl!
+                              : '${ApiConstants.baseUrl.replaceFirst('/api', '')}${post.imageUrl!}',
+                        ),
+                      ),
+                    );
+                  },
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(12),
+                    child: SizedBox(
+                      width: double.infinity,
+                      height: 180,
+                      child: CachedNetworkImage(
+                        imageUrl: post.imageUrl!.startsWith('http')
+                            ? post.imageUrl!
+                            : '${ApiConstants.baseUrl.replaceFirst('/api', '')}${post.imageUrl!}',
+                        fit: BoxFit.cover,
+                        placeholder: (context, url) => Container(
+                          color: Colors.grey.shade200,
+                          child: const Center(
+                            child: CircularProgressIndicator(),
+                          ),
+                        ),
+                        errorWidget: (context, url, error) => Container(
+                          color: Colors.grey.shade200,
+                          child: const Center(
+                            child: Icon(Icons.broken_image, size: 48, color: Colors.grey),
+                          ),
+                        ),
                       ),
                     ),
                   ),
                 ),
               ],
 
-              // Действия (лайки)
+              // Действия (лайки и комментарии)
               if (showActions) ...[
                 const SizedBox(height: 12),
                 const Divider(height: 1),
@@ -176,6 +205,7 @@ class PostCard extends StatelessWidget {
                   padding: const EdgeInsets.only(top: 8),
                   child: Row(
                     children: [
+                      // Лайки
                       Material(
                         color: Colors.transparent,
                         child: InkWell(
@@ -195,6 +225,35 @@ class PostCard extends StatelessWidget {
                                   '${post.likesCount}',
                                   style: TextStyle(
                                     color: post.isLiked ? Colors.red : Colors.grey.shade600,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                      // Комментарии
+                      Material(
+                        color: Colors.transparent,
+                        child: InkWell(
+                          onTap: onComment,
+                          borderRadius: BorderRadius.circular(8),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                            child: Row(
+                              children: [
+                                Icon(
+                                  Icons.chat_bubble_outline,
+                                  size: 22,
+                                  color: Colors.grey.shade600,
+                                ),
+                                const SizedBox(width: 6),
+                                Text(
+                                  'Комментировать',
+                                  style: TextStyle(
+                                    color: Colors.grey.shade600,
                                     fontWeight: FontWeight.w500,
                                   ),
                                 ),

@@ -53,3 +53,7 @@ test-results/
 # Misc
 *.iml
 .metadata
+
+# Uploaded files (images, etc.)
+**/uploads/*
+!**/uploads/.gitkeep

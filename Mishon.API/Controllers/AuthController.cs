@@ -105,11 +105,30 @@ public class AuthController : ControllerBase
     {
         var userId = GetUserId();
         var result = await _authService.GetProfileAsync(userId);
-        
+
         if (!result.IsSuccess)
         {
-            return result.ResultError == ResultError.NotFound 
-                ? NotFound(new { error = result.Error }) 
+            return result.ResultError == ResultError.NotFound
+                ? NotFound(new { error = result.Error })
+                : StatusCode(500, new { error = result.Error });
+        }
+
+        return Ok(result.Data);
+    }
+
+    [Authorize]
+    [HttpGet("profile/{userId:int}")]
+    [ProducesResponseType(typeof(UserProfileDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<UserProfileDto>> GetUserProfile(int userId)
+    {
+        var currentUserId = GetUserId();
+        var result = await _authService.GetProfileForUserAsync(userId, currentUserId);
+
+        if (!result.IsSuccess)
+        {
+            return result.ResultError == ResultError.NotFound
+                ? NotFound(new { error = result.Error })
                 : StatusCode(500, new { error = result.Error });
         }
 

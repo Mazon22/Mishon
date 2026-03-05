@@ -34,6 +34,9 @@ UserProfile _$UserProfileFromJson(Map<String, dynamic> json) => UserProfile(
   email: json['email'] as String,
   avatarUrl: json['avatarUrl'] as String?,
   createdAt: DateTime.parse(json['createdAt'] as String),
+  followersCount: (json['followersCount'] as num).toInt(),
+  followingCount: (json['followingCount'] as num).toInt(),
+  isFollowing: json['isFollowing'] as bool?,
 );
 
 Map<String, dynamic> _$UserProfileToJson(UserProfile instance) =>
@@ -43,4 +46,7 @@ Map<String, dynamic> _$UserProfileToJson(UserProfile instance) =>
       'email': instance.email,
       'avatarUrl': instance.avatarUrl,
       'createdAt': instance.createdAt.toIso8601String(),
+      'followersCount': instance.followersCount,
+      'followingCount': instance.followingCount,
+      'isFollowing': instance.isFollowing,
     };

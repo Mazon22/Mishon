@@ -11,6 +11,7 @@ public class MishonDbContext : DbContext
     public DbSet<Post> Posts => Set<Post>();
     public DbSet<Like> Likes => Set<Like>();
     public DbSet<Follow> Follows => Set<Follow>();
+    public DbSet<Comment> Comments => Set<Comment>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -57,6 +58,8 @@ public class MishonDbContext : DbContext
         modelBuilder.Entity<Follow>(entity =>
         {
             entity.HasKey(e => new { e.FollowerId, e.FollowingId });
+            entity.HasIndex(e => new { e.FollowerId, e.FollowingId }).IsUnique();
+            entity.HasIndex(e => e.FollowingId);
             entity.HasOne(e => e.Follower)
                   .WithMany(u => u.Followings)
                   .HasForeignKey(e => e.FollowerId)
@@ -65,6 +68,22 @@ public class MishonDbContext : DbContext
                   .WithMany(u => u.Followers)
                   .HasForeignKey(e => e.FollowingId)
                   .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<Comment>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Content).IsRequired().HasMaxLength(500);
+            entity.HasIndex(e => e.PostId);
+            entity.HasIndex(e => e.CreatedAt);
+            entity.HasOne(e => e.User)
+                  .WithMany(u => u.Comments)
+                  .HasForeignKey(e => e.UserId)
+                  .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(e => e.Post)
+                  .WithMany(p => p.Comments)
+                  .HasForeignKey(e => e.PostId)
+                  .OnDelete(DeleteBehavior.Cascade);
         });
     }
 }

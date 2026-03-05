@@ -4,18 +4,21 @@ import 'package:go_router/go_router.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:mishon_app/core/widgets/states.dart';
 import 'package:mishon_app/core/widgets/post_card.dart';
+import 'package:mishon_app/core/widgets/empty_posts_banner.dart';
+import 'package:mishon_app/features/comments/screens/comments_screen.dart';
+import 'package:mishon_app/features/profile/widgets/follow_tab.dart';
 import '../providers/profile_provider.dart';
 import '../providers/user_posts_provider.dart';
+import '../providers/follow_provider.dart';
 import '../../auth/providers/auth_provider.dart';
 import 'package:mishon_app/core/network/exceptions.dart';
+import 'package:mishon_app/core/models/auth_model.dart';
 
 class ProfileScreen extends ConsumerWidget {
   const ProfileScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final profileState = ref.watch(profileNotifierProvider);
-    final postsState = ref.watch(userPostsProvider);
     final userIdAsync = ref.watch(userIdProvider);
     final userId = userIdAsync.value;
 
@@ -35,23 +38,36 @@ class ProfileScreen extends ConsumerWidget {
           ),
         ],
       ),
-      body: profileState.when(
-        data: (profile) => profile == null
-            ? _buildNotFoundState(ref)
-            : _buildProfileContent(profile, userId, postsState, ref, context),
-        loading: () => const LoadingState(),
-        error: (error, stack) => _buildErrorState(ref, error),
-      ),
+      body: userId == null
+          ? const Center(child: CircularProgressIndicator())
+          : Consumer(
+              builder: (context, ref, _) {
+                final profileState = ref.watch(userProfileNotifierProvider(userId));
+                return profileState.when(
+                  data: (profile) => profile == null
+                      ? _buildNotFoundState(ref)
+                      : _buildProfileContent(profile, userId, ref, context),
+                  loading: () => const LoadingState(),
+                  error: (error, stack) => _buildErrorState(ref, error),
+                );
+              },
+            ),
     );
   }
 
   Widget _buildProfileContent(
-    dynamic profile,
-    int? userId,
-    AsyncValue<List<dynamic>> postsState,
+    UserProfile profile,
+    int userId,
     WidgetRef ref,
     BuildContext context,
   ) {
+    final currentUserIdAsync = ref.watch(userIdProvider);
+    final currentUserId = currentUserIdAsync.value;
+    final isOwnProfile = userId == currentUserId;
+    
+    final followState = ref.watch(followNotifierProvider);
+    final isFollowing = profile.isFollowing ?? followState.value?[userId] ?? false;
+
     return SingleChildScrollView(
       padding: const EdgeInsets.all(20),
       child: ConstrainedBox(
@@ -123,41 +139,160 @@ class ProfileScreen extends ConsumerWidget {
                       textAlign: TextAlign.center,
                     ),
                     const SizedBox(height: 16),
-                    // Дата регистрации
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                      decoration: BoxDecoration(
-                        color: Colors.grey.shade100,
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.calendar_today, size: 14, color: Colors.grey.shade600),
-                          const SizedBox(width: 6),
-                          Text(
-                            'В сети с ${profile.createdAt.toLocal().toString().split(' ')[0]}',
-                            style: TextStyle(
-                              fontSize: 13,
-                              color: Colors.grey.shade600,
-                              fontWeight: FontWeight.w500,
+                    // Дата регистрации и подписчики
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: Colors.grey.shade100,
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.calendar_today, size: 14, color: Colors.grey.shade600),
+                              const SizedBox(width: 6),
+                              Text(
+                                'В сети с ${profile.createdAt.toLocal().toString().split(' ')[0]}',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  color: Colors.grey.shade600,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        GestureDetector(
+                          onTap: () => _showFollowBottomSheet(context, profile.id, true),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                            decoration: BoxDecoration(
+                              color: Colors.grey.shade100,
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.people, size: 14, color: Colors.grey.shade600),
+                                const SizedBox(width: 6),
+                                Text(
+                                  '${profile.followersCount} подписчиков',
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    color: Colors.grey.shade600,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
-                        ],
-                      ),
+                        ),
+                        const SizedBox(width: 8),
+                        GestureDetector(
+                          onTap: () => _showFollowBottomSheet(context, profile.id, false),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                            decoration: BoxDecoration(
+                              color: Colors.grey.shade100,
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.people_outline, size: 14, color: Colors.grey.shade600),
+                                const SizedBox(width: 6),
+                                Text(
+                                  '${profile.followingCount} подписок',
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    color: Colors.grey.shade600,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                     const SizedBox(height: 20),
-                    // Кнопка редактирования
-                    SizedBox(
-                      width: double.infinity,
-                      child: OutlinedButton.icon(
-                        onPressed: () => _showEditDialog(ref, context),
-                        icon: const Icon(Icons.edit),
-                        label: const Text('Редактировать профиль'),
-                        style: OutlinedButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(vertical: 12),
-                        ),
-                      ),
+                    // Кнопки
+                    Row(
+                      children: [
+                        if (!isOwnProfile)
+                          Expanded(
+                            child: ElevatedButton.icon(
+                              onPressed: () async {
+                                try {
+                                  final newIsFollowing = await ref
+                                      .read(followNotifierProvider.notifier)
+                                      .toggleFollow(profile.id);
+                                  
+                                  if (context.mounted) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: Text(newIsFollowing
+                                            ? 'Вы подписались на ${profile.username}'
+                                            : 'Вы отписались от ${profile.username}'),
+                                        backgroundColor: newIsFollowing
+                                            ? Colors.green
+                                            : Colors.orange,
+                                        duration: const Duration(seconds: 2),
+                                      ),
+                                    );
+                                  }
+                                } catch (e) {
+                                  if (context.mounted) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                        content: Text('Ошибка операции'),
+                                        backgroundColor: Colors.red,
+                                      ),
+                                    );
+                                  }
+                                }
+                              },
+                              icon: Icon(isFollowing ? Icons.check : Icons.person_add),
+                              label: Text(isFollowing ? 'Подписан' : 'Подписаться'),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: isFollowing
+                                    ? Colors.grey.shade300
+                                    : Theme.of(context).colorScheme.primary,
+                                foregroundColor: isFollowing
+                                    ? Colors.black87
+                                    : Colors.white,
+                                padding: const EdgeInsets.symmetric(vertical: 12),
+                              ),
+                            ),
+                          ),
+                        if (!isOwnProfile && isFollowing) const SizedBox(width: 12),
+                        if (!isOwnProfile && isFollowing)
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              onPressed: () => _showFollowBottomSheet(context, profile.id, false),
+                              icon: const Icon(Icons.list),
+                              label: const Text('Подписки'),
+                              style: OutlinedButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(vertical: 12),
+                              ),
+                            ),
+                          ),
+                        if (isOwnProfile)
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              onPressed: () => _showEditDialog(ref, context),
+                              icon: const Icon(Icons.edit),
+                              label: const Text('Редактировать'),
+                              style: OutlinedButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(vertical: 12),
+                              ),
+                            ),
+                          ),
+                      ],
                     ),
                   ],
                 ),
@@ -179,72 +314,74 @@ class ProfileScreen extends ConsumerWidget {
             ),
             const SizedBox(height: 12),
             // Список постов
-            postsState.when(
-              data: (posts) => posts.isEmpty
-                  ? Card(
-                      child: Padding(
-                        padding: const EdgeInsets.all(48),
-                        child: Column(
-                          children: [
-                            Icon(Icons.post_add_outlined, size: 48, color: Colors.grey.shade400),
-                            const SizedBox(height: 12),
-                            Text(
-                              'Нет постов',
-                              style: TextStyle(
-                                fontSize: 16,
-                                color: Colors.grey.shade600,
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    )
-                  : ListView.separated(
-                      shrinkWrap: true,
-                      physics: const NeverScrollableScrollPhysics(),
-                      itemCount: posts.length,
-                      separatorBuilder: (_, __) => const SizedBox(height: 12),
-                      itemBuilder: (context, index) {
-                        final post = posts[index];
-                        return PostCard(
-                          post: post,
-                          isOwnPost: true,
-                          onLike: () {},
-                          onDelete: () => _showDeleteDialog(ref, context, post.id),
-                        );
-                      },
-                    ),
-              loading: () => const Card(
-                child: Padding(
-                  padding: EdgeInsets.all(48),
-                  child: Center(child: CircularProgressIndicator()),
-                ),
-              ),
-              error: (error, stack) => Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(48),
-                  child: Center(
-                    child: Column(
-                      children: [
-                        Icon(Icons.error_outline, size: 48, color: Colors.red.shade300),
-                        const SizedBox(height: 12),
-                        Text(
-                          'Ошибка загрузки постов',
-                          style: TextStyle(color: Colors.grey.shade600),
-                        ),
-                        const SizedBox(height: 16),
-                        ElevatedButton(
-                          onPressed: () => ref.invalidate(userPostsProvider),
-                          child: const Text('Повторить'),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ),
+            _buildPostsSection(userId, ref, context),
           ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPostsSection(int userId, WidgetRef ref, BuildContext context) {
+    final postsState = ref.watch(userPostsProvider);
+
+    return postsState.when(
+      data: (posts) => posts.isEmpty
+          ? SizedBox(
+              height: 600,
+              child: EmptyPostsBanner(
+                title: 'Нет постов',
+                subtitle: 'Создайте свой первый пост\nи поделитесь им с миром',
+                icon: Icons.add_photo_alternate_outlined,
+                ctaText: 'Создать первый пост',
+                onCtaPressed: () => context.go('/create-post'),
+                showCta: true,
+              ),
+            )
+          : ListView.separated(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: posts.length,
+              separatorBuilder: (_, __) => const SizedBox(height: 12),
+              itemBuilder: (context, index) {
+                final post = posts[index];
+                return PostCard(
+                  post: post,
+                  isOwnPost: true,
+                  onLike: () => ref.read(userPostsProvider.notifier).toggleLike(post.id),
+                  onComment: () => context.push('/comments', extra: CommentsScreenArgs(
+                    postId: post.id,
+                    postUserId: post.userId,
+                  )),
+                  onDelete: () => _showDeleteDialog(ref, context, post.id),
+                );
+              },
+            ),
+      loading: () => const Card(
+        child: Padding(
+          padding: EdgeInsets.all(48),
+          child: Center(child: CircularProgressIndicator()),
+        ),
+      ),
+      error: (error, stack) => Card(
+        child: Padding(
+          padding: const EdgeInsets.all(48),
+          child: Center(
+            child: Column(
+              children: [
+                Icon(Icons.error_outline, size: 48, color: Colors.red.shade300),
+                const SizedBox(height: 12),
+                Text(
+                  'Ошибка загрузки постов',
+                  style: TextStyle(color: Colors.grey.shade600),
+                ),
+                const SizedBox(height: 16),
+                ElevatedButton(
+                  onPressed: () => ref.invalidate(userPostsProvider),
+                  child: const Text('Повторить'),
+                ),
+              ],
+            ),
+          ),
         ),
       ),
     );
@@ -255,7 +392,7 @@ class ProfileScreen extends ConsumerWidget {
       icon: Icons.person_outline,
       title: 'Профиль не найден',
       actionText: 'Обновить',
-      onAction: () => ref.invalidate(profileNotifierProvider),
+      onAction: () => ref.invalidate(userProfileNotifierProvider),
     );
   }
 
@@ -271,7 +408,7 @@ class ProfileScreen extends ConsumerWidget {
 
     return ErrorState(
       message: errorMessage,
-      onRetry: () => ref.invalidate(profileNotifierProvider),
+      onRetry: () => ref.invalidate(userProfileNotifierProvider),
     );
   }
 
@@ -383,6 +520,41 @@ class ProfileScreen extends ConsumerWidget {
             child: const Text('Удалить'),
           ),
         ],
+      ),
+    );
+  }
+
+  void _showFollowBottomSheet(BuildContext context, int userId, bool showFollowers) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (context) => DraggableScrollableSheet(
+        initialChildSize: 0.6,
+        minChildSize: 0.4,
+        maxChildSize: 0.9,
+        expand: false,
+        builder: (_, __) => DefaultTabController(
+          length: 2,
+          initialIndex: showFollowers ? 0 : 1,
+          child: Column(
+            children: [
+              const TabBar(
+                tabs: [
+                  Tab(text: 'Подписчики'),
+                  Tab(text: 'Подписки'),
+                ],
+              ),
+              Expanded(
+                child: TabBarView(
+                  children: [
+                    FollowTab(userId: userId, isFollowersTab: true),
+                    FollowTab(userId: userId, isFollowersTab: false),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

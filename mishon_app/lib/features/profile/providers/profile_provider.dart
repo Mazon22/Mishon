@@ -54,3 +54,49 @@ class ProfileNotifier extends _$ProfileNotifier {
     }
   }
 }
+
+@riverpod
+class UserProfileNotifier extends _$UserProfileNotifier {
+  @override
+  AsyncValue<UserProfile?> build(int userId) {
+    _loadUserProfile();
+    return const AsyncValue.loading();
+  }
+
+  Future<void> _loadUserProfile() async {
+    state = const AsyncValue.loading();
+    try {
+      final repository = ref.read(authRepositoryProvider);
+      final profile = await repository.getUserProfile(userId);
+      state = AsyncValue.data(profile);
+    } on ApiException catch (e, st) {
+      state = AsyncValue.error(e.apiError.message, st);
+    } on OfflineException catch (e, st) {
+      state = AsyncValue.error(e.message, st);
+    } catch (e, st) {
+      state = AsyncValue.error('Ошибка загрузки профиля', st);
+    }
+  }
+
+  Future<void> refresh() async {
+    await _loadUserProfile();
+  }
+
+  void updateFollowingStatus(bool isFollowing) {
+    final currentProfile = state.value;
+    if (currentProfile != null) {
+      state = AsyncValue.data(UserProfile(
+        id: currentProfile.id,
+        username: currentProfile.username,
+        email: currentProfile.email,
+        avatarUrl: currentProfile.avatarUrl,
+        createdAt: currentProfile.createdAt,
+        followersCount: isFollowing 
+            ? currentProfile.followersCount + 1 
+            : currentProfile.followersCount - 1,
+        followingCount: currentProfile.followingCount,
+        isFollowing: isFollowing,
+      ));
+    }
+  }
+}

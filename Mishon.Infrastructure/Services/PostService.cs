@@ -31,13 +31,15 @@ public class PostService : IPostService
             };
 
             await _postRepository.CreateAsync(post);
-            
+
             // Загружаем данные пользователя
             var postWithUser = await _postRepository.GetByIdWithDetailsAsync(post.Id);
             if (postWithUser == null)
                 return Result<PostDto>.Failure("Пост не найден после создания", ResultError.InternalError);
 
-            return Result<PostDto>.Success(MapToDto(postWithUser, userId, 0, false));
+            // Проверяем, подписан ли текущий пользователь на автора
+            var isFollowingAuthor = await _followRepository.GetAsync(userId, postWithUser.UserId) != null;
+            return Result<PostDto>.Success(MapToDto(postWithUser, userId, 0, false, isFollowingAuthor));
         }
         catch (Exception ex)
         {
@@ -53,16 +55,21 @@ public class PostService : IPostService
             if (pageSize < 1 || pageSize > 50) pageSize = 10;
 
             var pagedPosts = await _postRepository.GetFeedAsync(userId, page, pageSize);
-            
+
             // Получаем лайки пользователя для всех постов одним запросом
             var postIds = pagedPosts.Items.Select(p => p.Id);
             var userLikes = await _likeRepository.GetUserLikesAsync(userId, postIds);
+
+            // Получаем authorIds для проверки подписок
+            var authorIds = pagedPosts.Items.Select(p => p.UserId).Distinct();
+            var followingIds = await _followRepository.GetFollowingIdsAsync(userId);
 
             var postDtos = pagedPosts.Items.Select(p =>
             {
                 var likesCount = p.Likes.Count;
                 var isLiked = userLikes.ContainsKey(p.Id);
-                return MapToDto(p, userId, likesCount, isLiked);
+                var isFollowingAuthor = followingIds.Contains(p.UserId);
+                return MapToDto(p, userId, likesCount, isLiked, isFollowingAuthor);
             }).ToList();
 
             var pagedResult = new PagedResult<PostDto>(
@@ -109,7 +116,10 @@ public class PostService : IPostService
             // Проверяем наличие лайка заново
             var isLiked = await _likeRepository.GetAsync(userId, postId) != null;
             
-            return Result<PostDto>.Success(MapToDto(updatedPost, userId, updatedPost.Likes.Count, isLiked));
+            // Проверяем, подписан ли текущий пользователь на автора
+            var isFollowingAuthor = await _followRepository.GetAsync(userId, updatedPost.UserId) != null;
+
+            return Result<PostDto>.Success(MapToDto(updatedPost, userId, updatedPost.Likes.Count, isLiked, isFollowingAuthor));
         }
         catch (Exception ex)
         {
@@ -127,8 +137,11 @@ public class PostService : IPostService
 
             // Check if current user liked this post
             var isLiked = await _likeRepository.GetAsync(userId, postId) != null;
+            
+            // Check if current user follows the author
+            var isFollowingAuthor = await _followRepository.GetAsync(userId, post.UserId) != null;
 
-            return Result<PostDto>.Success(MapToDto(post, userId, post.Likes.Count, isLiked));
+            return Result<PostDto>.Success(MapToDto(post, userId, post.Likes.Count, isLiked, isFollowingAuthor));
         }
         catch (Exception ex)
         {
@@ -160,7 +173,7 @@ public class PostService : IPostService
         }
     }
 
-    private PostDto MapToDto(Post post, int currentUserId, int likesCount, bool isLiked)
+    private PostDto MapToDto(Post post, int currentUserId, int likesCount, bool isLiked, bool isFollowingAuthor)
     {
         return new PostDto(
             post.Id,
@@ -171,7 +184,8 @@ public class PostService : IPostService
             post.ImageUrl,
             post.CreatedAt,
             likesCount,
-            isLiked
+            isLiked,
+            isFollowingAuthor
         );
     }
 }

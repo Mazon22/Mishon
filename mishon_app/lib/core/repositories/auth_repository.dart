@@ -99,6 +99,21 @@ class AuthRepository {
     }
   }
 
+  Future<UserProfile> getUserProfile(int userId) async {
+    try {
+      return await _apiService.getUserProfile(userId);
+    } on ApiException catch (e) {
+      _logger.e('Get user profile failed: ${e.apiError.message}');
+      rethrow;
+    } on OfflineException {
+      _logger.w('No connection getting user profile');
+      rethrow;
+    } catch (e, st) {
+      _logger.e('Unexpected get user profile error', error: e, stackTrace: st);
+      rethrow;
+    }
+  }
+
   Future<UserProfile> updateProfile({String? username, String? avatarUrl}) async {
     try {
       return await _apiService.updateProfile(username: username, avatarUrl: avatarUrl);

@@ -44,6 +44,13 @@ public interface IFollowRepository
     Task<IEnumerable<User>> GetFollowingsAsync(int userId);
     Task<IEnumerable<User>> GetFollowersAsync(int userId);
     Task<bool> IsFollowingAsync(int followerId, int followingId);
+    Task<HashSet<int>> GetFollowingIdsAsync(int userId);
+}
+
+public interface ICommentRepository
+{
+    Task<Comment> CreateAsync(Comment comment);
+    Task<IEnumerable<Comment>> GetByPostIdAsync(int postId);
 }
 
 public interface IPagedResult

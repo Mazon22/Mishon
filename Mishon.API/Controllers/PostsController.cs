@@ -24,9 +24,12 @@ public class PostsController : ControllerBase
     [HttpPost]
     [ProducesResponseType(typeof(PostDto), StatusCodes.Status201Created)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
-    public async Task<ActionResult<PostDto>> Create([FromBody] CreatePostDto dto)
+    [RequestSizeLimit(10 * 1024 * 1024)] // 10 MB limit
+    public async Task<ActionResult<PostDto>> Create(
+        [FromForm] string content,
+        [FromForm] IFormFile? image)
     {
-        var validationResult = await _createPostValidator.ValidateAsync(dto);
+        var validationResult = await _createPostValidator.ValidateAsync(new CreatePostDto(content, null));
         if (!validationResult.IsValid)
         {
             return BadRequest(new
@@ -37,11 +40,61 @@ public class PostsController : ControllerBase
             });
         }
 
+        // Загрузка изображения, если есть
+        string? imageUrl = null;
+        if (image != null && image.Length > 0)
+        {
+            // Проверяем размер файла (максимум 5MB)
+            if (image.Length > 5 * 1024 * 1024)
+            {
+                return BadRequest(new { error = "Размер файла не должен превышать 5MB" });
+            }
+
+            // Проверяем тип файла
+            var allowedExtensions = new[] { ".jpg", ".jpeg", ".png", ".gif", ".webp" };
+            var fileExtension = Path.GetExtension(image.FileName).ToLower();
+            if (!allowedExtensions.Contains(fileExtension))
+            {
+                return BadRequest(new { error = "Недопустимый формат файла. Разрешены: JPG, JPEG, PNG, GIF, WEBP" });
+            }
+
+            // Создаём директорию для загрузок, если не существует
+            var uploadsFolder = Path.Combine(Directory.GetCurrentDirectory(), "uploads");
+            if (!Directory.Exists(uploadsFolder))
+            {
+                Directory.CreateDirectory(uploadsFolder);
+            }
+
+            // Генерируем уникальное имя файла
+            var uniqueFileName = $"{Guid.NewGuid()}{fileExtension}";
+            var filePath = Path.Combine(uploadsFolder, uniqueFileName);
+
+            using (var stream = new FileStream(filePath, FileMode.Create))
+            {
+                await image.CopyToAsync(stream);
+            }
+
+            // Формируем полный URL для доступа к изображению
+            var request = HttpContext.Request;
+            imageUrl = $"{request.Scheme}://{request.Host}/uploads/{uniqueFileName}";
+        }
+
         var userId = GetUserId();
+        var dto = new CreatePostDto(content, imageUrl);
         var result = await _postService.CreateAsync(userId, dto);
-        
+
         if (!result.IsSuccess)
         {
+            // Если произошла ошибка, удаляем загруженный файл
+            if (imageUrl != null)
+            {
+                var filePath = Path.Combine(Directory.GetCurrentDirectory(), imageUrl.TrimStart('/'));
+                if (System.IO.File.Exists(filePath))
+                {
+                    System.IO.File.Delete(filePath);
+                }
+            }
+
             return result.ResultError switch
             {
                 ResultError.ValidationError => BadRequest(new { error = result.Error }),
