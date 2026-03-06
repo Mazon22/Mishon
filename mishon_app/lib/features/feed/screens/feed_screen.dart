@@ -23,7 +23,12 @@ class FeedScreen extends ConsumerWidget {
         actions: [
           IconButton(
             icon: const Icon(Icons.person_outline),
-            onPressed: () => context.go('/profile'),
+            onPressed: () {
+              final currentUserId = userIdAsync.value;
+              if (currentUserId != null) {
+                context.go('/profile/$currentUserId');
+              }
+            },
             tooltip: 'Профиль',
           ),
           IconButton(

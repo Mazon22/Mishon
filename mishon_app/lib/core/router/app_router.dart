@@ -48,9 +48,12 @@ final goRouterProvider = Provider<GoRouter>((ref) {
         builder: (context, state) => const FeedScreen(),
       ),
       GoRoute(
-        path: '/profile',
+        path: '/profile/:id',
         name: 'profile',
-        builder: (context, state) => const ProfileScreen(),
+        builder: (context, state) {
+          final id = state.pathParameters['id']!;
+          return ProfileScreen(userId: int.parse(id));
+        },
       ),
       GoRoute(
         path: '/create-post',

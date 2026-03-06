@@ -15,12 +15,13 @@ import 'package:mishon_app/core/network/exceptions.dart';
 import 'package:mishon_app/core/models/auth_model.dart';
 
 class ProfileScreen extends ConsumerWidget {
-  const ProfileScreen({super.key});
+  final int userId;
+
+  const ProfileScreen({super.key, required this.userId});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final userIdAsync = ref.watch(userIdProvider);
-    final userId = userIdAsync.value;
+    final currentUserIdAsync = ref.watch(userIdProvider);
 
     return Scaffold(
       appBar: AppBar(
@@ -38,20 +39,18 @@ class ProfileScreen extends ConsumerWidget {
           ),
         ],
       ),
-      body: userId == null
-          ? const Center(child: CircularProgressIndicator())
-          : Consumer(
-              builder: (context, ref, _) {
-                final profileState = ref.watch(userProfileNotifierProvider(userId));
-                return profileState.when(
-                  data: (profile) => profile == null
-                      ? _buildNotFoundState(ref)
-                      : _buildProfileContent(profile, userId, ref, context),
-                  loading: () => const LoadingState(),
-                  error: (error, stack) => _buildErrorState(ref, error),
-                );
-              },
-            ),
+      body: Consumer(
+        builder: (context, ref, _) {
+          final profileState = ref.watch(userProfileNotifierProvider(userId));
+          return profileState.when(
+            data: (profile) => profile == null
+                ? _buildNotFoundState(ref)
+                : _buildProfileContent(profile, userId, ref, context, currentUserIdAsync.value),
+            loading: () => const LoadingState(),
+            error: (error, stack) => _buildErrorState(ref, error),
+          );
+        },
+      ),
     );
   }
 
@@ -60,11 +59,10 @@ class ProfileScreen extends ConsumerWidget {
     int userId,
     WidgetRef ref,
     BuildContext context,
+    int? currentUserId,
   ) {
-    final currentUserIdAsync = ref.watch(userIdProvider);
-    final currentUserId = currentUserIdAsync.value;
     final isOwnProfile = userId == currentUserId;
-    
+
     final followState = ref.watch(followNotifierProvider);
     final isFollowing = profile.isFollowing ?? followState.value?[userId] ?? false;
 

@@ -36,7 +36,10 @@ class FollowTab extends ConsumerWidget {
                 final user = list[index];
                 return _FollowListTile(
                   user: user,
-                  onTap: () => context.go('/profile/${user.id}'),
+                  onTap: () {
+                    Navigator.pop(context); // Закрываем BottomSheet
+                    context.go('/profile/${user.id}');
+                  },
                   onFollowToggle: () async {
                     try {
                       await ref
