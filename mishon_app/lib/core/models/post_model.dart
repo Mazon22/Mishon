@@ -8,6 +8,12 @@ class Post {
   final int userId;
   final String username;
   final String? userAvatarUrl;
+  @JsonKey(defaultValue: 1.0)
+  final double userAvatarScale;
+  @JsonKey(defaultValue: 0.0)
+  final double userAvatarOffsetX;
+  @JsonKey(defaultValue: 0.0)
+  final double userAvatarOffsetY;
   final String content;
   final String? imageUrl;
   final DateTime createdAt;
@@ -20,6 +26,9 @@ class Post {
     required this.userId,
     required this.username,
     this.userAvatarUrl,
+    this.userAvatarScale = 1.0,
+    this.userAvatarOffsetX = 0.0,
+    this.userAvatarOffsetY = 0.0,
     required this.content,
     this.imageUrl,
     required this.createdAt,
@@ -37,6 +46,9 @@ class Post {
     int? userId,
     String? username,
     String? userAvatarUrl,
+    double? userAvatarScale,
+    double? userAvatarOffsetX,
+    double? userAvatarOffsetY,
     String? content,
     String? imageUrl,
     DateTime? createdAt,
@@ -49,6 +61,9 @@ class Post {
       userId: userId ?? this.userId,
       username: username ?? this.username,
       userAvatarUrl: userAvatarUrl ?? this.userAvatarUrl,
+      userAvatarScale: userAvatarScale ?? this.userAvatarScale,
+      userAvatarOffsetX: userAvatarOffsetX ?? this.userAvatarOffsetX,
+      userAvatarOffsetY: userAvatarOffsetY ?? this.userAvatarOffsetY,
       content: content ?? this.content,
       imageUrl: imageUrl ?? this.imageUrl,
       createdAt: createdAt ?? this.createdAt,
@@ -65,16 +80,31 @@ class Comment {
   final int userId;
   final String username;
   final String? userAvatarUrl;
+  @JsonKey(defaultValue: 1.0)
+  final double userAvatarScale;
+  @JsonKey(defaultValue: 0.0)
+  final double userAvatarOffsetX;
+  @JsonKey(defaultValue: 0.0)
+  final double userAvatarOffsetY;
   final String content;
   final DateTime createdAt;
+  final DateTime? editedAt;
+  final int? parentCommentId;
+  final String? replyToUsername;
 
   Comment({
     required this.id,
     required this.userId,
     required this.username,
     this.userAvatarUrl,
+    this.userAvatarScale = 1.0,
+    this.userAvatarOffsetX = 0.0,
+    this.userAvatarOffsetY = 0.0,
     required this.content,
     required this.createdAt,
+    this.editedAt,
+    this.parentCommentId,
+    this.replyToUsername,
   });
 
   factory Comment.fromJson(Map<String, dynamic> json) =>
@@ -88,12 +118,21 @@ class Follow {
   final int id;
   final String username;
   final String? avatarUrl;
+  @JsonKey(defaultValue: 1.0)
+  final double avatarScale;
+  @JsonKey(defaultValue: 0.0)
+  final double avatarOffsetX;
+  @JsonKey(defaultValue: 0.0)
+  final double avatarOffsetY;
   final bool isFollowing;
 
   Follow({
     required this.id,
     required this.username,
     this.avatarUrl,
+    this.avatarScale = 1.0,
+    this.avatarOffsetX = 0.0,
+    this.avatarOffsetY = 0.0,
     this.isFollowing = false,
   });
 
@@ -105,12 +144,18 @@ class Follow {
     int? id,
     String? username,
     String? avatarUrl,
+    double? avatarScale,
+    double? avatarOffsetX,
+    double? avatarOffsetY,
     bool? isFollowing,
   }) {
     return Follow(
       id: id ?? this.id,
       username: username ?? this.username,
       avatarUrl: avatarUrl ?? this.avatarUrl,
+      avatarScale: avatarScale ?? this.avatarScale,
+      avatarOffsetX: avatarOffsetX ?? this.avatarOffsetX,
+      avatarOffsetY: avatarOffsetY ?? this.avatarOffsetY,
       isFollowing: isFollowing ?? this.isFollowing,
     );
   }

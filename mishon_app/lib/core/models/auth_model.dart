@@ -32,9 +32,17 @@ class UserProfile {
   final String username;
   final String email;
   final String? avatarUrl;
+  final String? bannerUrl;
+  final double avatarScale;
+  final double avatarOffsetX;
+  final double avatarOffsetY;
+  final double bannerScale;
+  final double bannerOffsetX;
+  final double bannerOffsetY;
   final DateTime createdAt;
   final int followersCount;
   final int followingCount;
+  final int postsCount;
   final bool? isFollowing;
 
   UserProfile({
@@ -42,9 +50,17 @@ class UserProfile {
     required this.username,
     required this.email,
     required this.avatarUrl,
+    required this.bannerUrl,
+    required this.avatarScale,
+    required this.avatarOffsetX,
+    required this.avatarOffsetY,
+    required this.bannerScale,
+    required this.bannerOffsetX,
+    required this.bannerOffsetY,
     required this.createdAt,
     required this.followersCount,
     required this.followingCount,
+    required this.postsCount,
     this.isFollowing,
   });
 

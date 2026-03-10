@@ -9,15 +9,18 @@ public class PostService : IPostService
     private readonly IPostRepository _postRepository;
     private readonly ILikeRepository _likeRepository;
     private readonly IFollowRepository _followRepository;
+    private readonly INotificationService _notificationService;
 
     public PostService(
         IPostRepository postRepository,
         ILikeRepository likeRepository,
-        IFollowRepository followRepository)
+        IFollowRepository followRepository,
+        INotificationService notificationService)
     {
         _postRepository = postRepository;
         _likeRepository = likeRepository;
         _followRepository = followRepository;
+        _notificationService = notificationService;
     }
 
     public async Task<Result<PostDto>> CreateAsync(int userId, CreatePostDto dto)
@@ -123,6 +126,20 @@ public class PostService : IPostService
             else
             {
                 await _likeRepository.AddAsync(new Like { UserId = userId, PostId = postId });
+
+                if (post.UserId != userId)
+                {
+                    await _notificationService.CreateAsync(new CreateNotificationDto(
+                        post.UserId,
+                        userId,
+                        NotificationTypes.PostLike,
+                        "оценил(а) ваш пост",
+                        post.Id,
+                        null,
+                        null,
+                        null,
+                        userId));
+                }
             }
 
             var updatedPost = await _postRepository.GetByIdWithDetailsAsync(postId);
@@ -194,6 +211,9 @@ public class PostService : IPostService
             post.UserId,
             post.User.Username,
             post.User.AvatarUrl,
+            post.User.AvatarScale,
+            post.User.AvatarOffsetX,
+            post.User.AvatarOffsetY,
             post.Content,
             post.ImageUrl,
             post.CreatedAt,

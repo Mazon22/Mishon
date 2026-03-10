@@ -7,6 +7,13 @@ public class User
     public string Email { get; set; } = string.Empty;
     public string PasswordHash { get; set; } = string.Empty;
     public string? AvatarUrl { get; set; }
+    public string? BannerUrl { get; set; }
+    public double AvatarScale { get; set; } = 1;
+    public double AvatarOffsetX { get; set; }
+    public double AvatarOffsetY { get; set; }
+    public double BannerScale { get; set; } = 1;
+    public double BannerOffsetX { get; set; }
+    public double BannerOffsetY { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public string? RefreshToken { get; set; }
     public DateTime? RefreshTokenExpiry { get; set; }
@@ -24,4 +31,6 @@ public class User
     public ICollection<Conversation> ConversationsA { get; set; } = new List<Conversation>();
     public ICollection<Conversation> ConversationsB { get; set; } = new List<Conversation>();
     public ICollection<Message> SentMessages { get; set; } = new List<Message>();
+    public ICollection<Notification> Notifications { get; set; } = new List<Notification>();
+    public ICollection<Notification> CreatedNotifications { get; set; } = new List<Notification>();
 }

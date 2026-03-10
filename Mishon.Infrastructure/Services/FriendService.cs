@@ -9,10 +9,12 @@ namespace Mishon.Infrastructure.Services;
 public class FriendService : IFriendService
 {
     private readonly MishonDbContext _context;
+    private readonly INotificationService _notificationService;
 
-    public FriendService(MishonDbContext context)
+    public FriendService(MishonDbContext context, INotificationService notificationService)
     {
         _context = context;
+        _notificationService = notificationService;
     }
 
     public async Task<Result<IEnumerable<FriendDto>>> GetFriendsAsync(int userId, CancellationToken cancellationToken = default)
@@ -30,7 +32,13 @@ public class FriendService : IFriendService
             var friends = friendships
                 .Select(friendship => friendship.UserAId == userId ? friendship.UserB : friendship.UserA)
                 .OrderBy(user => user.Username)
-                .Select(user => new FriendDto(user.Id, user.Username, user.AvatarUrl));
+                .Select(user => new FriendDto(
+                    user.Id,
+                    user.Username,
+                    user.AvatarUrl,
+                    user.AvatarScale,
+                    user.AvatarOffsetX,
+                    user.AvatarOffsetY));
 
             return Result<IEnumerable<FriendDto>>.Success(friends);
         }
@@ -52,7 +60,16 @@ public class FriendService : IFriendService
                 .ToListAsync(cancellationToken);
 
             return Result<IEnumerable<FriendRequestDto>>.Success(
-                requests.Select(r => new FriendRequestDto(r.Id, r.SenderId, r.Sender.Username, r.Sender.AvatarUrl, true, r.CreatedAt)));
+                requests.Select(r => new FriendRequestDto(
+                    r.Id,
+                    r.SenderId,
+                    r.Sender.Username,
+                    r.Sender.AvatarUrl,
+                    r.Sender.AvatarScale,
+                    r.Sender.AvatarOffsetX,
+                    r.Sender.AvatarOffsetY,
+                    true,
+                    r.CreatedAt)));
         }
         catch (Exception ex)
         {
@@ -72,7 +89,16 @@ public class FriendService : IFriendService
                 .ToListAsync(cancellationToken);
 
             return Result<IEnumerable<FriendRequestDto>>.Success(
-                requests.Select(r => new FriendRequestDto(r.Id, r.ReceiverId, r.Receiver.Username, r.Receiver.AvatarUrl, false, r.CreatedAt)));
+                requests.Select(r => new FriendRequestDto(
+                    r.Id,
+                    r.ReceiverId,
+                    r.Receiver.Username,
+                    r.Receiver.AvatarUrl,
+                    r.Receiver.AvatarScale,
+                    r.Receiver.AvatarOffsetX,
+                    r.Receiver.AvatarOffsetY,
+                    false,
+                    r.CreatedAt)));
         }
         catch (Exception ex)
         {
@@ -109,12 +135,24 @@ public class FriendService : IFriendService
             if (reverseRequest != null)
             {
                 _context.FriendRequests.Remove(reverseRequest);
+                var normalized = NormalizePair(userId, targetUserId);
                 _context.Friendships.Add(new Friendship
                 {
-                    UserAId = NormalizePair(userId, targetUserId).Item1,
-                    UserBId = NormalizePair(userId, targetUserId).Item2
+                    UserAId = normalized.Item1,
+                    UserBId = normalized.Item2
                 });
                 await _context.SaveChangesAsync(cancellationToken);
+
+                await _notificationService.CreateAsync(new CreateNotificationDto(
+                    targetUserId,
+                    userId,
+                    NotificationTypes.FriendAccepted,
+                    "принял(а) вашу заявку в друзья",
+                    null,
+                    null,
+                    null,
+                    null,
+                    userId), cancellationToken);
                 return Result.Success();
             }
 
@@ -134,6 +172,17 @@ public class FriendService : IFriendService
             });
 
             await _context.SaveChangesAsync(cancellationToken);
+
+            await _notificationService.CreateAsync(new CreateNotificationDto(
+                targetUserId,
+                userId,
+                NotificationTypes.FriendRequest,
+                "отправил(а) вам заявку в друзья",
+                null,
+                null,
+                null,
+                null,
+                userId), cancellationToken);
             return Result.Success();
         }
         catch (Exception ex)
@@ -166,6 +215,17 @@ public class FriendService : IFriendService
 
             _context.FriendRequests.Remove(request);
             await _context.SaveChangesAsync(cancellationToken);
+
+            await _notificationService.CreateAsync(new CreateNotificationDto(
+                request.SenderId,
+                userId,
+                NotificationTypes.FriendAccepted,
+                "принял(а) вашу заявку в друзья",
+                null,
+                null,
+                null,
+                null,
+                userId), cancellationToken);
 
             return Result.Success();
         }

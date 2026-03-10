@@ -66,7 +66,14 @@ public class FollowService : IFollowService
             var myFollowingIds = await _followRepository.GetFollowingIdsAsync(currentUserId);
 
             return Result<IEnumerable<UserFollowDto>>.Success(
-                users.Select(u => new UserFollowDto(u.Id, u.Username, u.AvatarUrl, myFollowingIds.Contains(u.Id))));
+                users.Select(u => new UserFollowDto(
+                    u.Id,
+                    u.Username,
+                    u.AvatarUrl,
+                    u.AvatarScale,
+                    u.AvatarOffsetX,
+                    u.AvatarOffsetY,
+                    myFollowingIds.Contains(u.Id))));
         }
         catch (Exception ex)
         {
@@ -82,7 +89,14 @@ public class FollowService : IFollowService
             var myFollowingIds = await _followRepository.GetFollowingIdsAsync(currentUserId);
 
             return Result<IEnumerable<UserFollowDto>>.Success(
-                users.Select(u => new UserFollowDto(u.Id, u.Username, u.AvatarUrl, myFollowingIds.Contains(u.Id))));
+                users.Select(u => new UserFollowDto(
+                    u.Id,
+                    u.Username,
+                    u.AvatarUrl,
+                    u.AvatarScale,
+                    u.AvatarOffsetX,
+                    u.AvatarOffsetY,
+                    myFollowingIds.Contains(u.Id))));
         }
         catch (Exception ex)
         {

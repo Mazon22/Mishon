@@ -32,13 +32,12 @@ class ProfileNotifier extends _$ProfileNotifier {
     await _loadProfile();
   }
 
-  Future<bool> updateProfile({String? username, String? avatarUrl}) async {
+  Future<bool> updateProfile({String? username}) async {
     state = const AsyncValue.loading();
     try {
       final repository = ref.read(authRepositoryProvider);
       final profile = await repository.updateProfile(
         username: username,
-        avatarUrl: avatarUrl,
       );
       state = AsyncValue.data(profile);
       return true;
@@ -90,11 +89,19 @@ class UserProfileNotifier extends _$UserProfileNotifier {
         username: currentProfile.username,
         email: currentProfile.email,
         avatarUrl: currentProfile.avatarUrl,
+        bannerUrl: currentProfile.bannerUrl,
+        avatarScale: currentProfile.avatarScale,
+        avatarOffsetX: currentProfile.avatarOffsetX,
+        avatarOffsetY: currentProfile.avatarOffsetY,
+        bannerScale: currentProfile.bannerScale,
+        bannerOffsetX: currentProfile.bannerOffsetX,
+        bannerOffsetY: currentProfile.bannerOffsetY,
         createdAt: currentProfile.createdAt,
         followersCount: isFollowing 
             ? currentProfile.followersCount + 1 
             : currentProfile.followersCount - 1,
         followingCount: currentProfile.followingCount,
+        postsCount: currentProfile.postsCount,
         isFollowing: isFollowing,
       ));
     }

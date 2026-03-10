@@ -44,6 +44,7 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
     return AppShell(
       currentSection: AppSection.feed,
       title: 'Лента',
+      showNotificationsAction: true,
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => context.go('/create-post'),
         icon: const Icon(Icons.add),
@@ -56,19 +57,20 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                 onRefresh: () => ref.read(feedNotifierProvider.notifier).refresh(),
                 child: ListView.builder(
                   itemCount: posts.length,
-                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 96),
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 112),
                   itemBuilder: (context, index) {
                     final post = posts[index];
                     final currentUserId = userIdAsync.value;
                     final isOwnPost = currentUserId != null && currentUserId == post.userId;
 
                     return Padding(
-                      padding: const EdgeInsets.only(bottom: 12),
+                      padding: const EdgeInsets.only(bottom: 14),
                       child: PostCard(
                         post: post,
                         isOwnPost: isOwnPost,
                         onLike: () => ref.read(feedNotifierProvider.notifier).toggleLike(post.id),
                         onFollow: () => ref.read(feedNotifierProvider.notifier).toggleFollow(post.userId),
+                        onOpenProfile: () => context.push('/profile/${post.userId}'),
                         onComment: () => context.push(
                           '/comments',
                           extra: CommentsScreenArgs(

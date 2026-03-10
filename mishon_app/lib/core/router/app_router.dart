@@ -9,6 +9,7 @@ import 'package:mishon_app/features/chats/screens/chats_screen.dart';
 import 'package:mishon_app/features/comments/screens/comments_screen.dart';
 import 'package:mishon_app/features/feed/screens/feed_screen.dart';
 import 'package:mishon_app/features/friends/screens/friends_screen.dart';
+import 'package:mishon_app/features/notifications/screens/notifications_screen.dart';
 import 'package:mishon_app/features/people/screens/people_screen.dart';
 import 'package:mishon_app/features/post/screens/create_post_screen.dart';
 import 'package:mishon_app/features/profile/screens/profile_screen.dart';
@@ -91,6 +92,11 @@ final goRouterProvider = Provider<GoRouter>((ref) {
           final args = state.extra as CommentsScreenArgs;
           return CommentsScreen(args: args);
         },
+      ),
+      GoRoute(
+        path: '/notifications',
+        name: 'notifications',
+        builder: (context, state) => const NotificationsScreen(),
       ),
     ],
     errorPageBuilder: (context, state) => MaterialPage(

@@ -6,28 +6,28 @@ class AppColors {
   AppColors._();
 
   // Основной акцентный цвет (синий)
-  static const Color primary = Color(0xFF1DA1F2);
-  static const Color primaryLight = Color(0xFFE8F5FE);
-  static const Color primaryDark = Color(0xFF1A91DA);
+  static const Color primary = Color(0xFF2F67FF);
+  static const Color primaryLight = Color(0xFFE9EFFF);
+  static const Color primaryDark = Color(0xFF1E47C8);
 
   // Нейтральные цвета
-  static const Color background = Color(0xFFF8F9FA);
+  static const Color background = Color(0xFFF6F7FB);
   static const Color surface = Color(0xFFFFFFFF);
-  static const Color surfaceVariant = Color(0xFFF1F3F4);
+  static const Color surfaceVariant = Color(0xFFF1F4FB);
 
   // Текст
-  static const Color textPrimary = Color(0xFF0F1419);
-  static const Color textSecondary = Color(0xFF536471);
-  static const Color textTertiary = Color(0xFF8899A6);
+  static const Color textPrimary = Color(0xFF18243C);
+  static const Color textSecondary = Color(0xFF5B687D);
+  static const Color textTertiary = Color(0xFF8792A2);
 
   // Статусы
   static const Color error = Color(0xFFE0245E);
   static const Color success = Color(0xFF17BF63);
-  static const Color warning = Color(0xFFFFAD1F);
+  static const Color warning = Color(0xFFFFA53A);
 
   // Границы и разделители
-  static const Color divider = Color(0xFFEFF3F4);
-  static const Color border = Color(0xFFCFD9DE);
+  static const Color divider = Color(0xFFE7ECF6);
+  static const Color border = Color(0xFFD7E0F0);
 
   // Лайки
   static const Color like = Color(0xFFE0245E);
@@ -66,7 +66,7 @@ class AppTheme {
       scaffoldBackgroundColor: AppColors.background,
 
       // Типографика (Google Fonts - Inter)
-      textTheme: GoogleFonts.interTextTheme().copyWith(
+      textTheme: GoogleFonts.manropeTextTheme().copyWith(
         displayLarge: const TextStyle(
           fontSize: 32,
           fontWeight: FontWeight.bold,

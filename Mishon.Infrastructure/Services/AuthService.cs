@@ -168,10 +168,7 @@ public class AuthService : IAuthService
                 user.Username = dto.Username;
             }
 
-            if (dto.AvatarUrl != null)
-            {
-                user.AvatarUrl = dto.AvatarUrl;
-            }
+            ApplyProfileUpdate(user, dto);
 
             await _userRepository.UpdateAsync(user);
             return await GetProfileInternalAsync(userId, currentUserId: null);
@@ -179,6 +176,40 @@ public class AuthService : IAuthService
         catch (Exception ex)
         {
             return Result<UserProfileDto>.Failure($"Profile update error: {ex.Message}", ResultError.InternalError);
+        }
+    }
+
+    public async Task<Result<UserProfileDto>> UpdateProfileMediaAsync(int userId, UpdateProfileMediaDto dto)
+    {
+        try
+        {
+            var user = await _userRepository.GetByIdWithTokensAsync(userId);
+            if (user == null)
+            {
+                return Result<UserProfileDto>.Failure("User not found", ResultError.NotFound);
+            }
+
+            ApplyProfileUpdate(
+                user,
+                new UpdateProfileDto(
+                    null,
+                    dto.AvatarUrl,
+                    dto.BannerUrl,
+                    dto.AvatarScale,
+                    dto.AvatarOffsetX,
+                    dto.AvatarOffsetY,
+                    dto.BannerScale,
+                    dto.BannerOffsetX,
+                    dto.BannerOffsetY,
+                    dto.RemoveAvatar,
+                    dto.RemoveBanner));
+
+            await _userRepository.UpdateAsync(user);
+            return await GetProfileInternalAsync(userId, currentUserId: null);
+        }
+        catch (Exception ex)
+        {
+            return Result<UserProfileDto>.Failure($"Profile media update error: {ex.Message}", ResultError.InternalError);
         }
     }
 
@@ -222,6 +253,10 @@ public class AuthService : IAuthService
                 .AsNoTracking()
                 .CountAsync(f => f.FollowerId == userId);
 
+            var postsCount = await _context.Posts
+                .AsNoTracking()
+                .CountAsync(p => p.UserId == userId);
+
             bool? isFollowing = null;
             if (currentUserId.HasValue)
             {
@@ -235,14 +270,85 @@ public class AuthService : IAuthService
                 user.Username,
                 user.Email,
                 user.AvatarUrl,
+                user.BannerUrl,
+                user.AvatarScale,
+                user.AvatarOffsetX,
+                user.AvatarOffsetY,
+                user.BannerScale,
+                user.BannerOffsetX,
+                user.BannerOffsetY,
                 user.CreatedAt,
                 followersCount,
                 followingCount,
+                postsCount,
                 isFollowing));
         }
         catch (Exception ex)
         {
             return Result<UserProfileDto>.Failure($"Profile error: {ex.Message}", ResultError.InternalError);
+        }
+    }
+
+    private static void ApplyProfileUpdate(User user, UpdateProfileDto dto)
+    {
+        if (dto.RemoveAvatar == true)
+        {
+            user.AvatarUrl = null;
+            user.AvatarScale = 1;
+            user.AvatarOffsetX = 0;
+            user.AvatarOffsetY = 0;
+        }
+        else
+        {
+            if (dto.AvatarUrl != null)
+            {
+                user.AvatarUrl = dto.AvatarUrl;
+            }
+
+            if (dto.AvatarScale.HasValue)
+            {
+                user.AvatarScale = dto.AvatarScale.Value;
+            }
+
+            if (dto.AvatarOffsetX.HasValue)
+            {
+                user.AvatarOffsetX = dto.AvatarOffsetX.Value;
+            }
+
+            if (dto.AvatarOffsetY.HasValue)
+            {
+                user.AvatarOffsetY = dto.AvatarOffsetY.Value;
+            }
+        }
+
+        if (dto.RemoveBanner == true)
+        {
+            user.BannerUrl = null;
+            user.BannerScale = 1;
+            user.BannerOffsetX = 0;
+            user.BannerOffsetY = 0;
+        }
+        else
+        {
+            if (dto.BannerUrl != null)
+            {
+                user.BannerUrl = dto.BannerUrl;
+            }
+
+            if (dto.BannerScale.HasValue)
+            {
+                user.BannerScale = dto.BannerScale.Value;
+            }
+
+            if (dto.BannerOffsetX.HasValue)
+            {
+                user.BannerOffsetX = dto.BannerOffsetX.Value;
+            }
+
+            if (dto.BannerOffsetY.HasValue)
+            {
+                user.BannerOffsetY = dto.BannerOffsetY.Value;
+            }
         }
     }
 

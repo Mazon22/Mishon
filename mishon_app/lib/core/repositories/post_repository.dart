@@ -181,9 +181,9 @@ class PostRepository {
     }
   }
 
-  Future<Comment> createComment(int postId, String content) async {
+  Future<Comment> createComment(int postId, String content, {int? parentCommentId}) async {
     try {
-      return await _apiService.createComment(postId, content);
+      return await _apiService.createComment(postId, content, parentCommentId: parentCommentId);
     } on ApiException catch (e) {
       _logger.e('Create comment failed: ${e.apiError.message}');
       rethrow;
@@ -192,6 +192,36 @@ class PostRepository {
       rethrow;
     } catch (e, st) {
       _logger.e('Unexpected create comment error', error: e, stackTrace: st);
+      rethrow;
+    }
+  }
+
+  Future<Comment> updateComment(int postId, int commentId, String content) async {
+    try {
+      return await _apiService.updateComment(postId, commentId, content);
+    } on ApiException catch (e) {
+      _logger.e('Update comment failed: ${e.apiError.message}');
+      rethrow;
+    } on OfflineException {
+      _logger.w('No connection updating comment');
+      rethrow;
+    } catch (e, st) {
+      _logger.e('Unexpected update comment error', error: e, stackTrace: st);
+      rethrow;
+    }
+  }
+
+  Future<void> deleteComment(int postId, int commentId) async {
+    try {
+      await _apiService.deleteComment(postId, commentId);
+    } on ApiException catch (e) {
+      _logger.e('Delete comment failed: ${e.apiError.message}');
+      rethrow;
+    } on OfflineException {
+      _logger.w('No connection deleting comment');
+      rethrow;
+    } catch (e, st) {
+      _logger.e('Unexpected delete comment error', error: e, stackTrace: st);
       rethrow;
     }
   }

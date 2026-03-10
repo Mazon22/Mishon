@@ -11,6 +11,9 @@ Post _$PostFromJson(Map<String, dynamic> json) => Post(
   userId: (json['userId'] as num).toInt(),
   username: json['username'] as String,
   userAvatarUrl: json['userAvatarUrl'] as String?,
+  userAvatarScale: (json['userAvatarScale'] as num?)?.toDouble() ?? 1.0,
+  userAvatarOffsetX: (json['userAvatarOffsetX'] as num?)?.toDouble() ?? 0.0,
+  userAvatarOffsetY: (json['userAvatarOffsetY'] as num?)?.toDouble() ?? 0.0,
   content: json['content'] as String,
   imageUrl: json['imageUrl'] as String?,
   createdAt: DateTime.parse(json['createdAt'] as String),
@@ -24,6 +27,9 @@ Map<String, dynamic> _$PostToJson(Post instance) => <String, dynamic>{
   'userId': instance.userId,
   'username': instance.username,
   'userAvatarUrl': instance.userAvatarUrl,
+  'userAvatarScale': instance.userAvatarScale,
+  'userAvatarOffsetX': instance.userAvatarOffsetX,
+  'userAvatarOffsetY': instance.userAvatarOffsetY,
   'content': instance.content,
   'imageUrl': instance.imageUrl,
   'createdAt': instance.createdAt.toIso8601String(),
@@ -37,8 +43,17 @@ Comment _$CommentFromJson(Map<String, dynamic> json) => Comment(
   userId: (json['userId'] as num).toInt(),
   username: json['username'] as String,
   userAvatarUrl: json['userAvatarUrl'] as String?,
+  userAvatarScale: (json['userAvatarScale'] as num?)?.toDouble() ?? 1.0,
+  userAvatarOffsetX: (json['userAvatarOffsetX'] as num?)?.toDouble() ?? 0.0,
+  userAvatarOffsetY: (json['userAvatarOffsetY'] as num?)?.toDouble() ?? 0.0,
   content: json['content'] as String,
   createdAt: DateTime.parse(json['createdAt'] as String),
+  editedAt:
+      json['editedAt'] == null
+          ? null
+          : DateTime.parse(json['editedAt'] as String),
+  parentCommentId: (json['parentCommentId'] as num?)?.toInt(),
+  replyToUsername: json['replyToUsername'] as String?,
 );
 
 Map<String, dynamic> _$CommentToJson(Comment instance) => <String, dynamic>{
@@ -46,14 +61,23 @@ Map<String, dynamic> _$CommentToJson(Comment instance) => <String, dynamic>{
   'userId': instance.userId,
   'username': instance.username,
   'userAvatarUrl': instance.userAvatarUrl,
+  'userAvatarScale': instance.userAvatarScale,
+  'userAvatarOffsetX': instance.userAvatarOffsetX,
+  'userAvatarOffsetY': instance.userAvatarOffsetY,
   'content': instance.content,
   'createdAt': instance.createdAt.toIso8601String(),
+  'editedAt': instance.editedAt?.toIso8601String(),
+  'parentCommentId': instance.parentCommentId,
+  'replyToUsername': instance.replyToUsername,
 };
 
 Follow _$FollowFromJson(Map<String, dynamic> json) => Follow(
   id: (json['id'] as num).toInt(),
   username: json['username'] as String,
   avatarUrl: json['avatarUrl'] as String?,
+  avatarScale: (json['avatarScale'] as num?)?.toDouble() ?? 1.0,
+  avatarOffsetX: (json['avatarOffsetX'] as num?)?.toDouble() ?? 0.0,
+  avatarOffsetY: (json['avatarOffsetY'] as num?)?.toDouble() ?? 0.0,
   isFollowing: json['isFollowing'] as bool? ?? false,
 );
 
@@ -61,6 +85,9 @@ Map<String, dynamic> _$FollowToJson(Follow instance) => <String, dynamic>{
   'id': instance.id,
   'username': instance.username,
   'avatarUrl': instance.avatarUrl,
+  'avatarScale': instance.avatarScale,
+  'avatarOffsetX': instance.avatarOffsetX,
+  'avatarOffsetY': instance.avatarOffsetY,
   'isFollowing': instance.isFollowing,
 };
 

@@ -1,3 +1,4 @@
+import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:logger/logger.dart';
 
@@ -148,9 +149,13 @@ class SocialRepository {
     }
   }
 
-  Future<ChatMessageModel> sendMessage(int conversationId, String content) async {
+  Future<ChatMessageModel> sendMessage(int conversationId, String content, {int? replyToMessageId}) async {
     try {
-      return await _apiService.sendMessage(conversationId, content);
+      return await _apiService.sendMessage(
+        conversationId,
+        content,
+        replyToMessageId: replyToMessageId,
+      );
     } on ApiException catch (e) {
       _logger.e('Send message failed: ${e.apiError.message}');
       rethrow;
@@ -158,5 +163,135 @@ class SocialRepository {
       _logger.w('No connection sending message');
       rethrow;
     }
+  }
+
+  Future<ChatMessageModel> updateMessage(int conversationId, int messageId, String content) async {
+    try {
+      return await _apiService.updateMessage(conversationId, messageId, content);
+    } on ApiException catch (e) {
+      _logger.e('Update message failed: ${e.apiError.message}');
+      rethrow;
+    } on OfflineException {
+      _logger.w('No connection updating message');
+      rethrow;
+    }
+  }
+
+  Future<void> deleteMessage(int conversationId, int messageId) async {
+    try {
+      await _apiService.deleteMessage(conversationId, messageId);
+    } on ApiException catch (e) {
+      _logger.e('Delete message failed: ${e.apiError.message}');
+      rethrow;
+    } on OfflineException {
+      _logger.w('No connection deleting message');
+      rethrow;
+    }
+  }
+
+  Future<List<NotificationItemModel>> getNotifications() async {
+    try {
+      return await _apiService.getNotifications();
+    } on ApiException catch (e) {
+      if (_isNotificationsEndpointMissing(e)) {
+        _logger.w('Notifications endpoint is unavailable on the current backend build');
+        return const [];
+      }
+      _logger.e('Get notifications failed: ${e.apiError.message}');
+      rethrow;
+    } on DioException catch (e) {
+      if (_isNotificationsEndpointMissing(e)) {
+        _logger.w('Notifications endpoint is unavailable on the current backend build');
+        return const [];
+      }
+      rethrow;
+    } on OfflineException {
+      _logger.w('No connection getting notifications');
+      rethrow;
+    }
+  }
+
+  Future<NotificationSummaryModel> getNotificationSummary() async {
+    try {
+      return await _apiService.getNotificationSummary();
+    } on ApiException catch (e) {
+      if (_isNotificationsEndpointMissing(e)) {
+        _logger.w('Notification summary endpoint is unavailable on the current backend build');
+        return _emptyNotificationSummary;
+      }
+      _logger.e('Get notification summary failed: ${e.apiError.message}');
+      rethrow;
+    } on DioException catch (e) {
+      if (_isNotificationsEndpointMissing(e)) {
+        _logger.w('Notification summary endpoint is unavailable on the current backend build');
+        return _emptyNotificationSummary;
+      }
+      rethrow;
+    } on OfflineException {
+      _logger.w('No connection getting notification summary');
+      rethrow;
+    }
+  }
+
+  Future<void> markNotificationRead(int notificationId) async {
+    try {
+      await _apiService.markNotificationRead(notificationId);
+    } on ApiException catch (e) {
+      if (_isNotificationsEndpointMissing(e)) {
+        _logger.w('Skipping mark notification read because endpoint is unavailable');
+        return;
+      }
+      _logger.e('Mark notification read failed: ${e.apiError.message}');
+      rethrow;
+    } on DioException catch (e) {
+      if (_isNotificationsEndpointMissing(e)) {
+        _logger.w('Skipping mark notification read because endpoint is unavailable');
+        return;
+      }
+      rethrow;
+    } on OfflineException {
+      _logger.w('No connection marking notification read');
+      rethrow;
+    }
+  }
+
+  Future<void> markAllNotificationsRead() async {
+    try {
+      await _apiService.markAllNotificationsRead();
+    } on ApiException catch (e) {
+      if (_isNotificationsEndpointMissing(e)) {
+        _logger.w('Skipping mark all notifications read because endpoint is unavailable');
+        return;
+      }
+      _logger.e('Mark all notifications read failed: ${e.apiError.message}');
+      rethrow;
+    } on DioException catch (e) {
+      if (_isNotificationsEndpointMissing(e)) {
+        _logger.w('Skipping mark all notifications read because endpoint is unavailable');
+        return;
+      }
+      rethrow;
+    } on OfflineException {
+      _logger.w('No connection marking all notifications read');
+      rethrow;
+    }
+  }
+
+  static const _emptyNotificationSummary = NotificationSummaryModel(
+    unreadNotifications: 0,
+    unreadChats: 0,
+    incomingFriendRequests: 0,
+  );
+
+  bool _isNotificationsEndpointMissing(Object error) {
+    if (error is ApiException) {
+      return error.statusCode == 404 || error.apiError.statusCode == 404;
+    }
+
+    if (error is DioException) {
+      return error.response?.statusCode == 404;
+    }
+
+    return false;
   }
 }

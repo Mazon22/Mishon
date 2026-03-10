@@ -56,7 +56,7 @@ final apiServiceProvider = AutoDisposeProvider<ApiService>.internal(
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
 typedef ApiServiceRef = AutoDisposeProviderRef<ApiService>;
-String _$apiClientHash() => r'33f4ec216c06187d3df02063efe3addb1edc6c68';
+String _$apiClientHash() => r'ea8080ed0371f1aa108b63ebcc5614b67369d78c';
 
 /// See also [apiClient].
 @ProviderFor(apiClient)

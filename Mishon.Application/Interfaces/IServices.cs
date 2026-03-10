@@ -10,6 +10,7 @@ public interface IAuthService
     Task<Result<UserProfileDto>> GetProfileAsync(int userId);
     Task<Result<UserProfileDto>> GetProfileForUserAsync(int userId, int currentUserId);
     Task<Result<UserProfileDto>> UpdateProfileAsync(int userId, UpdateProfileDto dto);
+    Task<Result<UserProfileDto>> UpdateProfileMediaAsync(int userId, UpdateProfileMediaDto dto);
     Task<Result> LogoutAsync(int userId);
 }
 
@@ -36,6 +37,8 @@ public interface ICommentService
 {
     Task<Result<CommentDto>> CreateAsync(int userId, int postId, CreateCommentDto dto, CancellationToken cancellationToken = default);
     Task<Result<IEnumerable<CommentDto>>> GetByPostIdAsync(int postId, CancellationToken cancellationToken = default);
+    Task<Result<CommentDto>> UpdateAsync(int userId, int postId, int commentId, UpdateCommentDto dto, CancellationToken cancellationToken = default);
+    Task<Result> DeleteAsync(int userId, int postId, int commentId, CancellationToken cancellationToken = default);
 }
 
 public interface IUserDiscoveryService
@@ -64,4 +67,15 @@ public interface IConversationService
     Task<Result<DirectConversationDto>> GetOrCreateDirectConversationAsync(int userId, int peerUserId, CancellationToken cancellationToken = default);
     Task<Result<IEnumerable<MessageDto>>> GetMessagesAsync(int userId, int conversationId, CancellationToken cancellationToken = default);
     Task<Result<MessageDto>> SendMessageAsync(int userId, int conversationId, CreateMessageDto dto, CancellationToken cancellationToken = default);
+    Task<Result<MessageDto>> UpdateMessageAsync(int userId, int conversationId, int messageId, UpdateMessageDto dto, CancellationToken cancellationToken = default);
+    Task<Result> DeleteMessageAsync(int userId, int conversationId, int messageId, CancellationToken cancellationToken = default);
+}
+
+public interface INotificationService
+{
+    Task CreateAsync(CreateNotificationDto notification, CancellationToken cancellationToken = default);
+    Task<Result<IEnumerable<NotificationDto>>> GetNotificationsAsync(int userId, CancellationToken cancellationToken = default);
+    Task<Result<NotificationSummaryDto>> GetSummaryAsync(int userId, CancellationToken cancellationToken = default);
+    Task<Result> MarkAsReadAsync(int userId, int notificationId, CancellationToken cancellationToken = default);
+    Task<Result> MarkAllAsReadAsync(int userId, CancellationToken cancellationToken = default);
 }

@@ -163,10 +163,13 @@ builder.Services.AddScoped<ICommentService, CommentService>();
 builder.Services.AddScoped<IUserDiscoveryService, UserDiscoveryService>();
 builder.Services.AddScoped<IFriendService, FriendService>();
 builder.Services.AddScoped<IConversationService, ConversationService>();
+builder.Services.AddScoped<INotificationService, NotificationService>();
 
 // FluentValidation
 builder.Services.AddValidatorsFromAssemblyContaining<RegisterDtoValidator>();
 builder.Services.AddValidatorsFromAssemblyContaining<CreateCommentDtoValidator>();
+builder.Services.AddValidatorsFromAssemblyContaining<UpdateCommentDtoValidator>();
+builder.Services.AddValidatorsFromAssemblyContaining<UpdateMessageDtoValidator>();
 
 var app = builder.Build();
 
@@ -215,10 +218,12 @@ app.UseCors("AllowFlutter");
 app.UseStaticFiles();
 
 // Обслуживание загруженных изображений из папки uploads
+var uploadsPath = Path.Combine(Directory.GetCurrentDirectory(), "uploads");
+Directory.CreateDirectory(uploadsPath);
+
 app.UseStaticFiles(new StaticFileOptions
 {
-    FileProvider = new Microsoft.Extensions.FileProviders.PhysicalFileProvider(
-        Path.Combine(Directory.GetCurrentDirectory(), "uploads")),
+    FileProvider = new PhysicalFileProvider(uploadsPath),
     RequestPath = "/uploads"
 });
 

@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -9,6 +8,7 @@ import 'package:mishon_app/core/models/social_models.dart';
 import 'package:mishon_app/core/network/exceptions.dart';
 import 'package:mishon_app/core/repositories/social_repository.dart';
 import 'package:mishon_app/core/widgets/app_shell.dart';
+import 'package:mishon_app/core/widgets/profile_media.dart';
 import 'package:mishon_app/core/widgets/states.dart';
 import 'package:mishon_app/features/chats/screens/chat_screen.dart';
 
@@ -123,6 +123,9 @@ class _FriendsScreenState extends ConsumerState<FriendsScreen>
           peerId: conversation.peerId,
           peerUsername: conversation.username,
           peerAvatarUrl: conversation.avatarUrl,
+          peerAvatarScale: conversation.avatarScale,
+          peerAvatarOffsetX: conversation.avatarOffsetX,
+          peerAvatarOffsetY: conversation.avatarOffsetY,
         ),
       );
     } on ApiException catch (e) {
@@ -256,6 +259,9 @@ class _FriendsScreenState extends ConsumerState<FriendsScreen>
         return _FriendTile(
           username: user.username,
           avatarUrl: user.avatarUrl,
+          avatarScale: user.avatarScale,
+          avatarOffsetX: user.avatarOffsetX,
+          avatarOffsetY: user.avatarOffsetY,
           isBusy: _busyIds.contains(user.id),
           onTap: () => context.go('/profile/${user.id}'),
           onPrimaryAction: () => _openChat(user),
@@ -284,6 +290,9 @@ class _FriendsScreenState extends ConsumerState<FriendsScreen>
         return _FriendTile(
           username: request.username,
           avatarUrl: request.avatarUrl,
+          avatarScale: request.avatarScale,
+          avatarOffsetX: request.avatarOffsetX,
+          avatarOffsetY: request.avatarOffsetY,
           caption: 'Хочет добавить вас в друзья',
           isBusy: _busyIds.contains(request.userId),
           onTap: () => context.go('/profile/${request.userId}'),
@@ -313,6 +322,9 @@ class _FriendsScreenState extends ConsumerState<FriendsScreen>
         return _FriendTile(
           username: request.username,
           avatarUrl: request.avatarUrl,
+          avatarScale: request.avatarScale,
+          avatarOffsetX: request.avatarOffsetX,
+          avatarOffsetY: request.avatarOffsetY,
           caption: 'Ожидает подтверждения',
           isBusy: _busyIds.contains(request.userId),
           onTap: () => context.go('/profile/${request.userId}'),
@@ -353,6 +365,9 @@ class _MetricTile extends StatelessWidget {
 class _FriendTile extends StatelessWidget {
   final String username;
   final String? avatarUrl;
+  final double avatarScale;
+  final double avatarOffsetX;
+  final double avatarOffsetY;
   final String? caption;
   final bool isBusy;
   final VoidCallback onTap;
@@ -364,6 +379,9 @@ class _FriendTile extends StatelessWidget {
   const _FriendTile({
     required this.username,
     required this.avatarUrl,
+    this.avatarScale = 1,
+    this.avatarOffsetX = 0,
+    this.avatarOffsetY = 0,
     required this.isBusy,
     required this.onTap,
     required this.onPrimaryAction,
@@ -380,22 +398,14 @@ class _FriendTile extends StatelessWidget {
         padding: const EdgeInsets.all(16),
         child: Row(
           children: [
-            CircleAvatar(
-              radius: 24,
-              backgroundColor: Theme.of(context).colorScheme.primaryContainer,
-              child: avatarUrl != null && avatarUrl!.isNotEmpty
-                  ? ClipOval(
-                      child: CachedNetworkImage(
-                        imageUrl: avatarUrl!,
-                        width: 48,
-                        height: 48,
-                        fit: BoxFit.cover,
-                      ),
-                    )
-                  : Text(
-                      username.substring(0, 1).toUpperCase(),
-                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
-                    ),
+            AppAvatar(
+              username: username,
+              imageUrl: avatarUrl,
+              size: 48,
+              scale: avatarScale,
+              offsetX: avatarOffsetX,
+              offsetY: avatarOffsetY,
+              onTap: onTap,
             ),
             const SizedBox(width: 14),
             Expanded(

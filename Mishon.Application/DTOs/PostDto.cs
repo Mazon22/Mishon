@@ -7,6 +7,9 @@ public record PostDto(
     int UserId,
     string Username,
     string? UserAvatarUrl,
+    double UserAvatarScale,
+    double UserAvatarOffsetX,
+    double UserAvatarOffsetY,
     string Content,
     string? ImageUrl,
     DateTime CreatedAt,
@@ -18,7 +21,10 @@ public record PostDto(
 public record FollowDto(
     int Id,
     string Username,
-    string? AvatarUrl
+    string? AvatarUrl,
+    double AvatarScale,
+    double AvatarOffsetX,
+    double AvatarOffsetY
 );
 
 public record ToggleFollowResponseDto(
@@ -30,6 +36,9 @@ public record UserFollowDto(
     int Id,
     string Username,
     string? AvatarUrl,
+    double AvatarScale,
+    double AvatarOffsetX,
+    double AvatarOffsetY,
     bool IsFollowing
 );
 
@@ -39,6 +48,11 @@ public record CreatePostDto(
 );
 
 public record CreateCommentDto(
+    string Content,
+    int? ParentCommentId
+);
+
+public record UpdateCommentDto(
     string Content
 );
 
@@ -47,11 +61,17 @@ public record CommentDto(
     int UserId,
     string Username,
     string? UserAvatarUrl,
+    double UserAvatarScale,
+    double UserAvatarOffsetX,
+    double UserAvatarOffsetY,
     string Content,
-    DateTime CreatedAt
+    DateTime CreatedAt,
+    DateTime? EditedAt,
+    int? ParentCommentId,
+    string? ReplyToUsername
 );
 
-public class CreatePostDtoValidator : FluentValidation.AbstractValidator<CreatePostDto>
+public class CreatePostDtoValidator : AbstractValidator<CreatePostDto>
 {
     public CreatePostDtoValidator()
     {
@@ -68,9 +88,20 @@ public class CreatePostDtoValidator : FluentValidation.AbstractValidator<CreateP
     }
 }
 
-public class CreateCommentDtoValidator : FluentValidation.AbstractValidator<CreateCommentDto>
+public class CreateCommentDtoValidator : AbstractValidator<CreateCommentDto>
 {
     public CreateCommentDtoValidator()
+    {
+        RuleFor(x => x.Content)
+            .NotEmpty().WithMessage("Текст комментария обязателен")
+            .MinimumLength(1).WithMessage("Комментарий не может быть пустым")
+            .MaximumLength(500).WithMessage("Максимум 500 символов");
+    }
+}
+
+public class UpdateCommentDtoValidator : AbstractValidator<UpdateCommentDto>
+{
+    public UpdateCommentDtoValidator()
     {
         RuleFor(x => x.Content)
             .NotEmpty().WithMessage("Текст комментария обязателен")

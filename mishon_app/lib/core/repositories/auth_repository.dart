@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:mishon_app/core/models/auth_model.dart';
@@ -114,9 +116,9 @@ class AuthRepository {
     }
   }
 
-  Future<UserProfile> updateProfile({String? username, String? avatarUrl}) async {
+  Future<UserProfile> updateProfile({String? username}) async {
     try {
-      return await _apiService.updateProfile(username: username, avatarUrl: avatarUrl);
+      return await _apiService.updateProfile(username: username);
     } on ApiException catch (e) {
       _logger.e('Update profile failed: ${e.apiError.message}');
       rethrow;
@@ -125,6 +127,43 @@ class AuthRepository {
       rethrow;
     } catch (e, st) {
       _logger.e('Unexpected update profile error', error: e, stackTrace: st);
+      rethrow;
+    }
+  }
+
+  Future<UserProfile> updateProfileMedia({
+    Uint8List? avatarBytes,
+    Uint8List? bannerBytes,
+    required double avatarScale,
+    required double avatarOffsetX,
+    required double avatarOffsetY,
+    required double bannerScale,
+    required double bannerOffsetX,
+    required double bannerOffsetY,
+    bool removeAvatar = false,
+    bool removeBanner = false,
+  }) async {
+    try {
+      return await _apiService.updateProfileMedia(
+        avatarBytes: avatarBytes,
+        bannerBytes: bannerBytes,
+        avatarScale: avatarScale,
+        avatarOffsetX: avatarOffsetX,
+        avatarOffsetY: avatarOffsetY,
+        bannerScale: bannerScale,
+        bannerOffsetX: bannerOffsetX,
+        bannerOffsetY: bannerOffsetY,
+        removeAvatar: removeAvatar,
+        removeBanner: removeBanner,
+      );
+    } on ApiException catch (e) {
+      _logger.e('Update profile media failed: ${e.apiError.message}');
+      rethrow;
+    } on OfflineException {
+      _logger.w('No connection updating profile media');
+      rethrow;
+    } catch (e, st) {
+      _logger.e('Unexpected update profile media error', error: e, stackTrace: st);
       rethrow;
     }
   }

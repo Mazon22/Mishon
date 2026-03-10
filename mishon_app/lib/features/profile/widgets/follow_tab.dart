@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:mishon_app/core/models/post_model.dart';
 import 'package:mishon_app/core/widgets/empty_posts_banner.dart';
+import 'package:mishon_app/core/widgets/profile_media.dart';
 import 'package:mishon_app/features/profile/providers/follow_provider.dart';
 
 class FollowTab extends ConsumerWidget {
@@ -93,34 +93,13 @@ class _FollowListTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ListTile(
-      leading: CircleAvatar(
-        radius: 20,
-        backgroundColor: Theme.of(context).colorScheme.primaryContainer,
-        child: user.avatarUrl != null && user.avatarUrl!.isNotEmpty
-            ? ClipOval(
-                child: CachedNetworkImage(
-                  imageUrl: user.avatarUrl!,
-                  width: 40,
-                  height: 40,
-                  fit: BoxFit.cover,
-                  errorWidget: (_, __, ___) => Text(
-                    user.username[0].toUpperCase(),
-                    style: const TextStyle(
-                      fontSize: 16,
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
-              )
-            : Text(
-                user.username[0].toUpperCase(),
-                style: const TextStyle(
-                  fontSize: 16,
-                  color: Colors.white,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
+      leading: AppAvatar(
+        username: user.username,
+        imageUrl: user.avatarUrl,
+        size: 40,
+        scale: user.avatarScale,
+        offsetX: user.avatarOffsetX,
+        offsetY: user.avatarOffsetY,
       ),
       title: Text(
         user.username,

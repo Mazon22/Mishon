@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -10,6 +9,7 @@ import 'package:mishon_app/core/models/social_models.dart';
 import 'package:mishon_app/core/network/exceptions.dart';
 import 'package:mishon_app/core/repositories/social_repository.dart';
 import 'package:mishon_app/core/widgets/app_shell.dart';
+import 'package:mishon_app/core/widgets/profile_media.dart';
 import 'package:mishon_app/core/widgets/states.dart';
 import 'package:mishon_app/features/chats/screens/chat_screen.dart';
 
@@ -151,6 +151,9 @@ class _ChatsScreenState extends ConsumerState<ChatsScreen> {
                                           peerId: conversation.peerId,
                                           peerUsername: conversation.username,
                                           peerAvatarUrl: conversation.avatarUrl,
+                                          peerAvatarScale: conversation.avatarScale,
+                                          peerAvatarOffsetX: conversation.avatarOffsetX,
+                                          peerAvatarOffsetY: conversation.avatarOffsetY,
                                         ),
                                       ),
                                     );
@@ -190,25 +193,13 @@ class _ConversationTile extends StatelessWidget {
           padding: const EdgeInsets.all(16),
           child: Row(
             children: [
-              CircleAvatar(
-                radius: 26,
-                backgroundColor: Theme.of(context).colorScheme.primaryContainer,
-                child: conversation.avatarUrl != null && conversation.avatarUrl!.isNotEmpty
-                    ? ClipOval(
-                        child: CachedNetworkImage(
-                          imageUrl: conversation.avatarUrl!,
-                          width: 52,
-                          height: 52,
-                          fit: BoxFit.cover,
-                        ),
-                      )
-                    : Text(
-                        conversation.username.substring(0, 1).toUpperCase(),
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
+              AppAvatar(
+                username: conversation.username,
+                imageUrl: conversation.avatarUrl,
+                size: 52,
+                scale: conversation.avatarScale,
+                offsetX: conversation.avatarOffsetX,
+                offsetY: conversation.avatarOffsetY,
               ),
               const SizedBox(width: 14),
               Expanded(

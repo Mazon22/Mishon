@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -10,6 +9,7 @@ import 'package:mishon_app/core/network/exceptions.dart';
 import 'package:mishon_app/core/repositories/post_repository.dart';
 import 'package:mishon_app/core/repositories/social_repository.dart';
 import 'package:mishon_app/core/widgets/app_shell.dart';
+import 'package:mishon_app/core/widgets/profile_media.dart';
 import 'package:mishon_app/core/widgets/states.dart';
 import 'package:mishon_app/features/chats/screens/chat_screen.dart';
 
@@ -139,6 +139,9 @@ class _PeopleScreenState extends ConsumerState<PeopleScreen> {
           peerId: conversation.peerId,
           peerUsername: conversation.username,
           peerAvatarUrl: conversation.avatarUrl,
+          peerAvatarScale: conversation.avatarScale,
+          peerAvatarOffsetX: conversation.avatarOffsetX,
+          peerAvatarOffsetY: conversation.avatarOffsetY,
         ),
       );
     } on ApiException catch (e) {
@@ -363,28 +366,14 @@ class _UserCard extends StatelessWidget {
           children: [
             Row(
               children: [
-                GestureDetector(
+                AppAvatar(
+                  username: user.username,
+                  imageUrl: user.avatarUrl,
+                  size: 56,
+                  scale: user.avatarScale,
+                  offsetX: user.avatarOffsetX,
+                  offsetY: user.avatarOffsetY,
                   onTap: onOpenProfile,
-                  child: CircleAvatar(
-                    radius: 28,
-                    backgroundColor: Theme.of(context).colorScheme.primaryContainer,
-                    child: user.avatarUrl != null && user.avatarUrl!.isNotEmpty
-                        ? ClipOval(
-                            child: CachedNetworkImage(
-                              imageUrl: user.avatarUrl!,
-                              width: 56,
-                              height: 56,
-                              fit: BoxFit.cover,
-                            ),
-                          )
-                        : Text(
-                            user.username.substring(0, 1).toUpperCase(),
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                  ),
                 ),
                 const SizedBox(width: 14),
                 Expanded(

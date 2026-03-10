@@ -14,11 +14,16 @@ public class CommentsController : ControllerBase
 {
     private readonly ICommentService _commentService;
     private readonly IValidator<CreateCommentDto> _createCommentValidator;
+    private readonly IValidator<UpdateCommentDto> _updateCommentValidator;
 
-    public CommentsController(ICommentService commentService, IValidator<CreateCommentDto> createCommentValidator)
+    public CommentsController(
+        ICommentService commentService,
+        IValidator<CreateCommentDto> createCommentValidator,
+        IValidator<UpdateCommentDto> updateCommentValidator)
     {
         _commentService = commentService;
         _createCommentValidator = createCommentValidator;
+        _updateCommentValidator = updateCommentValidator;
     }
 
     /// <summary>
@@ -75,6 +80,58 @@ public class CommentsController : ControllerBase
         }
 
         return Ok(result.Data);
+    }
+
+    [HttpPut("{commentId:int}")]
+    [ProducesResponseType(typeof(CommentDto), StatusCodes.Status200OK)]
+    public async Task<ActionResult<CommentDto>> Update(int postId, int commentId, [FromBody] UpdateCommentDto dto)
+    {
+        var validationResult = await _updateCommentValidator.ValidateAsync(dto);
+        if (!validationResult.IsValid)
+        {
+            return BadRequest(new
+            {
+                error = "Validation Error",
+                message = validationResult.Errors.FirstOrDefault()?.ErrorMessage
+            });
+        }
+
+        var result = await _commentService.UpdateAsync(GetUserId(), postId, commentId, dto);
+        return FromResult(result);
+    }
+
+    [HttpDelete("{commentId:int}")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    public async Task<ActionResult> Delete(int postId, int commentId)
+    {
+        var result = await _commentService.DeleteAsync(GetUserId(), postId, commentId);
+        if (result.IsSuccess)
+        {
+            return NoContent();
+        }
+
+        return result.ResultError switch
+        {
+            ResultError.NotFound => NotFound(new { error = result.Error }),
+            ResultError.Forbidden => StatusCode(403, new { error = result.Error }),
+            _ => StatusCode(500, new { error = result.Error })
+        };
+    }
+
+    private ActionResult<CommentDto> FromResult(Result<CommentDto> result)
+    {
+        if (result.IsSuccess)
+        {
+            return Ok(result.Data);
+        }
+
+        return result.ResultError switch
+        {
+            ResultError.NotFound => NotFound(new { error = result.Error }),
+            ResultError.Forbidden => StatusCode(403, new { error = result.Error }),
+            ResultError.ValidationError => BadRequest(new { error = result.Error }),
+            _ => StatusCode(500, new { error = result.Error })
+        };
     }
 
     private int GetUserId() =>

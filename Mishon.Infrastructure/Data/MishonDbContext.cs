@@ -16,6 +16,7 @@ public class MishonDbContext : DbContext
     public DbSet<Friendship> Friendships => Set<Friendship>();
     public DbSet<Conversation> Conversations => Set<Conversation>();
     public DbSet<Message> Messages => Set<Message>();
+    public DbSet<Notification> Notifications => Set<Notification>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -29,6 +30,10 @@ public class MishonDbContext : DbContext
             entity.Property(e => e.Username).IsRequired().HasMaxLength(50);
             entity.Property(e => e.Email).IsRequired().HasMaxLength(100);
             entity.Property(e => e.PasswordHash).IsRequired();
+            entity.Property(e => e.AvatarUrl).HasMaxLength(500);
+            entity.Property(e => e.BannerUrl).HasMaxLength(500);
+            entity.Property(e => e.AvatarScale).HasDefaultValue(1d);
+            entity.Property(e => e.BannerScale).HasDefaultValue(1d);
             entity.Property(e => e.RefreshToken).HasMaxLength(500);
         });
 
@@ -80,6 +85,7 @@ public class MishonDbContext : DbContext
             entity.Property(e => e.Content).IsRequired().HasMaxLength(500);
             entity.HasIndex(e => e.PostId);
             entity.HasIndex(e => e.CreatedAt);
+            entity.HasIndex(e => e.ParentCommentId);
             entity.HasOne(e => e.User)
                   .WithMany(u => u.Comments)
                   .HasForeignKey(e => e.UserId)
@@ -87,6 +93,10 @@ public class MishonDbContext : DbContext
             entity.HasOne(e => e.Post)
                   .WithMany(p => p.Comments)
                   .HasForeignKey(e => e.PostId)
+                  .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(e => e.ParentComment)
+                  .WithMany(c => c.Replies)
+                  .HasForeignKey(e => e.ParentCommentId)
                   .OnDelete(DeleteBehavior.Cascade);
         });
 
@@ -140,6 +150,7 @@ public class MishonDbContext : DbContext
             entity.HasKey(e => e.Id);
             entity.Property(e => e.Content).IsRequired().HasMaxLength(1000);
             entity.HasIndex(e => new { e.ConversationId, e.CreatedAt });
+            entity.HasIndex(e => e.ReplyToMessageId);
             entity.HasOne(e => e.Conversation)
                   .WithMany(c => c.Messages)
                   .HasForeignKey(e => e.ConversationId)
@@ -148,6 +159,26 @@ public class MishonDbContext : DbContext
                   .WithMany(u => u.SentMessages)
                   .HasForeignKey(e => e.SenderId)
                   .OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(e => e.ReplyToMessage)
+                  .WithMany(m => m.Replies)
+                  .HasForeignKey(e => e.ReplyToMessageId)
+                  .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        modelBuilder.Entity<Notification>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Type).IsRequired().HasMaxLength(64);
+            entity.Property(e => e.Text).IsRequired().HasMaxLength(280);
+            entity.HasIndex(e => new { e.UserId, e.IsRead, e.CreatedAt });
+            entity.HasOne(e => e.User)
+                  .WithMany(u => u.Notifications)
+                  .HasForeignKey(e => e.UserId)
+                  .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(e => e.ActorUser)
+                  .WithMany(u => u.CreatedNotifications)
+                  .HasForeignKey(e => e.ActorUserId)
+                  .OnDelete(DeleteBehavior.SetNull);
         });
     }
 }

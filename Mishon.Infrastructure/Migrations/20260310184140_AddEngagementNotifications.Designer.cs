@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Mishon.Infrastructure.Data;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Mishon.Infrastructure.Migrations
 {
     [DbContext(typeof(MishonDbContext))]
-    partial class MishonDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260310184140_AddEngagementNotifications")]
+    partial class AddEngagementNotifications
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -339,35 +342,8 @@ namespace Mishon.Infrastructure.Migrations
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
-                    b.Property<double>("AvatarOffsetX")
-                        .HasColumnType("double precision");
-
-                    b.Property<double>("AvatarOffsetY")
-                        .HasColumnType("double precision");
-
-                    b.Property<double>("AvatarScale")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("double precision")
-                        .HasDefaultValue(1.0);
-
                     b.Property<string>("AvatarUrl")
-                        .HasMaxLength(500)
-                        .HasColumnType("character varying(500)");
-
-                    b.Property<double>("BannerOffsetX")
-                        .HasColumnType("double precision");
-
-                    b.Property<double>("BannerOffsetY")
-                        .HasColumnType("double precision");
-
-                    b.Property<double>("BannerScale")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("double precision")
-                        .HasDefaultValue(1.0);
-
-                    b.Property<string>("BannerUrl")
-                        .HasMaxLength(500)
-                        .HasColumnType("character varying(500)");
+                        .HasColumnType("text");
 
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");

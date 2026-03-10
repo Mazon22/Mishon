@@ -6,7 +6,7 @@ part of 'profile_provider.dart';
 // RiverpodGenerator
 // **************************************************************************
 
-String _$profileNotifierHash() => r'fa7ca3490dd4f45a66c367d76cb24c4e05bc6cc1';
+String _$profileNotifierHash() => r'1ea5153c722383f9f67032ccc735167a05c75a70';
 
 /// See also [ProfileNotifier].
 @ProviderFor(ProfileNotifier)
@@ -26,7 +26,7 @@ final profileNotifierProvider = AutoDisposeNotifierProvider<
 
 typedef _$ProfileNotifier = AutoDisposeNotifier<AsyncValue<UserProfile?>>;
 String _$userProfileNotifierHash() =>
-    r'78fb68d9f61804a1461de8b71cbe163a44a9196f';
+    r'025e97e05b4b8eef71bd97e4e551bae725b6a537';
 
 /// Copied from Dart SDK
 class _SystemHash {

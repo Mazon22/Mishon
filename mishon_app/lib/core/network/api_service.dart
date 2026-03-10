@@ -12,7 +12,19 @@ abstract class ApiService {
   Future<AuthResponse> refreshToken(String refreshToken);
   Future<UserProfile> getProfile();
   Future<UserProfile> getUserProfile(int userId);
-  Future<UserProfile> updateProfile({String? username, String? avatarUrl});
+  Future<UserProfile> updateProfile({String? username});
+  Future<UserProfile> updateProfileMedia({
+    Uint8List? avatarBytes,
+    Uint8List? bannerBytes,
+    required double avatarScale,
+    required double avatarOffsetX,
+    required double avatarOffsetY,
+    required double bannerScale,
+    required double bannerOffsetX,
+    required double bannerOffsetY,
+    bool removeAvatar = false,
+    bool removeBanner = false,
+  });
   Future<void> logout();
 
   Future<PagedResponse<Post>> getFeed({int page = 1, int pageSize = 10});
@@ -23,7 +35,9 @@ abstract class ApiService {
   Future<void> deletePost(int postId);
 
   Future<List<Comment>> getComments(int postId);
-  Future<Comment> createComment(int postId, String content);
+  Future<Comment> createComment(int postId, String content, {int? parentCommentId});
+  Future<Comment> updateComment(int postId, int commentId, String content);
+  Future<void> deleteComment(int postId, int commentId);
 
   Future<ToggleFollowResponse> toggleFollow(int userId);
   Future<List<Follow>> getFollowing(int userId);
@@ -45,7 +59,14 @@ abstract class ApiService {
   Future<List<ConversationModel>> getConversations();
   Future<DirectConversationModel> getOrCreateConversation(int userId);
   Future<List<ChatMessageModel>> getMessages(int conversationId);
-  Future<ChatMessageModel> sendMessage(int conversationId, String content);
+  Future<ChatMessageModel> sendMessage(int conversationId, String content, {int? replyToMessageId});
+  Future<ChatMessageModel> updateMessage(int conversationId, int messageId, String content);
+  Future<void> deleteMessage(int conversationId, int messageId);
+
+  Future<List<NotificationItemModel>> getNotifications();
+  Future<NotificationSummaryModel> getNotificationSummary();
+  Future<void> markNotificationRead(int notificationId);
+  Future<void> markAllNotificationsRead();
 }
 
 class ApiServiceImpl implements ApiService {
@@ -93,11 +114,62 @@ class ApiServiceImpl implements ApiService {
   }
 
   @override
-  Future<UserProfile> updateProfile({String? username, String? avatarUrl}) async {
+  Future<UserProfile> updateProfile({String? username}) async {
     final response = await _dio.put('/auth/profile', data: {
       if (username != null) 'username': username,
-      if (avatarUrl != null) 'avatarUrl': avatarUrl,
     });
+    return UserProfile.fromJson(response.data);
+  }
+
+  @override
+  Future<UserProfile> updateProfileMedia({
+    Uint8List? avatarBytes,
+    Uint8List? bannerBytes,
+    required double avatarScale,
+    required double avatarOffsetX,
+    required double avatarOffsetY,
+    required double bannerScale,
+    required double bannerOffsetX,
+    required double bannerOffsetY,
+    bool removeAvatar = false,
+    bool removeBanner = false,
+  }) async {
+    final formData = FormData.fromMap({
+      'avatarScale': avatarScale,
+      'avatarOffsetX': avatarOffsetX,
+      'avatarOffsetY': avatarOffsetY,
+      'bannerScale': bannerScale,
+      'bannerOffsetX': bannerOffsetX,
+      'bannerOffsetY': bannerOffsetY,
+      'removeAvatar': removeAvatar,
+      'removeBanner': removeBanner,
+    });
+
+    if (avatarBytes != null && avatarBytes.isNotEmpty) {
+      formData.files.add(MapEntry(
+        'avatar',
+        MultipartFile.fromBytes(
+          avatarBytes,
+          filename: 'avatar_${DateTime.now().millisecondsSinceEpoch}.jpg',
+        ),
+      ));
+    }
+
+    if (bannerBytes != null && bannerBytes.isNotEmpty) {
+      formData.files.add(MapEntry(
+        'banner',
+        MultipartFile.fromBytes(
+          bannerBytes,
+          filename: 'banner_${DateTime.now().millisecondsSinceEpoch}.jpg',
+        ),
+      ));
+    }
+
+    final response = await _dio.put(
+      '/auth/profile/media',
+      data: formData,
+      options: Options(sendTimeout: const Duration(seconds: 60)),
+    );
     return UserProfile.fromJson(response.data);
   }
 
@@ -173,11 +245,25 @@ class ApiServiceImpl implements ApiService {
   }
 
   @override
-  Future<Comment> createComment(int postId, String content) async {
+  Future<Comment> createComment(int postId, String content, {int? parentCommentId}) async {
     final response = await _dio.post('/posts/$postId/comments', data: {
+      'content': content,
+      if (parentCommentId != null) 'parentCommentId': parentCommentId,
+    });
+    return Comment.fromJson(response.data);
+  }
+
+  @override
+  Future<Comment> updateComment(int postId, int commentId, String content) async {
+    final response = await _dio.put('/posts/$postId/comments/$commentId', data: {
       'content': content,
     });
     return Comment.fromJson(response.data);
+  }
+
+  @override
+  Future<void> deleteComment(int postId, int commentId) async {
+    await _dio.delete('/posts/$postId/comments/$commentId');
   }
 
   @override
@@ -288,11 +374,47 @@ class ApiServiceImpl implements ApiService {
   }
 
   @override
-  Future<ChatMessageModel> sendMessage(int conversationId, String content) async {
+  Future<ChatMessageModel> sendMessage(int conversationId, String content, {int? replyToMessageId}) async {
     final response = await _dio.post('/conversations/$conversationId/messages', data: {
+      'content': content,
+      if (replyToMessageId != null) 'replyToMessageId': replyToMessageId,
+    });
+    return ChatMessageModel.fromJson(response.data);
+  }
+
+  @override
+  Future<ChatMessageModel> updateMessage(int conversationId, int messageId, String content) async {
+    final response = await _dio.put('/conversations/$conversationId/messages/$messageId', data: {
       'content': content,
     });
     return ChatMessageModel.fromJson(response.data);
+  }
+
+  @override
+  Future<void> deleteMessage(int conversationId, int messageId) async {
+    await _dio.delete('/conversations/$conversationId/messages/$messageId');
+  }
+
+  @override
+  Future<List<NotificationItemModel>> getNotifications() async {
+    final response = await _dio.get('/notifications');
+    return (response.data as List).map((e) => NotificationItemModel.fromJson(e)).toList();
+  }
+
+  @override
+  Future<NotificationSummaryModel> getNotificationSummary() async {
+    final response = await _dio.get('/notifications/summary');
+    return NotificationSummaryModel.fromJson(response.data);
+  }
+
+  @override
+  Future<void> markNotificationRead(int notificationId) async {
+    await _dio.post('/notifications/$notificationId/read');
+  }
+
+  @override
+  Future<void> markAllNotificationsRead() async {
+    await _dio.post('/notifications/read-all');
   }
 }
 

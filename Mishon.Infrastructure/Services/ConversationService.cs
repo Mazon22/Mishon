@@ -9,10 +9,12 @@ namespace Mishon.Infrastructure.Services;
 public class ConversationService : IConversationService
 {
     private readonly MishonDbContext _context;
+    private readonly INotificationService _notificationService;
 
-    public ConversationService(MishonDbContext context)
+    public ConversationService(MishonDbContext context, INotificationService notificationService)
     {
         _context = context;
+        _notificationService = notificationService;
     }
 
     public async Task<Result<IEnumerable<ConversationDto>>> GetConversationsAsync(int userId, CancellationToken cancellationToken = default)
@@ -40,6 +42,9 @@ public class ConversationService : IConversationService
                     peer.Id,
                     peer.Username,
                     peer.AvatarUrl,
+                    peer.AvatarScale,
+                    peer.AvatarOffsetX,
+                    peer.AvatarOffsetY,
                     lastMessage?.Content,
                     lastMessage?.CreatedAt,
                     unreadCount);
@@ -99,7 +104,10 @@ public class ConversationService : IConversationService
                 conversation.Id,
                 peer.Id,
                 peer.Username,
-                peer.AvatarUrl));
+                peer.AvatarUrl,
+                peer.AvatarScale,
+                peer.AvatarOffsetX,
+                peer.AvatarOffsetY));
         }
         catch (Exception ex)
         {
@@ -129,6 +137,8 @@ public class ConversationService : IConversationService
             var messages = await _context.Messages
                 .AsNoTracking()
                 .Include(m => m.Sender)
+                .Include(m => m.ReplyToMessage)
+                    .ThenInclude(m => m!.Sender)
                 .Where(m => m.ConversationId == conversationId)
                 .OrderBy(m => m.CreatedAt)
                 .ToListAsync(cancellationToken);
@@ -136,14 +146,7 @@ public class ConversationService : IConversationService
             MarkAsRead(conversation, userId);
             await _context.SaveChangesAsync(cancellationToken);
 
-            return Result<IEnumerable<MessageDto>>.Success(messages.Select(message => new MessageDto(
-                message.Id,
-                message.ConversationId,
-                message.SenderId,
-                message.Sender.Username,
-                message.Content,
-                message.CreatedAt,
-                message.SenderId == userId)));
+            return Result<IEnumerable<MessageDto>>.Success(messages.Select(message => MapToDto(message, userId)));
         }
         catch (Exception ex)
         {
@@ -176,11 +179,27 @@ public class ConversationService : IConversationService
                 return Result<MessageDto>.Failure("Нет доступа к диалогу", ResultError.Forbidden);
             }
 
+            Message? replyToMessage = null;
+            if (dto.ReplyToMessageId.HasValue)
+            {
+                replyToMessage = await _context.Messages
+                    .Include(m => m.Sender)
+                    .FirstOrDefaultAsync(
+                        m => m.Id == dto.ReplyToMessageId.Value && m.ConversationId == conversationId,
+                        cancellationToken);
+
+                if (replyToMessage == null)
+                {
+                    return Result<MessageDto>.Failure("Сообщение для ответа не найдено", ResultError.NotFound);
+                }
+            }
+
             var message = new Message
             {
                 ConversationId = conversationId,
                 SenderId = userId,
-                Content = content
+                Content = content,
+                ReplyToMessageId = replyToMessage?.Id
             };
 
             _context.Messages.Add(message);
@@ -190,20 +209,116 @@ public class ConversationService : IConversationService
             await _context.SaveChangesAsync(cancellationToken);
 
             var sender = conversation.UserAId == userId ? conversation.UserA : conversation.UserB;
+            var peer = conversation.UserAId == userId ? conversation.UserB : conversation.UserA;
 
-            return Result<MessageDto>.Success(new MessageDto(
+            await _notificationService.CreateAsync(new CreateNotificationDto(
+                peer.Id,
+                userId,
+                replyToMessage != null ? NotificationTypes.MessageReply : NotificationTypes.Message,
+                replyToMessage != null ? "ответил(а) вам в личных сообщениях" : "отправил(а) вам сообщение",
+                null,
+                null,
+                conversationId,
                 message.Id,
-                message.ConversationId,
-                message.SenderId,
-                sender.Username,
-                message.Content,
-                message.CreatedAt,
-                true));
+                userId), cancellationToken);
+
+            message.Sender = sender;
+            message.ReplyToMessage = replyToMessage;
+
+            return Result<MessageDto>.Success(MapToDto(message, userId));
         }
         catch (Exception ex)
         {
             return Result<MessageDto>.Failure($"Ошибка отправки сообщения: {ex.Message}", ResultError.InternalError);
         }
+    }
+
+    public async Task<Result<MessageDto>> UpdateMessageAsync(int userId, int conversationId, int messageId, UpdateMessageDto dto, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var message = await _context.Messages
+                .Include(m => m.Sender)
+                .Include(m => m.ReplyToMessage)
+                    .ThenInclude(m => m!.Sender)
+                .FirstOrDefaultAsync(m => m.Id == messageId && m.ConversationId == conversationId, cancellationToken);
+
+            if (message == null)
+            {
+                return Result<MessageDto>.Failure("Сообщение не найдено", ResultError.NotFound);
+            }
+
+            if (message.SenderId != userId)
+            {
+                return Result<MessageDto>.Failure("Нет прав для редактирования сообщения", ResultError.Forbidden);
+            }
+
+            message.Content = dto.Content.Trim();
+            message.EditedAt = DateTime.UtcNow;
+
+            var conversation = await _context.Conversations.FirstOrDefaultAsync(c => c.Id == conversationId, cancellationToken);
+            if (conversation != null)
+            {
+                conversation.UpdatedAt = DateTime.UtcNow;
+            }
+
+            await _context.SaveChangesAsync(cancellationToken);
+            return Result<MessageDto>.Success(MapToDto(message, userId));
+        }
+        catch (Exception ex)
+        {
+            return Result<MessageDto>.Failure($"Ошибка обновления сообщения: {ex.Message}", ResultError.InternalError);
+        }
+    }
+
+    public async Task<Result> DeleteMessageAsync(int userId, int conversationId, int messageId, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var message = await _context.Messages
+                .FirstOrDefaultAsync(m => m.Id == messageId && m.ConversationId == conversationId, cancellationToken);
+
+            if (message == null)
+            {
+                return Result.Failure("Сообщение не найдено", ResultError.NotFound);
+            }
+
+            if (message.SenderId != userId)
+            {
+                return Result.Failure("Нет прав для удаления сообщения", ResultError.Forbidden);
+            }
+
+            _context.Messages.Remove(message);
+
+            var conversation = await _context.Conversations.FirstOrDefaultAsync(c => c.Id == conversationId, cancellationToken);
+            if (conversation != null)
+            {
+                conversation.UpdatedAt = DateTime.UtcNow;
+            }
+
+            await _context.SaveChangesAsync(cancellationToken);
+            return Result.Success();
+        }
+        catch (Exception ex)
+        {
+            return Result.Failure($"Ошибка удаления сообщения: {ex.Message}", ResultError.InternalError);
+        }
+    }
+
+    private static MessageDto MapToDto(Message message, int userId)
+    {
+        return new MessageDto(
+            message.Id,
+            message.ConversationId,
+            message.SenderId,
+            message.Sender.Username,
+            message.Content,
+            message.CreatedAt,
+            message.EditedAt,
+            message.SenderId == userId,
+            message.ReplyToMessageId,
+            message.ReplyToMessage?.Sender.Username,
+            message.ReplyToMessage?.Content);
     }
 
     private async Task<bool> AreFriendsAsync(int userId, int otherUserId, CancellationToken cancellationToken)
