@@ -1,6 +1,6 @@
 # Mishon
 
-Mishon is a small social network project with one backend, one database, and an Android client.
+Mishon is a small social network project with one backend, one database, and Flutter clients for Android and web.
 
 The repository contains:
 
@@ -8,7 +8,7 @@ The repository contains:
 - `Mishon.Application` - service contracts and DTOs
 - `Mishon.Domain` - domain entities
 - `Mishon.Infrastructure` - EF Core, data access, services, migrations
-- `mishon_app` - Flutter Android client
+- `mishon_app` - Flutter client for Android and web
 
 ## What works
 
@@ -66,12 +66,19 @@ dotnet ef database update --project .\Mishon.Infrastructure\ --startup-project .
 dotnet run --project .\Mishon.API\
 ```
 
-## Android app setup
+## Flutter app setup
 
 ```powershell
 cd .\mishon_app\
 flutter pub get
 flutter run
+```
+
+Run in Chrome:
+
+```powershell
+cd .\mishon_app\
+flutter run -d chrome
 ```
 
 Debug APK build:
@@ -88,11 +95,12 @@ cd .\mishon_app\
 flutter build apk --release
 ```
 
-## API address for Android
+## API address
 
 The Flutter app uses `mishon_app/lib/core/constants/api_constants.dart`.
 
-- Android emulator: `http://10.0.2.2:5000/api`
+- Android emulator: `http://10.0.2.2:5097/api`
+- web: `http://localhost:5097/api`
 - physical phone: replace with your PC local IP
 
 If you run the app on a real device, backend and phone must be in the same network.
@@ -117,6 +125,6 @@ The application is built around one shared database. Feed, profiles, comments, f
 - Keep `Jwt__Key` long enough for production use.
 - Before the first launch on a phone, make sure the backend is reachable from the device.
 
-## Current focus
+## Current state
 
-This repository is now trimmed for Android. Old duplicate Flutter scaffolding and unused desktop/web targets were removed from the root project.
+The root duplicate Flutter template was removed. The working client now lives in `mishon_app` and can be launched on Android or in the browser.
