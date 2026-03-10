@@ -1,10 +1,12 @@
 import 'dart:typed_data';
+
 import 'package:dio/dio.dart';
+
 import '../models/auth_model.dart';
 import '../models/post_model.dart';
+import '../models/social_models.dart';
 
 abstract class ApiService {
-  // Auth
   Future<AuthResponse> register(String username, String email, String password);
   Future<AuthResponse> login(String email, String password);
   Future<AuthResponse> refreshToken(String refreshToken);
@@ -13,18 +15,16 @@ abstract class ApiService {
   Future<UserProfile> updateProfile({String? username, String? avatarUrl});
   Future<void> logout();
 
-  // Posts
   Future<PagedResponse<Post>> getFeed({int page = 1, int pageSize = 10});
+  Future<List<Post>> getUserPosts(int userId, {int page = 1, int pageSize = 20});
   Future<Post> createPost(String content, String? imageUrl, Uint8List? imageBytes);
   Future<Post?> getPost(int postId);
   Future<Post> toggleLike(int postId);
   Future<void> deletePost(int postId);
 
-  // Comments
   Future<List<Comment>> getComments(int postId);
   Future<Comment> createComment(int postId, String content);
 
-  // Follows
   Future<ToggleFollowResponse> toggleFollow(int userId);
   Future<List<Follow>> getFollowing(int userId);
   Future<List<Follow>> getFollowers(int userId);
@@ -32,6 +32,20 @@ abstract class ApiService {
   Future<List<Follow>> getFollowersList();
   Future<bool> isFollowing(int userId);
   Future<int> getFollowersCount(int userId);
+
+  Future<List<DiscoverUser>> getUsers({String? query, int limit = 24});
+  Future<List<FriendUser>> getFriends();
+  Future<List<FriendRequestModel>> getIncomingFriendRequests();
+  Future<List<FriendRequestModel>> getOutgoingFriendRequests();
+  Future<void> sendFriendRequest(int userId);
+  Future<void> acceptFriendRequest(int requestId);
+  Future<void> deleteFriendRequest(int requestId);
+  Future<void> removeFriend(int userId);
+
+  Future<List<ConversationModel>> getConversations();
+  Future<DirectConversationModel> getOrCreateConversation(int userId);
+  Future<List<ChatMessageModel>> getMessages(int conversationId);
+  Future<ChatMessageModel> sendMessage(int conversationId, String content);
 }
 
 class ApiServiceImpl implements ApiService {
@@ -40,8 +54,7 @@ class ApiServiceImpl implements ApiService {
   ApiServiceImpl(this._dio);
 
   @override
-  Future<AuthResponse> register(
-      String username, String email, String password) async {
+  Future<AuthResponse> register(String username, String email, String password) async {
     final response = await _dio.post('/auth/register', data: {
       'username': username,
       'email': email,
@@ -80,8 +93,7 @@ class ApiServiceImpl implements ApiService {
   }
 
   @override
-  Future<UserProfile> updateProfile(
-      {String? username, String? avatarUrl}) async {
+  Future<UserProfile> updateProfile({String? username, String? avatarUrl}) async {
     final response = await _dio.put('/auth/profile', data: {
       if (username != null) 'username': username,
       if (avatarUrl != null) 'avatarUrl': avatarUrl,
@@ -107,12 +119,18 @@ class ApiServiceImpl implements ApiService {
   }
 
   @override
-  Future<Post> createPost(String content, String? imageUrl, Uint8List? imageBytes) async {
-    final formData = FormData.fromMap({
-      'content': content,
+  Future<List<Post>> getUserPosts(int userId, {int page = 1, int pageSize = 20}) async {
+    final response = await _dio.get('/posts/user/$userId', queryParameters: {
+      'page': page,
+      'pageSize': pageSize,
     });
+    return (response.data as List).map((e) => Post.fromJson(e)).toList();
+  }
 
-    // Добавляем изображение, если есть
+  @override
+  Future<Post> createPost(String content, String? imageUrl, Uint8List? imageBytes) async {
+    final formData = FormData.fromMap({'content': content});
+
     if (imageBytes != null && imageBytes.isNotEmpty) {
       formData.files.add(MapEntry(
         'image',
@@ -123,13 +141,10 @@ class ApiServiceImpl implements ApiService {
       ));
     }
 
-    // Отправляем без заголовка Content-Type - Dio установит multipart/form-data автоматически
     final response = await _dio.post(
       '/posts',
       data: formData,
-      options: Options(
-        sendTimeout: Duration(seconds: 60), // Увеличиваем для загрузки файлов
-      ),
+      options: Options(sendTimeout: const Duration(seconds: 60)),
     );
     return Post.fromJson(response.data);
   }
@@ -205,6 +220,79 @@ class ApiServiceImpl implements ApiService {
   Future<int> getFollowersCount(int userId) async {
     final response = await _dio.get('/follows/$userId/followers/count');
     return response.data as int;
+  }
+
+  @override
+  Future<List<DiscoverUser>> getUsers({String? query, int limit = 24}) async {
+    final response = await _dio.get('/users', queryParameters: {
+      if (query != null && query.trim().isNotEmpty) 'query': query.trim(),
+      'limit': limit,
+    });
+    return (response.data as List).map((e) => DiscoverUser.fromJson(e)).toList();
+  }
+
+  @override
+  Future<List<FriendUser>> getFriends() async {
+    final response = await _dio.get('/friends');
+    return (response.data as List).map((e) => FriendUser.fromJson(e)).toList();
+  }
+
+  @override
+  Future<List<FriendRequestModel>> getIncomingFriendRequests() async {
+    final response = await _dio.get('/friends/requests/incoming');
+    return (response.data as List).map((e) => FriendRequestModel.fromJson(e)).toList();
+  }
+
+  @override
+  Future<List<FriendRequestModel>> getOutgoingFriendRequests() async {
+    final response = await _dio.get('/friends/requests/outgoing');
+    return (response.data as List).map((e) => FriendRequestModel.fromJson(e)).toList();
+  }
+
+  @override
+  Future<void> sendFriendRequest(int userId) async {
+    await _dio.post('/friends/requests/$userId');
+  }
+
+  @override
+  Future<void> acceptFriendRequest(int requestId) async {
+    await _dio.post('/friends/requests/$requestId/accept');
+  }
+
+  @override
+  Future<void> deleteFriendRequest(int requestId) async {
+    await _dio.delete('/friends/requests/$requestId');
+  }
+
+  @override
+  Future<void> removeFriend(int userId) async {
+    await _dio.delete('/friends/$userId');
+  }
+
+  @override
+  Future<List<ConversationModel>> getConversations() async {
+    final response = await _dio.get('/conversations');
+    return (response.data as List).map((e) => ConversationModel.fromJson(e)).toList();
+  }
+
+  @override
+  Future<DirectConversationModel> getOrCreateConversation(int userId) async {
+    final response = await _dio.post('/conversations/direct/$userId');
+    return DirectConversationModel.fromJson(response.data);
+  }
+
+  @override
+  Future<List<ChatMessageModel>> getMessages(int conversationId) async {
+    final response = await _dio.get('/conversations/$conversationId/messages');
+    return (response.data as List).map((e) => ChatMessageModel.fromJson(e)).toList();
+  }
+
+  @override
+  Future<ChatMessageModel> sendMessage(int conversationId, String content) async {
+    final response = await _dio.post('/conversations/$conversationId/messages', data: {
+      'content': content,
+    });
+    return ChatMessageModel.fromJson(response.data);
   }
 }
 

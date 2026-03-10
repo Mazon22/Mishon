@@ -1,73 +1,80 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:mishon_app/core/network/exceptions.dart';
+import 'package:mishon_app/core/widgets/app_shell.dart';
 import 'package:mishon_app/core/widgets/post_card.dart';
 import 'package:mishon_app/core/widgets/states.dart';
 import 'package:mishon_app/features/comments/screens/comments_screen.dart';
-import '../providers/feed_provider.dart';
-import '../../auth/providers/auth_provider.dart';
-import '../../../core/network/exceptions.dart';
+import 'package:mishon_app/features/feed/providers/feed_provider.dart';
 
-class FeedScreen extends ConsumerWidget {
+import '../../auth/providers/auth_provider.dart';
+
+class FeedScreen extends ConsumerStatefulWidget {
   const FeedScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<FeedScreen> createState() => _FeedScreenState();
+}
+
+class _FeedScreenState extends ConsumerState<FeedScreen> {
+  Timer? _poller;
+
+  @override
+  void initState() {
+    super.initState();
+    _poller = Timer.periodic(const Duration(seconds: 12), (_) {
+      ref.read(feedNotifierProvider.notifier).refresh();
+    });
+  }
+
+  @override
+  void dispose() {
+    _poller?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final feedState = ref.watch(feedNotifierProvider);
     final userIdAsync = ref.watch(userIdProvider);
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Mishon'),
-        centerTitle: true,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.person_outline),
-            onPressed: () {
-              final currentUserId = userIdAsync.value;
-              if (currentUserId != null) {
-                context.go('/profile/$currentUserId');
-              }
-            },
-            tooltip: 'Профиль',
-          ),
-          IconButton(
-            icon: const Icon(Icons.add_box_outlined),
-            onPressed: () => context.go('/create-post'),
-            tooltip: 'Создать пост',
-          ),
-        ],
+    return AppShell(
+      currentSection: AppSection.feed,
+      title: 'Лента',
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: () => context.go('/create-post'),
+        icon: const Icon(Icons.add),
+        label: const Text('Пост'),
       ),
-      body: feedState.when(
+      child: feedState.when(
         data: (posts) => posts.isEmpty
-            ? _buildEmptyState(ref)
+            ? _buildEmptyState()
             : RefreshIndicator(
                 onRefresh: () => ref.read(feedNotifierProvider.notifier).refresh(),
                 child: ListView.builder(
                   itemCount: posts.length,
-                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 96),
                   itemBuilder: (context, index) {
                     final post = posts[index];
                     final currentUserId = userIdAsync.value;
                     final isOwnPost = currentUserId != null && currentUserId == post.userId;
 
                     return Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 12),
-                      child: ConstrainedBox(
-                        constraints: const BoxConstraints(maxWidth: 680),
-                        child: PostCard(
-                          post: post,
-                          isOwnPost: isOwnPost,
-                          onLike: () => ref
-                              .read(feedNotifierProvider.notifier)
-                              .toggleLike(post.id),
-                          onFollow: () => ref
-                              .read(feedNotifierProvider.notifier)
-                              .toggleFollow(post.userId),
-                          onComment: () => context.push('/comments', extra: CommentsScreenArgs(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: PostCard(
+                        post: post,
+                        isOwnPost: isOwnPost,
+                        onLike: () => ref.read(feedNotifierProvider.notifier).toggleLike(post.id),
+                        onFollow: () => ref.read(feedNotifierProvider.notifier).toggleFollow(post.userId),
+                        onComment: () => context.push(
+                          '/comments',
+                          extra: CommentsScreenArgs(
                             postId: post.id,
                             postUserId: post.userId,
-                          )),
+                          ),
                         ),
                       ),
                     );
@@ -75,34 +82,29 @@ class FeedScreen extends ConsumerWidget {
                 ),
               ),
         loading: () => const LoadingState(),
-        error: (error, stack) => _buildErrorState(ref, error),
+        error: (error, stack) => ErrorState(
+          message: _getErrorMessage(error),
+          onRetry: () => ref.read(feedNotifierProvider.notifier).refresh(),
+        ),
       ),
     );
   }
 
-  Widget _buildEmptyState(WidgetRef ref) {
-    return EmptyState(
+  Widget _buildEmptyState() {
+    return const EmptyState(
       icon: Icons.feed_outlined,
-      title: 'Лента пуста',
-      subtitle: 'Подпишитесь на пользователей,\nчтобы видеть их посты',
-      actionText: 'Обновить',
-      onAction: () => ref.read(feedNotifierProvider.notifier).refresh(),
+      title: 'Лента пока пустая',
+      subtitle: 'Подпишитесь на людей или создайте первый пост.',
     );
   }
 
-  Widget _buildErrorState(WidgetRef ref, Object error) {
-    String errorMessage;
+  String _getErrorMessage(Object error) {
     if (error is String) {
-      errorMessage = error;
-    } else if (error is OfflineException) {
-      errorMessage = 'Нет подключения к интернету';
-    } else {
-      errorMessage = 'Ошибка загрузки ленты';
+      return error;
     }
-
-    return ErrorState(
-      message: errorMessage,
-      onRetry: () => ref.read(feedNotifierProvider.notifier).refresh(),
-    );
+    if (error is OfflineException) {
+      return 'Нет подключения к интернету';
+    }
+    return 'Ошибка загрузки ленты';
   }
 }

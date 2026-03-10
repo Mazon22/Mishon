@@ -12,6 +12,10 @@ public class MishonDbContext : DbContext
     public DbSet<Like> Likes => Set<Like>();
     public DbSet<Follow> Follows => Set<Follow>();
     public DbSet<Comment> Comments => Set<Comment>();
+    public DbSet<FriendRequest> FriendRequests => Set<FriendRequest>();
+    public DbSet<Friendship> Friendships => Set<Friendship>();
+    public DbSet<Conversation> Conversations => Set<Conversation>();
+    public DbSet<Message> Messages => Set<Message>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -84,6 +88,66 @@ public class MishonDbContext : DbContext
                   .WithMany(p => p.Comments)
                   .HasForeignKey(e => e.PostId)
                   .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<FriendRequest>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.HasIndex(e => new { e.SenderId, e.ReceiverId }).IsUnique();
+            entity.HasIndex(e => e.CreatedAt);
+            entity.HasOne(e => e.Sender)
+                  .WithMany(u => u.SentFriendRequests)
+                  .HasForeignKey(e => e.SenderId)
+                  .OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(e => e.Receiver)
+                  .WithMany(u => u.ReceivedFriendRequests)
+                  .HasForeignKey(e => e.ReceiverId)
+                  .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<Friendship>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.HasIndex(e => new { e.UserAId, e.UserBId }).IsUnique();
+            entity.HasIndex(e => e.CreatedAt);
+            entity.HasOne(e => e.UserA)
+                  .WithMany(u => u.FriendshipsA)
+                  .HasForeignKey(e => e.UserAId)
+                  .OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(e => e.UserB)
+                  .WithMany(u => u.FriendshipsB)
+                  .HasForeignKey(e => e.UserBId)
+                  .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<Conversation>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.HasIndex(e => new { e.UserAId, e.UserBId }).IsUnique();
+            entity.HasIndex(e => e.UpdatedAt);
+            entity.HasOne(e => e.UserA)
+                  .WithMany(u => u.ConversationsA)
+                  .HasForeignKey(e => e.UserAId)
+                  .OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(e => e.UserB)
+                  .WithMany(u => u.ConversationsB)
+                  .HasForeignKey(e => e.UserBId)
+                  .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<Message>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Content).IsRequired().HasMaxLength(1000);
+            entity.HasIndex(e => new { e.ConversationId, e.CreatedAt });
+            entity.HasOne(e => e.Conversation)
+                  .WithMany(c => c.Messages)
+                  .HasForeignKey(e => e.ConversationId)
+                  .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(e => e.Sender)
+                  .WithMany(u => u.SentMessages)
+                  .HasForeignKey(e => e.SenderId)
+                  .OnDelete(DeleteBehavior.Restrict);
         });
     }
 }

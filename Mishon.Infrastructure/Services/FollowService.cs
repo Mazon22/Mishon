@@ -24,30 +24,28 @@ public class FollowService : IFollowService
         try
         {
             if (followerId == followingId)
+            {
                 return Result<ToggleFollowResponseDto>.Failure("Нельзя подписаться на себя", ResultError.BadRequest);
+            }
 
             var targetUser = await _userRepository.GetByIdAsync(followingId);
             if (targetUser == null)
+            {
                 return Result<ToggleFollowResponseDto>.Failure("Пользователь не найден", ResultError.NotFound);
+            }
 
             var existingFollow = await _followRepository.GetAsync(followerId, followingId);
-
-            bool isFollowing;
+            var isFollowing = existingFollow == null;
 
             if (existingFollow != null)
             {
-                // Unfollow
                 await _followRepository.RemoveAsync(existingFollow);
-                isFollowing = false;
             }
             else
             {
-                // Follow
                 await _followRepository.AddAsync(new Follow { FollowerId = followerId, FollowingId = followingId });
-                isFollowing = true;
             }
 
-            // Получаем количество подписчиков
             var followersCount = await _context.Follows
                 .AsNoTracking()
                 .CountAsync(f => f.FollowingId == followingId);
@@ -60,18 +58,15 @@ public class FollowService : IFollowService
         }
     }
 
-    public async Task<Result<IEnumerable<UserFollowDto>>> GetFollowingsAsync(int userId)
+    public async Task<Result<IEnumerable<UserFollowDto>>> GetFollowingsAsync(int userId, int currentUserId)
     {
         try
         {
             var users = await _followRepository.GetFollowingsAsync(userId);
-            // Получаем ID тех, на кого подписан текущий пользователь
-            var currentUserId = userId; // Для своего профиля
             var myFollowingIds = await _followRepository.GetFollowingIdsAsync(currentUserId);
-            
+
             return Result<IEnumerable<UserFollowDto>>.Success(
-                users.Select(u => new UserFollowDto(u.Id, u.Username, u.AvatarUrl, myFollowingIds.Contains(u.Id)))
-            );
+                users.Select(u => new UserFollowDto(u.Id, u.Username, u.AvatarUrl, myFollowingIds.Contains(u.Id))));
         }
         catch (Exception ex)
         {
@@ -79,17 +74,15 @@ public class FollowService : IFollowService
         }
     }
 
-    public async Task<Result<IEnumerable<UserFollowDto>>> GetFollowersAsync(int userId)
+    public async Task<Result<IEnumerable<UserFollowDto>>> GetFollowersAsync(int userId, int currentUserId)
     {
         try
         {
             var users = await _followRepository.GetFollowersAsync(userId);
-            // Получаем ID тех, на кого подписан текущий пользователь
-            var myFollowingIds = await _followRepository.GetFollowingIdsAsync(userId);
-            
+            var myFollowingIds = await _followRepository.GetFollowingIdsAsync(currentUserId);
+
             return Result<IEnumerable<UserFollowDto>>.Success(
-                users.Select(u => new UserFollowDto(u.Id, u.Username, u.AvatarUrl, myFollowingIds.Contains(u.Id)))
-            );
+                users.Select(u => new UserFollowDto(u.Id, u.Username, u.AvatarUrl, myFollowingIds.Contains(u.Id))));
         }
         catch (Exception ex)
         {
@@ -101,8 +94,7 @@ public class FollowService : IFollowService
     {
         try
         {
-            var isFollowing = await _followRepository.IsFollowingAsync(followerId, followingId);
-            return Result<bool>.Success(isFollowing);
+            return Result<bool>.Success(await _followRepository.IsFollowingAsync(followerId, followingId));
         }
         catch (Exception ex)
         {
@@ -117,6 +109,7 @@ public class FollowService : IFollowService
             var count = await _context.Follows
                 .AsNoTracking()
                 .CountAsync(f => f.FollowingId == userId);
+
             return Result<int>.Success(count);
         }
         catch (Exception ex)

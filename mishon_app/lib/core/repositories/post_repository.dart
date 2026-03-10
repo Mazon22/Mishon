@@ -1,11 +1,13 @@
 import 'dart:typed_data';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:logger/logger.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
+
 import 'package:mishon_app/core/models/post_model.dart';
 import 'package:mishon_app/core/network/api_service.dart';
-import 'package:mishon_app/core/repositories/auth_repository.dart';
 import 'package:mishon_app/core/network/exceptions.dart';
-import 'package:logger/logger.dart';
+import 'package:mishon_app/core/repositories/auth_repository.dart';
 
 part 'post_repository.g.dart';
 
@@ -46,9 +48,7 @@ class PostRepository {
 
   Future<List<Post>> getUserPosts(int userId, {int page = 1, int pageSize = 20}) async {
     try {
-      final response = await _apiService.getFeed(page: page, pageSize: pageSize);
-      // Фильтруем посты по userId
-      return response.items.where((post) => post.userId == userId).toList();
+      return await _apiService.getUserPosts(userId, page: page, pageSize: pageSize);
     } on ApiException catch (e) {
       _logger.e('Get user posts failed: ${e.apiError.message}');
       rethrow;

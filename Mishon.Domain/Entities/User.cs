@@ -17,4 +17,11 @@ public class User
     public ICollection<Comment> Comments { get; set; } = new List<Comment>();
     public ICollection<Follow> Followers { get; set; } = new List<Follow>();
     public ICollection<Follow> Followings { get; set; } = new List<Follow>();
+    public ICollection<FriendRequest> SentFriendRequests { get; set; } = new List<FriendRequest>();
+    public ICollection<FriendRequest> ReceivedFriendRequests { get; set; } = new List<FriendRequest>();
+    public ICollection<Friendship> FriendshipsA { get; set; } = new List<Friendship>();
+    public ICollection<Friendship> FriendshipsB { get; set; } = new List<Friendship>();
+    public ICollection<Conversation> ConversationsA { get; set; } = new List<Conversation>();
+    public ICollection<Conversation> ConversationsB { get; set; } = new List<Conversation>();
+    public ICollection<Message> SentMessages { get; set; } = new List<Message>();
 }

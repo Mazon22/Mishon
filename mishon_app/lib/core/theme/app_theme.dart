@@ -38,7 +38,7 @@ class AppTheme {
   AppTheme._();
 
   static ThemeData get lightTheme {
-    final colorScheme = ColorScheme(
+    const colorScheme = ColorScheme(
       brightness: Brightness.light,
       primary: AppColors.primary,
       onPrimary: Colors.white,
@@ -57,7 +57,7 @@ class AppTheme {
       surfaceContainerHighest: AppColors.surfaceVariant,
       onSurfaceVariant: AppColors.textSecondary,
       outline: AppColors.border,
-      shadow: const Color(0x1A000000),
+      shadow: Color(0x1A000000),
     );
 
     return ThemeData(

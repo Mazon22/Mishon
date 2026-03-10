@@ -1,16 +1,28 @@
+import 'package:flutter/foundation.dart';
+
 class ApiConstants {
-  // Development: localhost for Windows/Desktop
-  static const String _devUrl = 'http://localhost:5097/api';
+  static const String _localhostUrl = 'http://localhost:5097/api';
+  static const String _androidEmulatorUrl = 'http://10.0.2.2:5097/api';
+  static const String _defaultProdUrl = 'https://api.mishon.com/api';
 
-  // Production: замените на ваш реальный URL
-  static const String _prodUrl = 'https://api.mishon.com/api';
-
-  // Определяем текущий URL на основе флага production
   static String get baseUrl {
-    // const bool.fromEnvironment('dart.vm.product') true для production сборки
-    return const bool.fromEnvironment('dart.vm.product')
-        ? _prodUrl
-        : _devUrl;
+    const envUrl = String.fromEnvironment('API_BASE_URL');
+    if (envUrl.isNotEmpty) {
+      return envUrl;
+    }
+
+    if (const bool.fromEnvironment('dart.vm.product')) {
+      return _defaultProdUrl;
+    }
+
+    if (kIsWeb) {
+      return _localhostUrl;
+    }
+
+    return switch (defaultTargetPlatform) {
+      TargetPlatform.android => _androidEmulatorUrl,
+      _ => _localhostUrl,
+    };
   }
 
   static const String tokenKey = 'jwt_token';
@@ -18,7 +30,6 @@ class ApiConstants {
   static const String userIdKey = 'user_id';
   static const String tokenExpiryKey = 'token_expiry';
 
-  // Timeout настройки
   static const Duration connectTimeout = Duration(seconds: 10);
   static const Duration receiveTimeout = Duration(seconds: 15);
   static const Duration sendTimeout = Duration(seconds: 10);

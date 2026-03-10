@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -30,29 +32,41 @@ class _CommentsScreenState extends ConsumerState<CommentsScreen> {
   final _commentController = TextEditingController();
   final _focusNode = FocusNode();
   final _scrollController = ScrollController();
+  Timer? _poller;
   bool _isLoading = false;
 
   @override
   void initState() {
     super.initState();
+    _commentController.addListener(_onCommentChanged);
     _loadComments();
+    _poller = Timer.periodic(const Duration(seconds: 8), (_) => _loadComments());
   }
 
   @override
   void dispose() {
+    _poller?.cancel();
+    _commentController.removeListener(_onCommentChanged);
     _commentController.dispose();
     _focusNode.dispose();
     _scrollController.dispose();
     super.dispose();
   }
 
+  void _onCommentChanged() {
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
   Future<void> _loadComments() async {
     setState(() => _isLoading = true);
     try {
-      final repository = ref.read(postRepositoryProvider);
-      await repository.getComments(widget.args.postId);
+      await ref.read(commentsProvider(widget.args.postId).notifier).refresh();
     } finally {
-      setState(() => _isLoading = false);
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
     }
   }
 
@@ -161,7 +175,7 @@ class _CommentsScreenState extends ConsumerState<CommentsScreen> {
               color: Colors.white,
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withOpacity(0.05),
+                  color: Colors.black.withValues(alpha: 0.05),
                   blurRadius: 10,
                   offset: const Offset(0, -2),
                 ),

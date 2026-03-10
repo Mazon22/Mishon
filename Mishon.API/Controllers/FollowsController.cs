@@ -20,13 +20,9 @@ public class FollowsController : ControllerBase
 
     [HttpPost("{userId:int}")]
     [ProducesResponseType(typeof(ToggleFollowResponseDto), StatusCodes.Status200OK)]
-    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
-    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
     public async Task<ActionResult<ToggleFollowResponseDto>> ToggleFollow(int userId)
     {
-        var currentUserId = GetUserId();
-        var result = await _followService.ToggleFollowAsync(currentUserId, userId);
-
+        var result = await _followService.ToggleFollowAsync(GetUserId(), userId);
         if (!result.IsSuccess)
         {
             return result.ResultError switch
@@ -44,8 +40,7 @@ public class FollowsController : ControllerBase
     [ProducesResponseType(typeof(IEnumerable<UserFollowDto>), StatusCodes.Status200OK)]
     public async Task<ActionResult<IEnumerable<UserFollowDto>>> GetFollowing(int userId)
     {
-        var result = await _followService.GetFollowingsAsync(userId);
-
+        var result = await _followService.GetFollowingsAsync(userId, GetUserId());
         if (!result.IsSuccess)
         {
             return StatusCode(500, new { error = result.Error });
@@ -58,8 +53,7 @@ public class FollowsController : ControllerBase
     [ProducesResponseType(typeof(IEnumerable<UserFollowDto>), StatusCodes.Status200OK)]
     public async Task<ActionResult<IEnumerable<UserFollowDto>>> GetFollowers(int userId)
     {
-        var result = await _followService.GetFollowersAsync(userId);
-
+        var result = await _followService.GetFollowersAsync(userId, GetUserId());
         if (!result.IsSuccess)
         {
             return StatusCode(500, new { error = result.Error });
@@ -72,9 +66,8 @@ public class FollowsController : ControllerBase
     [ProducesResponseType(typeof(IEnumerable<UserFollowDto>), StatusCodes.Status200OK)]
     public async Task<ActionResult<IEnumerable<UserFollowDto>>> GetMyFollowings()
     {
-        var userId = GetUserId();
-        var result = await _followService.GetFollowingsAsync(userId);
-
+        var currentUserId = GetUserId();
+        var result = await _followService.GetFollowingsAsync(currentUserId, currentUserId);
         if (!result.IsSuccess)
         {
             return StatusCode(500, new { error = result.Error });
@@ -87,9 +80,8 @@ public class FollowsController : ControllerBase
     [ProducesResponseType(typeof(IEnumerable<UserFollowDto>), StatusCodes.Status200OK)]
     public async Task<ActionResult<IEnumerable<UserFollowDto>>> GetMyFollowers()
     {
-        var userId = GetUserId();
-        var result = await _followService.GetFollowersAsync(userId);
-
+        var currentUserId = GetUserId();
+        var result = await _followService.GetFollowersAsync(currentUserId, currentUserId);
         if (!result.IsSuccess)
         {
             return StatusCode(500, new { error = result.Error });
@@ -102,9 +94,7 @@ public class FollowsController : ControllerBase
     [ProducesResponseType(typeof(bool), StatusCodes.Status200OK)]
     public async Task<ActionResult<bool>> IsFollowing(int userId)
     {
-        var currentUserId = GetUserId();
-        var result = await _followService.IsFollowingAsync(currentUserId, userId);
-
+        var result = await _followService.IsFollowingAsync(GetUserId(), userId);
         if (!result.IsSuccess)
         {
             return StatusCode(500, new { error = result.Error });
@@ -118,7 +108,6 @@ public class FollowsController : ControllerBase
     public async Task<ActionResult<int>> GetFollowersCount(int userId)
     {
         var result = await _followService.GetFollowersCountAsync(userId);
-
         if (!result.IsSuccess)
         {
             return StatusCode(500, new { error = result.Error });

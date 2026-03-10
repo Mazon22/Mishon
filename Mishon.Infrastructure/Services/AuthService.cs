@@ -30,10 +30,14 @@ public class AuthService : IAuthService
         try
         {
             if (await _userRepository.ExistsByEmailAsync(dto.Email))
-                return Result<AuthResponseDto>.Failure("Email уже используется", ResultError.Conflict);
+            {
+                return Result<AuthResponseDto>.Failure("Email already in use", ResultError.Conflict);
+            }
 
             if (await _userRepository.ExistsByUsernameAsync(dto.Username))
-                return Result<AuthResponseDto>.Failure("Имя пользователя уже занят", ResultError.Conflict);
+            {
+                return Result<AuthResponseDto>.Failure("Username already taken", ResultError.Conflict);
+            }
 
             var user = new User
             {
@@ -43,6 +47,7 @@ public class AuthService : IAuthService
             };
 
             await _userRepository.CreateAsync(user);
+
             var tokens = GenerateTokens(user);
             user.RefreshToken = tokens.RefreshToken;
             user.RefreshTokenExpiry = tokens.RefreshTokenExpiry;
@@ -54,16 +59,15 @@ public class AuthService : IAuthService
                 user.Email,
                 tokens.AccessToken,
                 tokens.RefreshToken,
-                tokens.RefreshTokenExpiry
-            ));
+                tokens.RefreshTokenExpiry));
         }
-        catch (DbUpdateException ex)
+        catch (DbUpdateException)
         {
-            return Result<AuthResponseDto>.Failure("Ошибка базы данных", ResultError.InternalError);
+            return Result<AuthResponseDto>.Failure("Database error", ResultError.InternalError);
         }
         catch (Exception ex)
         {
-            return Result<AuthResponseDto>.Failure($"Ошибка регистрации: {ex.Message}", ResultError.InternalError);
+            return Result<AuthResponseDto>.Failure($"Registration error: {ex.Message}", ResultError.InternalError);
         }
     }
 
@@ -74,13 +78,13 @@ public class AuthService : IAuthService
             var user = await _userRepository.GetByEmailAsync(dto.Email);
             if (user == null)
             {
-                // To prevent timing attacks, still hash a dummy password
-                BCrypt.Net.BCrypt.Verify(dto.Password, "$2a$12$dummyhashforsecurity");
-                return Result<AuthResponseDto>.Failure("Неверный email или пароль", ResultError.Unauthorized);
+                return Result<AuthResponseDto>.Failure("Invalid email or password", ResultError.Unauthorized);
             }
 
             if (!BCrypt.Net.BCrypt.Verify(dto.Password, user.PasswordHash))
-                return Result<AuthResponseDto>.Failure("Неверный email или пароль", ResultError.Unauthorized);
+            {
+                return Result<AuthResponseDto>.Failure("Invalid email or password", ResultError.Unauthorized);
+            }
 
             var tokens = GenerateTokens(user);
             user.RefreshToken = tokens.RefreshToken;
@@ -93,12 +97,11 @@ public class AuthService : IAuthService
                 user.Email,
                 tokens.AccessToken,
                 tokens.RefreshToken,
-                tokens.RefreshTokenExpiry
-            ));
+                tokens.RefreshTokenExpiry));
         }
         catch (Exception ex)
         {
-            return Result<AuthResponseDto>.Failure($"Ошибка входа: {ex.Message}", ResultError.InternalError);
+            return Result<AuthResponseDto>.Failure($"Login error: {ex.Message}", ResultError.InternalError);
         }
     }
 
@@ -106,13 +109,12 @@ public class AuthService : IAuthService
     {
         try
         {
-            var user = await _context.Users
-                .FirstOrDefaultAsync(u => u.RefreshToken == refreshToken);
-
+            var user = await _context.Users.FirstOrDefaultAsync(u => u.RefreshToken == refreshToken);
             if (user == null || user.RefreshTokenExpiry <= DateTime.UtcNow)
-                return Result<AuthResponseDto>.Failure("Неверный или истекший refresh token", ResultError.Unauthorized);
+            {
+                return Result<AuthResponseDto>.Failure("Invalid or expired refresh token", ResultError.Unauthorized);
+            }
 
-            // Clear the old refresh token to prevent reuse
             user.RefreshToken = null;
             user.RefreshTokenExpiry = null;
             await _userRepository.UpdateAsync(user);
@@ -128,82 +130,22 @@ public class AuthService : IAuthService
                 user.Email,
                 tokens.AccessToken,
                 tokens.RefreshToken,
-                tokens.RefreshTokenExpiry
-            ));
+                tokens.RefreshTokenExpiry));
         }
         catch (Exception ex)
         {
-            return Result<AuthResponseDto>.Failure($"Ошибка обновления токена: {ex.Message}", ResultError.InternalError);
+            return Result<AuthResponseDto>.Failure($"Refresh token error: {ex.Message}", ResultError.InternalError);
         }
     }
 
     public async Task<Result<UserProfileDto>> GetProfileAsync(int userId)
     {
-        try
-        {
-            var user = await _userRepository.GetByIdAsync(userId);
-            if (user == null)
-                return Result<UserProfileDto>.Failure("Пользователь не найден", ResultError.NotFound);
-
-            var followersCount = await _context.Follows
-                .AsNoTracking()
-                .CountAsync(f => f.FollowingId == userId);
-
-            var followingCount = await _context.Follows
-                .AsNoTracking()
-                .CountAsync(f => f.FollowerId == userId);
-
-            return Result<UserProfileDto>.Success(new UserProfileDto(
-                user.Id,
-                user.Username,
-                user.Email,
-                user.AvatarUrl,
-                user.CreatedAt,
-                followersCount,
-                followingCount
-            ));
-        }
-        catch (Exception ex)
-        {
-            return Result<UserProfileDto>.Failure($"Ошибка получения профиля: {ex.Message}", ResultError.InternalError);
-        }
+        return await GetProfileInternalAsync(userId, currentUserId: null);
     }
 
     public async Task<Result<UserProfileDto>> GetProfileForUserAsync(int userId, int currentUserId)
     {
-        try
-        {
-            var user = await _userRepository.GetByIdAsync(userId);
-            if (user == null)
-                return Result<UserProfileDto>.Failure("Пользователь не найден", ResultError.NotFound);
-
-            var followersCount = await _context.Follows
-                .AsNoTracking()
-                .CountAsync(f => f.FollowingId == userId);
-
-            var followingCount = await _context.Follows
-                .AsNoTracking()
-                .CountAsync(f => f.FollowerId == userId);
-
-            var isFollowing = await _context.Follows
-                .AsNoTracking()
-                .AnyAsync(f => f.FollowerId == currentUserId && f.FollowingId == userId);
-
-            return Result<UserProfileDto>.Success(new UserProfileDto(
-                user.Id,
-                user.Username,
-                user.Email,
-                user.AvatarUrl,
-                user.CreatedAt,
-                followersCount,
-                followingCount,
-                isFollowing
-            ));
-        }
-        catch (Exception ex)
-        {
-            return Result<UserProfileDto>.Failure($"Ошибка получения профиля: {ex.Message}", ResultError.InternalError);
-        }
+        return await GetProfileInternalAsync(userId, currentUserId);
     }
 
     public async Task<Result<UserProfileDto>> UpdateProfileAsync(int userId, UpdateProfileDto dto)
@@ -212,41 +154,31 @@ public class AuthService : IAuthService
         {
             var user = await _userRepository.GetByIdWithTokensAsync(userId);
             if (user == null)
-                return Result<UserProfileDto>.Failure("Пользователь не найден", ResultError.NotFound);
+            {
+                return Result<UserProfileDto>.Failure("User not found", ResultError.NotFound);
+            }
 
-            if (dto.Username != null && dto.Username != user.Username)
+            if (!string.IsNullOrWhiteSpace(dto.Username) && dto.Username != user.Username)
             {
                 if (await _userRepository.ExistsByUsernameAsync(dto.Username))
-                    return Result<UserProfileDto>.Failure("Имя пользователя уже занято", ResultError.Conflict);
+                {
+                    return Result<UserProfileDto>.Failure("Username already taken", ResultError.Conflict);
+                }
+
                 user.Username = dto.Username;
             }
 
             if (dto.AvatarUrl != null)
+            {
                 user.AvatarUrl = dto.AvatarUrl;
+            }
 
             await _userRepository.UpdateAsync(user);
-
-            var followersCount = await _context.Follows
-                .AsNoTracking()
-                .CountAsync(f => f.FollowingId == userId);
-
-            var followingCount = await _context.Follows
-                .AsNoTracking()
-                .CountAsync(f => f.FollowerId == userId);
-
-            return Result<UserProfileDto>.Success(new UserProfileDto(
-                user.Id,
-                user.Username,
-                user.Email,
-                user.AvatarUrl,
-                user.CreatedAt,
-                followersCount,
-                followingCount
-            ));
+            return await GetProfileInternalAsync(userId, currentUserId: null);
         }
         catch (Exception ex)
         {
-            return Result<UserProfileDto>.Failure($"Ошибка обновления профиля: {ex.Message}", ResultError.InternalError);
+            return Result<UserProfileDto>.Failure($"Profile update error: {ex.Message}", ResultError.InternalError);
         }
     }
 
@@ -256,7 +188,9 @@ public class AuthService : IAuthService
         {
             var user = await _userRepository.GetByIdWithTokensAsync(userId);
             if (user == null)
-                return Result.Failure("Пользователь не найден", ResultError.NotFound);
+            {
+                return Result.Failure("User not found", ResultError.NotFound);
+            }
 
             user.RefreshToken = null;
             user.RefreshTokenExpiry = null;
@@ -266,22 +200,65 @@ public class AuthService : IAuthService
         }
         catch (Exception ex)
         {
-            return Result.Failure($"Ошибка выхода: {ex.Message}", ResultError.InternalError);
+            return Result.Failure($"Logout error: {ex.Message}", ResultError.InternalError);
+        }
+    }
+
+    private async Task<Result<UserProfileDto>> GetProfileInternalAsync(int userId, int? currentUserId)
+    {
+        try
+        {
+            var user = await _userRepository.GetByIdAsync(userId);
+            if (user == null)
+            {
+                return Result<UserProfileDto>.Failure("User not found", ResultError.NotFound);
+            }
+
+            var followersCount = await _context.Follows
+                .AsNoTracking()
+                .CountAsync(f => f.FollowingId == userId);
+
+            var followingCount = await _context.Follows
+                .AsNoTracking()
+                .CountAsync(f => f.FollowerId == userId);
+
+            bool? isFollowing = null;
+            if (currentUserId.HasValue)
+            {
+                isFollowing = await _context.Follows
+                    .AsNoTracking()
+                    .AnyAsync(f => f.FollowerId == currentUserId.Value && f.FollowingId == userId);
+            }
+
+            return Result<UserProfileDto>.Success(new UserProfileDto(
+                user.Id,
+                user.Username,
+                user.Email,
+                user.AvatarUrl,
+                user.CreatedAt,
+                followersCount,
+                followingCount,
+                isFollowing));
+        }
+        catch (Exception ex)
+        {
+            return Result<UserProfileDto>.Failure($"Profile error: {ex.Message}", ResultError.InternalError);
         }
     }
 
     private (string AccessToken, string RefreshToken, DateTime RefreshTokenExpiry) GenerateTokens(User user)
     {
-        var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(
-            Environment.GetEnvironmentVariable("JWT_KEY") 
-            ?? _config["Jwt:Key"] 
-            ?? throw new Exception("JWT Key not configured")
-        ));
-        
+        var jwtKey = Environment.GetEnvironmentVariable("JWT_KEY")
+            ?? _config["Jwt:Key"]
+            ?? throw new Exception("JWT Key not configured");
+
+        var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey));
         var credentials = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
 
         var expireMinutes = int.TryParse(_config["Jwt:ExpireMinutes"], out var mins) ? mins : 15;
         var expireDays = int.TryParse(_config["Jwt:RefreshTokenExpireDays"], out var days) ? days : 7;
+        var issuer = _config["Jwt:Issuer"] ?? "Mishon";
+        var audience = _config["Jwt:Audience"] ?? "MishonUsers";
 
         var claims = new[]
         {
@@ -291,19 +268,15 @@ public class AuthService : IAuthService
         };
 
         var token = new JwtSecurityToken(
-            issuer: _config["Jwt:Issuer"],
-            audience: _config["Jwt:Audience"],
+            issuer: issuer,
+            audience: audience,
             claims: claims,
             expires: DateTime.UtcNow.AddMinutes(expireMinutes),
-            signingCredentials: credentials
-        );
-
-        var refreshToken = Convert.ToBase64String(RandomNumberGenerator.GetBytes(64));
+            signingCredentials: credentials);
 
         return (
             new JwtSecurityTokenHandler().WriteToken(token),
-            refreshToken,
-            DateTime.UtcNow.AddDays(expireDays)
-        );
+            Convert.ToBase64String(RandomNumberGenerator.GetBytes(64)),
+            DateTime.UtcNow.AddDays(expireDays));
     }
 }

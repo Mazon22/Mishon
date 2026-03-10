@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:mishon_app/features/feed/providers/feed_provider.dart';
 import '../providers/create_post_provider.dart';
 
 class CreatePostScreen extends ConsumerStatefulWidget {
@@ -89,6 +90,7 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
     if (mounted) {
       setState(() => _isSubmitting = false);
       if (success) {
+        ref.invalidate(feedNotifierProvider);
         context.go('/feed');
       } else {
         final state = ref.read(createPostNotifierProvider);

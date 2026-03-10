@@ -1,31 +1,32 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:mishon_app/core/repositories/auth_repository.dart';
 import 'package:mishon_app/features/auth/screens/login_screen.dart';
 import 'package:mishon_app/features/auth/screens/register_screen.dart';
-import 'package:mishon_app/features/feed/screens/feed_screen.dart';
-import 'package:mishon_app/features/profile/screens/profile_screen.dart';
-import 'package:mishon_app/features/post/screens/create_post_screen.dart';
+import 'package:mishon_app/features/chats/screens/chat_screen.dart';
+import 'package:mishon_app/features/chats/screens/chats_screen.dart';
 import 'package:mishon_app/features/comments/screens/comments_screen.dart';
-import 'package:mishon_app/core/repositories/auth_repository.dart';
+import 'package:mishon_app/features/feed/screens/feed_screen.dart';
+import 'package:mishon_app/features/friends/screens/friends_screen.dart';
+import 'package:mishon_app/features/people/screens/people_screen.dart';
+import 'package:mishon_app/features/post/screens/create_post_screen.dart';
+import 'package:mishon_app/features/profile/screens/profile_screen.dart';
 
 final goRouterProvider = Provider<GoRouter>((ref) {
   final authRepository = ref.watch(authRepositoryProvider);
 
   return GoRouter(
-    initialLocation: '/login',
+    initialLocation: '/feed',
     redirect: (context, state) async {
       final isAuthenticated = await authRepository.isAuthenticated();
-      final isLoggingIn = state.matchedLocation == '/login' ||
-          state.matchedLocation == '/register';
+      final isAuthRoute = state.matchedLocation == '/login' || state.matchedLocation == '/register';
 
-      // Если не авторизован и пытается войти не на login/register
-      if (!isAuthenticated && !isLoggingIn) {
+      if (!isAuthenticated && !isAuthRoute) {
         return '/login';
       }
 
-      // Если авторизован и пытается войти на login/register
-      if (isAuthenticated && isLoggingIn) {
+      if (isAuthenticated && isAuthRoute) {
         return '/feed';
       }
 
@@ -46,6 +47,29 @@ final goRouterProvider = Provider<GoRouter>((ref) {
         path: '/feed',
         name: 'feed',
         builder: (context, state) => const FeedScreen(),
+      ),
+      GoRoute(
+        path: '/people',
+        name: 'people',
+        builder: (context, state) => const PeopleScreen(),
+      ),
+      GoRoute(
+        path: '/friends',
+        name: 'friends',
+        builder: (context, state) => const FriendsScreen(),
+      ),
+      GoRoute(
+        path: '/chats',
+        name: 'chats',
+        builder: (context, state) => const ChatsScreen(),
+      ),
+      GoRoute(
+        path: '/chat',
+        name: 'chat',
+        builder: (context, state) {
+          final args = state.extra as ChatScreenArgs;
+          return ChatScreen(args: args);
+        },
       ),
       GoRoute(
         path: '/profile/:id',

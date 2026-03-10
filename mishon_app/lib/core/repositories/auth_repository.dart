@@ -27,7 +27,7 @@ ApiService apiService(Ref ref) {
 }
 
 @riverpod
-ApiClient apiClient(Ref ref) => ApiClient(storage: SecureStorage());
+ApiClient apiClient(Ref ref) => ApiClient(storage: ref.watch(storageProvider));
 
 class AuthRepository {
   final ApiService _apiService;

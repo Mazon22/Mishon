@@ -160,6 +160,9 @@ builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IPostService, PostService>();
 builder.Services.AddScoped<IFollowService, FollowService>();
 builder.Services.AddScoped<ICommentService, CommentService>();
+builder.Services.AddScoped<IUserDiscoveryService, UserDiscoveryService>();
+builder.Services.AddScoped<IFriendService, FriendService>();
+builder.Services.AddScoped<IConversationService, ConversationService>();
 
 // FluentValidation
 builder.Services.AddValidatorsFromAssemblyContaining<RegisterDtoValidator>();
@@ -202,7 +205,10 @@ else
     app.UseGlobalExceptionHandling();
 }
 
-app.UseHttpsRedirection();
+if (!app.Environment.IsDevelopment())
+{
+    app.UseHttpsRedirection();
+}
 app.UseCors("AllowFlutter");
 
 // Обслуживание статических файлов из wwwroot
