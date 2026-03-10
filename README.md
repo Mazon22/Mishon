@@ -1,130 +1,122 @@
-# Mishon — Социальная сеть
+# Mishon
 
-Современное приложение социальной сети с поддержкой аутентификации, публикаций, ленты новостей и системы подписок.
+Mishon is a small social network project with one backend, one database, and an Android client.
 
-## 🛠 Стек технологий
+The repository contains:
 
-**Backend:**
+- `Mishon.API` - ASP.NET Core API
+- `Mishon.Application` - service contracts and DTOs
+- `Mishon.Domain` - domain entities
+- `Mishon.Infrastructure` - EF Core, data access, services, migrations
+- `mishon_app` - Flutter Android client
+
+## What works
+
+- registration and login
+- profile editing
+- feed and user posts
+- likes and comments
+- follow system
+- friends and friend requests
+- private chats
+- shared data source for mobile client and backend
+
+## Stack
+
 - ASP.NET Core 8
 - Entity Framework Core
 - PostgreSQL
-- JWT Authentication
-
-**Frontend (Mobile):**
+- JWT auth
 - Flutter
-- Riverpod (state management)
-- GoRouter (навигация)
-- Firebase (push-уведомления)
+- Riverpod
+- Dio
 
-## 📋 Требования
+## Project layout
 
-- [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0)
-- [Flutter 3.x](https://flutter.dev/docs/get-started/install)
-- [PostgreSQL 14+](https://www.postgresql.org/download/)
-
-## 🚀 Быстрый старт
-
-### 1. База данных
-
-Создайте базу данных PostgreSQL:
-
-```sql
-CREATE DATABASE mishon;
+```text
+Mishon/
+|-- Mishon.API/
+|-- Mishon.Application/
+|-- Mishon.Domain/
+|-- Mishon.Infrastructure/
+`-- mishon_app/
 ```
 
-### 2. Backend
+## Requirements
 
-```bash
-cd Mishon.API
+- .NET 8 SDK
+- Flutter SDK
+- Android SDK / Android Studio
+- PostgreSQL
 
-# Настройте строку подключения в appsettings.Development.json:
-# "ConnectionStrings": {
-#   "DefaultConnection": "Host=localhost;Port=5432;Database=mishon;Username=postgres;Password=YOUR_PASSWORD"
-# }
+## Backend setup
 
-# Примените миграции
-dotnet ef database update
+1. Create a PostgreSQL database.
+2. Set the connection string and JWT key.
+3. Apply migrations.
+4. Start the API.
 
-# Запустите сервер
-dotnet run
+Example for PowerShell:
+
+```powershell
+$env:ConnectionStrings__DefaultConnection="Host=localhost;Port=5432;Database=mishon;Username=postgres;Password=YOUR_PASSWORD"
+$env:Jwt__Key="YOUR_SECRET_KEY_AT_LEAST_32_CHARS"
+
+dotnet ef database update --project .\Mishon.Infrastructure\ --startup-project .\Mishon.API\
+dotnet run --project .\Mishon.API\
 ```
 
-Backend будет доступен по адресу: `http://localhost:5000`
+## Android app setup
 
-### 3. Flutter (Mobile)
-
-```bash
-cd mishon_app
-
-# Установите зависимости
+```powershell
+cd .\mishon_app\
 flutter pub get
-
-# Запустите приложение
 flutter run
 ```
 
-## 🔐 Настройка секретов
+Debug APK build:
 
-### Вариант 1: appsettings.Development.json
-
-Создайте файл `Mishon.API/appsettings.Development.json`:
-
-```json
-{
-  "ConnectionStrings": {
-    "DefaultConnection": "Host=localhost;Port=5432;Database=mishon;Username=postgres;Password=YOUR_PASSWORD"
-  },
-  "Jwt": {
-    "Key": "YOUR_SUPER_SECRET_KEY_MIN_32_CHARS",
-    "Issuer": "Mishon",
-    "Audience": "MishonUsers",
-    "ExpireMinutes": 15,
-    "RefreshTokenExpireDays": 7
-  }
-}
+```powershell
+cd .\mishon_app\
+flutter build apk --debug
 ```
 
-### Вариант 2: Переменные окружения
+Release APK build:
 
-```bash
-# Linux/macOS
-export ConnectionStrings__DefaultConnection="Host=localhost;Database=mishon;Username=postgres;Password=YOUR_PASSWORD"
-export Jwt__Key="YOUR_SUPER_SECRET_KEY"
-
-# Windows (PowerShell)
-$env:ConnectionStrings__DefaultConnection="Host=localhost;Database=mishon;Username=postgres;Password=YOUR_PASSWORD"
-$env:Jwt__Key="YOUR_SUPER_SECRET_KEY"
+```powershell
+cd .\mishon_app\
+flutter build apk --release
 ```
 
-## 📁 Структура проекта
+## API address for Android
 
-```
-Mishon/
-├── Mishon.API/           # ASP.NET Core Web API
-├── Mishon.Application/   # Бизнес-логика, интерфейсы, DTO
-├── Mishon.Domain/        # Сущности базы данных
-├── Mishon.Infrastructure/# Реализация репозиториев и сервисов
-└── mishon_app/           # Flutter приложение
-```
+The Flutter app uses `mishon_app/lib/core/constants/api_constants.dart`.
 
-## 🔌 API Endpoints
+- Android emulator: `http://10.0.2.2:5000/api`
+- physical phone: replace with your PC local IP
 
-| Метод | Endpoint | Описание |
-|-------|----------|----------|
-| POST | `/api/auth/register` | Регистрация |
-| POST | `/api/auth/login` | Вход |
-| POST | `/api/auth/refresh` | Обновление токена |
-| GET | `/api/posts` | Лента постов |
-| POST | `/api/posts` | Создать пост |
-| GET | `/api/follows` | Подписки/подписчики |
-| POST | `/api/follows/{id}` | Подписаться |
+If you run the app on a real device, backend and phone must be in the same network.
 
-## ⚠️ Важно
+## Database
 
-- Никогда не коммитьте `appsettings.Development.json` с реальными паролями
-- Используйте `.env` файлы для локальной разработки
-- Все секреты должны быть добавлены в `.gitignore`
+The application is built around one shared database. Feed, profiles, comments, friend requests, chats, and messages come from the same backend and are used by the Android client directly through the API.
 
-## 📄 Лицензия
+## Main API areas
 
-MIT
+- `/api/auth`
+- `/api/posts`
+- `/api/comments`
+- `/api/follows`
+- `/api/friends`
+- `/api/users`
+- `/api/conversations`
+
+## Notes
+
+- Do not commit real secrets to `appsettings.Development.json`.
+- Keep `Jwt__Key` long enough for production use.
+- Before the first launch on a phone, make sure the backend is reachable from the device.
+
+## Current focus
+
+This repository is now trimmed for Android. Old duplicate Flutter scaffolding and unused desktop/web targets were removed from the root project.
