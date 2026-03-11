@@ -43,12 +43,14 @@ public class AuthService : IAuthService
             {
                 Username = dto.Username,
                 Email = dto.Email,
-                PasswordHash = BCrypt.Net.BCrypt.HashPassword(dto.Password, 12)
+                PasswordHash = BCrypt.Net.BCrypt.HashPassword(dto.Password, 12),
+                LastSeenAt = DateTime.UtcNow
             };
 
             await _userRepository.CreateAsync(user);
 
             var tokens = GenerateTokens(user);
+            user.LastSeenAt = DateTime.UtcNow;
             user.RefreshToken = tokens.RefreshToken;
             user.RefreshTokenExpiry = tokens.RefreshTokenExpiry;
             await _userRepository.UpdateAsync(user);
@@ -87,6 +89,7 @@ public class AuthService : IAuthService
             }
 
             var tokens = GenerateTokens(user);
+            user.LastSeenAt = DateTime.UtcNow;
             user.RefreshToken = tokens.RefreshToken;
             user.RefreshTokenExpiry = tokens.RefreshTokenExpiry;
             await _userRepository.UpdateAsync(user);
@@ -193,6 +196,7 @@ public class AuthService : IAuthService
                 user,
                 new UpdateProfileDto(
                     null,
+                    null,
                     dto.AvatarUrl,
                     dto.BannerUrl,
                     dto.AvatarScale,
@@ -257,6 +261,8 @@ public class AuthService : IAuthService
                 .AsNoTracking()
                 .CountAsync(p => p.UserId == userId);
 
+            var isOnline = user.LastSeenAt >= DateTime.UtcNow.AddMinutes(-5);
+
             bool? isFollowing = null;
             if (currentUserId.HasValue)
             {
@@ -269,6 +275,7 @@ public class AuthService : IAuthService
                 user.Id,
                 user.Username,
                 user.Email,
+                user.AboutMe,
                 user.AvatarUrl,
                 user.BannerUrl,
                 user.AvatarScale,
@@ -278,6 +285,8 @@ public class AuthService : IAuthService
                 user.BannerOffsetX,
                 user.BannerOffsetY,
                 user.CreatedAt,
+                user.LastSeenAt,
+                isOnline,
                 followersCount,
                 followingCount,
                 postsCount,
@@ -291,6 +300,11 @@ public class AuthService : IAuthService
 
     private static void ApplyProfileUpdate(User user, UpdateProfileDto dto)
     {
+        if (dto.AboutMe != null)
+        {
+            user.AboutMe = string.IsNullOrWhiteSpace(dto.AboutMe) ? null : dto.AboutMe.Trim();
+        }
+
         if (dto.RemoveAvatar == true)
         {
             user.AvatarUrl = null;

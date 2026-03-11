@@ -231,6 +231,7 @@ app.UseStaticFiles(new StaticFileOptions
 app.UseIpRateLimiting();
 
 app.UseAuthentication();
+app.UseMiddleware<UserPresenceMiddleware>();
 app.UseAuthorization();
 
 app.MapControllers();

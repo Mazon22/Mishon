@@ -62,6 +62,7 @@ public record UserProfileDto(
     int Id,
     string Username,
     string Email,
+    string? AboutMe,
     string? AvatarUrl,
     string? BannerUrl,
     double AvatarScale,
@@ -71,6 +72,8 @@ public record UserProfileDto(
     double BannerOffsetX,
     double BannerOffsetY,
     DateTime CreatedAt,
+    DateTime LastSeenAt,
+    bool IsOnline,
     int FollowersCount,
     int FollowingCount,
     int PostsCount,
@@ -79,6 +82,7 @@ public record UserProfileDto(
 
 public record UpdateProfileDto(
     string? Username,
+    string? AboutMe,
     string? AvatarUrl,
     string? BannerUrl,
     double? AvatarScale,
@@ -112,6 +116,9 @@ public class UpdateProfileDtoValidator : AbstractValidator<UpdateProfileDto>
             .MaximumLength(50).WithMessage("Maximum 50 characters")
             .Matches(@"^[a-zA-Z0-9_]+$").When(x => x.Username != null)
             .WithMessage("Only letters, numbers, and underscore are allowed");
+
+        RuleFor(x => x.AboutMe)
+            .MaximumLength(280).WithMessage("Maximum 280 characters");
 
         RuleFor(x => x.AvatarUrl)
             .MaximumLength(500).WithMessage("Maximum 500 characters")

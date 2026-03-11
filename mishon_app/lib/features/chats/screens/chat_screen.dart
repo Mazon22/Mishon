@@ -4,8 +4,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
+import 'package:mishon_app/core/models/auth_model.dart';
 import 'package:mishon_app/core/models/social_models.dart';
 import 'package:mishon_app/core/network/exceptions.dart';
+import 'package:mishon_app/core/repositories/auth_repository.dart';
 import 'package:mishon_app/core/repositories/social_repository.dart';
 import 'package:mishon_app/core/widgets/profile_media.dart';
 import 'package:mishon_app/core/widgets/states.dart';
@@ -50,12 +52,19 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   List<ChatMessageModel> _messages = const [];
   ChatMessageModel? _replyingTo;
   ChatMessageModel? _editingMessage;
+  UserProfile? _peerProfile;
 
   @override
   void initState() {
     super.initState();
     _loadMessages();
-    _poller = Timer.periodic(const Duration(seconds: 3), (_) => _loadMessages(silent: true));
+    unawaited(_loadPeerProfile());
+    _poller = Timer.periodic(const Duration(seconds: 3), (timer) {
+      _loadMessages(silent: true);
+      if (timer.tick % 5 == 0) {
+        _loadPeerProfile(silent: true);
+      }
+    });
   }
 
   @override
@@ -113,6 +122,31 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
         _errorMessage = 'Не удалось загрузить сообщения';
         _isLoading = false;
       });
+    }
+  }
+
+  Future<void> _loadPeerProfile({bool silent = false}) async {
+    try {
+      final profile = await ref.read(authRepositoryProvider).getUserProfile(widget.args.peerId);
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _peerProfile = profile;
+      });
+    } on ApiException catch (_) {
+      if (!silent && mounted) {
+        _showSnackBar('Не удалось загрузить статус собеседника', isError: true);
+      }
+    } on OfflineException catch (_) {
+      if (!silent && mounted) {
+        _showSnackBar('Нет соединения для загрузки статуса', isError: true);
+      }
+    } catch (_) {
+      if (!silent && mounted) {
+        _showSnackBar('Не удалось обновить статус собеседника', isError: true);
+      }
     }
   }
 
@@ -242,6 +276,27 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     );
   }
 
+  String _formatPresenceLabel() {
+    final profile = _peerProfile;
+    if (profile == null) {
+      return '...';
+    }
+
+    if (profile.isOnline) {
+      return 'онлайн';
+    }
+
+    final localLastSeen = profile.lastSeenAt.toLocal();
+    final timeLabel = DateFormat('HH:mm').format(localLastSeen);
+    final difference = DateTime.now().difference(localLastSeen);
+
+    if (difference.inDays >= 1) {
+      return 'был в сети ${difference.inDays} д. $timeLabel';
+    }
+
+    return 'был в сети $timeLabel';
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -269,8 +324,12 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                         ),
                   ),
                   Text(
-                    'Личные сообщения',
-                    style: Theme.of(context).textTheme.bodySmall,
+                    _formatPresenceLabel(),
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: const Color(0xFF7A879A),
+                          fontWeight: FontWeight.w600,
+                        ),
                   ),
                 ],
               ),

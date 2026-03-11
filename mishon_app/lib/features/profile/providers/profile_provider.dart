@@ -88,6 +88,7 @@ class UserProfileNotifier extends _$UserProfileNotifier {
         id: currentProfile.id,
         username: currentProfile.username,
         email: currentProfile.email,
+        aboutMe: currentProfile.aboutMe,
         avatarUrl: currentProfile.avatarUrl,
         bannerUrl: currentProfile.bannerUrl,
         avatarScale: currentProfile.avatarScale,
@@ -97,6 +98,8 @@ class UserProfileNotifier extends _$UserProfileNotifier {
         bannerOffsetX: currentProfile.bannerOffsetX,
         bannerOffsetY: currentProfile.bannerOffsetY,
         createdAt: currentProfile.createdAt,
+        lastSeenAt: currentProfile.lastSeenAt,
+        isOnline: currentProfile.isOnline,
         followersCount: isFollowing 
             ? currentProfile.followersCount + 1 
             : currentProfile.followersCount - 1,

@@ -116,9 +116,9 @@ class AuthRepository {
     }
   }
 
-  Future<UserProfile> updateProfile({String? username}) async {
+  Future<UserProfile> updateProfile({String? username, String? aboutMe}) async {
     try {
-      return await _apiService.updateProfile(username: username);
+      return await _apiService.updateProfile(username: username, aboutMe: aboutMe);
     } on ApiException catch (e) {
       _logger.e('Update profile failed: ${e.apiError.message}');
       rethrow;

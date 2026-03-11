@@ -1,22 +1,25 @@
-import 'dart:async';
+﻿import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:intl/intl.dart';
 
 import 'package:mishon_app/core/models/auth_model.dart';
 import 'package:mishon_app/core/models/post_model.dart';
 import 'package:mishon_app/core/network/exceptions.dart';
 import 'package:mishon_app/core/repositories/auth_repository.dart';
 import 'package:mishon_app/core/repositories/post_repository.dart';
+import 'package:mishon_app/core/repositories/social_repository.dart';
 import 'package:mishon_app/core/widgets/app_shell.dart';
 import 'package:mishon_app/core/widgets/empty_posts_banner.dart';
 import 'package:mishon_app/core/widgets/post_card.dart';
 import 'package:mishon_app/core/widgets/profile_media.dart';
 import 'package:mishon_app/core/widgets/states.dart';
 import 'package:mishon_app/features/auth/providers/auth_provider.dart';
+import 'package:mishon_app/features/chats/screens/chat_screen.dart';
 import 'package:mishon_app/features/comments/screens/comments_screen.dart';
 import 'package:mishon_app/features/feed/providers/feed_provider.dart';
 import 'package:mishon_app/features/profile/providers/profile_provider.dart';
@@ -133,6 +136,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
           id: _profile!.id,
           username: _profile!.username,
           email: _profile!.email,
+          aboutMe: _profile!.aboutMe,
           avatarUrl: _profile!.avatarUrl,
           bannerUrl: _profile!.bannerUrl,
           avatarScale: _profile!.avatarScale,
@@ -142,6 +146,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
           bannerOffsetX: _profile!.bannerOffsetX,
           bannerOffsetY: _profile!.bannerOffsetY,
           createdAt: _profile!.createdAt,
+          lastSeenAt: _profile!.lastSeenAt,
+          isOnline: _profile!.isOnline,
           followersCount: response.followersCount,
           followingCount: _profile!.followingCount,
           postsCount: _profile!.postsCount,
@@ -154,6 +160,43 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       _showSnackBar(e.message, isError: true);
     } catch (_) {
       _showSnackBar('Could not update follow status', isError: true);
+    } finally {
+      if (mounted) {
+        setState(() => _isActionBusy = false);
+      }
+    }
+  }
+
+  Future<void> _openChat() async {
+    if (_profile == null || _isOwnProfile || _isActionBusy) {
+      return;
+    }
+
+    setState(() => _isActionBusy = true);
+    try {
+      final conversation = await ref.read(socialRepositoryProvider).getOrCreateConversation(widget.userId);
+      if (!mounted) {
+        return;
+      }
+
+      context.push(
+        '/chat',
+        extra: ChatScreenArgs(
+          conversationId: conversation.id,
+          peerId: conversation.peerId,
+          peerUsername: conversation.username,
+          peerAvatarUrl: conversation.avatarUrl,
+          peerAvatarScale: conversation.avatarScale,
+          peerAvatarOffsetX: conversation.avatarOffsetX,
+          peerAvatarOffsetY: conversation.avatarOffsetY,
+        ),
+      );
+    } on ApiException catch (e) {
+      _showSnackBar(e.apiError.message, isError: true);
+    } on OfflineException catch (e) {
+      _showSnackBar(e.message, isError: true);
+    } catch (_) {
+      _showSnackBar('Could not open chat', isError: true);
     } finally {
       if (mounted) {
         setState(() => _isActionBusy = false);
@@ -197,6 +240,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                 id: _profile!.id,
                 username: _profile!.username,
                 email: _profile!.email,
+                aboutMe: _profile!.aboutMe,
                 avatarUrl: _profile!.avatarUrl,
                 bannerUrl: _profile!.bannerUrl,
                 avatarScale: _profile!.avatarScale,
@@ -206,6 +250,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                 bannerOffsetX: _profile!.bannerOffsetX,
                 bannerOffsetY: _profile!.bannerOffsetY,
                 createdAt: _profile!.createdAt,
+                lastSeenAt: _profile!.lastSeenAt,
+                isOnline: _profile!.isOnline,
                 followersCount: _profile!.followersCount,
                 followingCount: _profile!.followingCount,
                 postsCount: (_profile!.postsCount - 1).clamp(0, 999999).toInt(),
@@ -222,9 +268,12 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     }
   }
 
-  Future<void> _updateProfile(String username) async {
+  Future<void> _updateProfile(String username, String aboutMe) async {
     try {
-      final updatedProfile = await ref.read(authRepositoryProvider).updateProfile(username: username);
+      final updatedProfile = await ref.read(authRepositoryProvider).updateProfile(
+            username: username,
+            aboutMe: aboutMe,
+          );
       if (!mounted) {
         return;
       }
@@ -451,25 +500,6 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                   foreground: Stack(
                     children: [
                       Positioned(
-                        top: 18,
-                        right: 18,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                          decoration: BoxDecoration(
-                            color: Colors.white.withValues(alpha: 0.16),
-                            borderRadius: BorderRadius.circular(999),
-                            border: Border.all(color: Colors.white.withValues(alpha: 0.22)),
-                          ),
-                          child: Text(
-                            _isOwnProfile ? 'Your signature look' : 'Profile cover',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                        ),
-                      ),
-                      Positioned(
                         left: 18,
                         top: 18,
                         child: Container(
@@ -487,31 +517,23 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                 Positioned(
                   left: 26,
                   bottom: -44,
-                  child: Container(
-                    width: 104,
-                    height: 104,
-                    padding: const EdgeInsets.all(4),
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: Colors.white,
-                      boxShadow: [
-                        BoxShadow(
-                          color: const Color(0xFF10203D).withValues(alpha: 0.18),
-                          blurRadius: 24,
-                          offset: const Offset(0, 14),
-                        ),
-                      ],
-                    ),
-                    child: AppAvatar(
-                      username: profile.username,
-                      imageUrl: profile.avatarUrl,
-                      size: 96,
-                      scale: profile.avatarScale,
-                      offsetX: profile.avatarOffsetX,
-                      offsetY: profile.avatarOffsetY,
-                    ),
+                  child: _ProfileAvatarFrame(
+                    username: profile.username,
+                    imageUrl: profile.avatarUrl,
+                    scale: profile.avatarScale,
+                    offsetX: profile.avatarOffsetX,
+                    offsetY: profile.avatarOffsetY,
+                    isOnline: profile.isOnline,
                   ),
                 ),
+                if (!profile.isOnline)
+                  Positioned(
+                    left: 128,
+                    bottom: -34,
+                    child: _PresenceLabel(
+                      label: _formatPresenceLabel(profile),
+                    ),
+                  ),
                 if (_isOwnProfile)
                   Positioned(
                     right: 18,
@@ -531,7 +553,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                  crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
                     Expanded(
                       child: Column(
@@ -551,27 +573,46 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                                   color: const Color(0xFF596A82),
                                 ),
                           ),
-                          const SizedBox(height: 10),
-                          Text(
-                            _isOwnProfile
-                                ? 'Build your corner of the network with a bold cover, clean avatar, and sharp posts.'
-                                : 'A public profile with posts, comments, and a live presence in the feed.',
-                            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                  height: 1.45,
-                                  color: const Color(0xFF485A75),
-                                ),
-                          ),
+                          if ((profile.aboutMe ?? '').trim().isNotEmpty) ...[
+                            const SizedBox(height: 12),
+                            Text(
+                              'Обо мне',
+                              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                    color: const Color(0xFF73839B),
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                            ),
+                            const SizedBox(height: 6),
+                            Text(
+                              profile.aboutMe!.trim(),
+                              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                    height: 1.45,
+                                    color: const Color(0xFF485A75),
+                                  ),
+                            ),
+                          ],
                         ],
                       ),
                     ),
-                    const SizedBox(width: 16),
                     if (_isOwnProfile)
                       FilledButton.tonalIcon(
                         onPressed: _showEditSheet,
                         icon: const Icon(Icons.edit_rounded),
                         label: const Text('Edit'),
-                      )
-                    else
+                      ),
+                  ],
+                ),
+                if (!_isOwnProfile) ...[
+                  const SizedBox(height: 16),
+                  Wrap(
+                    spacing: 10,
+                    runSpacing: 10,
+                    children: [
+                      FilledButton.tonalIcon(
+                        onPressed: _isActionBusy ? null : _openChat,
+                        icon: const Icon(Icons.chat_bubble_outline_rounded),
+                        label: const Text('Message'),
+                      ),
                       FilledButton.icon(
                         onPressed: _isActionBusy ? null : _toggleFollow,
                         icon: _isActionBusy
@@ -583,8 +624,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                             : Icon(isFollowing ? Icons.check_rounded : Icons.person_add_alt_1_rounded),
                         label: Text(isFollowing ? 'Following' : 'Follow'),
                       ),
-                  ],
-                ),
+                    ],
+                  ),
+                ],
                 const SizedBox(height: 18),
                 Wrap(
                   spacing: 12,
@@ -709,6 +751,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
 
   void _showEditSheet() {
     final controller = TextEditingController(text: _profile?.username ?? '');
+    final aboutMeController = TextEditingController(text: _profile?.aboutMe ?? '');
 
     showModalBottomSheet<void>(
       context: context,
@@ -751,6 +794,20 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                     prefixIcon: Icon(Icons.alternate_email_rounded),
                   ),
                   autofocus: true,
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: aboutMeController,
+                  minLines: 3,
+                  maxLines: 5,
+                  decoration: const InputDecoration(
+                    labelText: 'Обо мне',
+                    alignLabelWithHint: true,
+                    prefixIcon: Padding(
+                      padding: EdgeInsets.only(bottom: 52),
+                      child: Icon(Icons.notes_rounded),
+                    ),
+                  ),
                 ),
                 const SizedBox(height: 14),
                 Wrap(
@@ -809,12 +866,15 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                       child: FilledButton(
                         onPressed: () async {
                           final username = controller.text.trim();
+                          final aboutMe = aboutMeController.text.trim();
                           Navigator.pop(context);
-                          if (username.isNotEmpty && username != _profile?.username) {
-                            await _updateProfile(username);
+                          if (username.isNotEmpty &&
+                              (username != _profile?.username ||
+                                  aboutMe != (_profile?.aboutMe ?? '').trim())) {
+                            await _updateProfile(username, aboutMe);
                           }
                         },
-                        child: const Text('Save name'),
+                        child: const Text('Save'),
                       ),
                     ),
                   ],
@@ -871,6 +931,22 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
         ],
       ),
     );
+  }
+
+  String _formatPresenceLabel(UserProfile profile) {
+    if (profile.isOnline) {
+      return 'онлайн';
+    }
+
+    final localLastSeen = profile.lastSeenAt.toLocal();
+    final timeLabel = DateFormat('HH:mm').format(localLastSeen);
+    final difference = DateTime.now().difference(localLastSeen);
+
+    if (difference.inDays >= 1) {
+      return 'был в сети ${difference.inDays} д. $timeLabel';
+    }
+
+    return 'был в сети $timeLabel';
   }
 }
 
@@ -985,6 +1061,104 @@ class _HeaderGhostButton extends StatelessWidget {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _PresenceLabel extends StatelessWidget {
+  final String label;
+
+  const _PresenceLabel({
+    required this.label,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF1F5FC),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        label,
+        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: const Color(0xFF6B7C96),
+              fontWeight: FontWeight.w700,
+            ),
+      ),
+    );
+  }
+}
+
+class _ProfileAvatarFrame extends StatelessWidget {
+  final String username;
+  final String? imageUrl;
+  final double scale;
+  final double offsetX;
+  final double offsetY;
+  final bool isOnline;
+
+  const _ProfileAvatarFrame({
+    required this.username,
+    required this.imageUrl,
+    required this.scale,
+    required this.offsetX,
+    required this.offsetY,
+    required this.isOnline,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 104,
+      height: 104,
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: Colors.white,
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF10203D).withValues(alpha: 0.18),
+            blurRadius: 24,
+            offset: const Offset(0, 14),
+          ),
+        ],
+      ),
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          AppAvatar(
+            username: username,
+            imageUrl: imageUrl,
+            size: 96,
+            scale: scale,
+            offsetX: offsetX,
+            offsetY: offsetY,
+          ),
+          if (isOnline)
+            Positioned(
+              right: 0,
+              bottom: 8,
+              child: Container(
+                width: 20,
+                height: 20,
+                decoration: BoxDecoration(
+                  color: const Color(0xFF20C46B),
+                  shape: BoxShape.circle,
+                  border: Border.all(color: Colors.white, width: 3),
+                  boxShadow: [
+                    BoxShadow(
+                      color: const Color(0xFF20C46B).withValues(alpha: 0.28),
+                      blurRadius: 10,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+        ],
       ),
     );
   }

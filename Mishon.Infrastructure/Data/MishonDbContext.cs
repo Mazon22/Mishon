@@ -30,10 +30,12 @@ public class MishonDbContext : DbContext
             entity.Property(e => e.Username).IsRequired().HasMaxLength(50);
             entity.Property(e => e.Email).IsRequired().HasMaxLength(100);
             entity.Property(e => e.PasswordHash).IsRequired();
+            entity.Property(e => e.AboutMe).HasMaxLength(280);
             entity.Property(e => e.AvatarUrl).HasMaxLength(500);
             entity.Property(e => e.BannerUrl).HasMaxLength(500);
             entity.Property(e => e.AvatarScale).HasDefaultValue(1d);
             entity.Property(e => e.BannerScale).HasDefaultValue(1d);
+            entity.Property(e => e.LastSeenAt).HasDefaultValueSql("NOW()");
             entity.Property(e => e.RefreshToken).HasMaxLength(500);
         });
 

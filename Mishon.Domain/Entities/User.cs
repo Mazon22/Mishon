@@ -6,6 +6,7 @@ public class User
     public string Username { get; set; } = string.Empty;
     public string Email { get; set; } = string.Empty;
     public string PasswordHash { get; set; } = string.Empty;
+    public string? AboutMe { get; set; }
     public string? AvatarUrl { get; set; }
     public string? BannerUrl { get; set; }
     public double AvatarScale { get; set; } = 1;
@@ -15,6 +16,7 @@ public class User
     public double BannerOffsetX { get; set; }
     public double BannerOffsetY { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public DateTime LastSeenAt { get; set; } = DateTime.UtcNow;
     public string? RefreshToken { get; set; }
     public DateTime? RefreshTokenExpiry { get; set; }
 

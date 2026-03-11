@@ -12,7 +12,7 @@ abstract class ApiService {
   Future<AuthResponse> refreshToken(String refreshToken);
   Future<UserProfile> getProfile();
   Future<UserProfile> getUserProfile(int userId);
-  Future<UserProfile> updateProfile({String? username});
+  Future<UserProfile> updateProfile({String? username, String? aboutMe});
   Future<UserProfile> updateProfileMedia({
     Uint8List? avatarBytes,
     Uint8List? bannerBytes,
@@ -114,9 +114,10 @@ class ApiServiceImpl implements ApiService {
   }
 
   @override
-  Future<UserProfile> updateProfile({String? username}) async {
+  Future<UserProfile> updateProfile({String? username, String? aboutMe}) async {
     final response = await _dio.put('/auth/profile', data: {
       if (username != null) 'username': username,
+      'aboutMe': aboutMe,
     });
     return UserProfile.fromJson(response.data);
   }
