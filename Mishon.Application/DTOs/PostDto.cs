@@ -14,6 +14,7 @@ public record PostDto(
     string? ImageUrl,
     DateTime CreatedAt,
     int LikesCount,
+    int CommentsCount,
     bool IsLiked,
     bool IsFollowingAuthor
 );

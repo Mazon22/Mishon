@@ -1,4 +1,5 @@
 import 'dart:typed_data';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
@@ -83,118 +84,150 @@ class _ProfileMediaEditorScreenState extends State<ProfileMediaEditorScreen> {
       ),
       body: SafeArea(
         top: false,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                subtitle,
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: Colors.white.withValues(alpha: 0.72),
-                    ),
-              ),
-              const SizedBox(height: 22),
-              Expanded(
-                child: Center(
-                  child: ConstrainedBox(
-                    constraints: BoxConstraints(
-                      maxWidth: 640,
-                      maxHeight: isAvatar ? 420 : 360,
-                    ),
-                    child: LayoutBuilder(
-                      builder: (context, constraints) {
-                        final viewportHeight = isAvatar
-                            ? constraints.maxWidth.clamp(240.0, 340.0)
-                            : constraints.maxWidth.clamp(220.0, 320.0) * 0.56;
-                        final viewportWidth = isAvatar ? viewportHeight : constraints.maxWidth;
-                        final viewportSize = Size(viewportWidth, viewportHeight);
+        child: LayoutBuilder(
+          builder: (context, viewportConstraints) {
+            final availableWidth = math.max(280.0, viewportConstraints.maxWidth - 40);
+            final editorWidth = math.min(availableWidth, 640.0);
+            final editorHeight = math.min(
+              math.max(300.0, viewportConstraints.maxHeight - 160),
+              isAvatar ? 420.0 : 360.0,
+            );
 
-                        return Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            GestureDetector(
-                              onScaleStart: (details) {
-                                _gestureStartScale = _scale;
-                                _gestureStartOffsetX = _offsetX;
-                                _gestureStartOffsetY = _offsetY;
-                                _gestureOrigin = details.focalPoint;
-                              },
-                              onScaleUpdate: (details) {
-                                setState(() {
-                                  _scale = (_gestureStartScale * details.scale).clamp(1.0, 4.0);
-                                  final delta = details.focalPoint - _gestureOrigin;
-                                  _offsetX = (_gestureStartOffsetX + (delta.dx / viewportSize.width) * 1.15).clamp(-2.0, 2.0);
-                                  _offsetY = (_gestureStartOffsetY + (delta.dy / viewportSize.height) * 1.15).clamp(-2.0, 2.0);
-                                });
-                              },
-                              child: _EditorPreview(
-                                bytes: widget.imageBytes,
-                                kind: widget.kind,
-                                scale: _scale,
-                                offsetX: _offsetX,
-                                offsetY: _offsetY,
-                                width: viewportSize.width,
-                                height: viewportSize.height,
-                              ),
-                            ),
-                            const SizedBox(height: 24),
-                            Row(
-                              children: [
-                                const Icon(Icons.zoom_in_rounded, color: Colors.white70),
-                                Expanded(
-                                  child: Slider(
-                                    value: _scale,
-                                    min: 1,
-                                    max: 4,
-                                    onChanged: (value) => setState(() => _scale = value),
-                                  ),
-                                ),
-                                SizedBox(
-                                  width: 44,
-                                  child: Text(
-                                    _scale.toStringAsFixed(1),
-                                    style: const TextStyle(color: Colors.white),
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 12),
-                            Row(
-                              children: [
-                                OutlinedButton.icon(
-                                  onPressed: () {
-                                    setState(() {
-                                      _scale = 1;
-                                      _offsetX = 0;
-                                      _offsetY = 0;
-                                    });
-                                  },
-                                  icon: const Icon(Icons.refresh_rounded),
-                                  label: const Text('Reset'),
-                                ),
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  child: Text(
-                                    isAvatar
-                                        ? 'Pinch or drag inside the circle.'
-                                        : 'Pinch or drag inside the banner.',
-                                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                          color: Colors.white70,
-                                        ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ],
-                        );
-                      },
+            return SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  minHeight: math.max(0, viewportConstraints.maxHeight - 36),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      subtitle,
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                            color: Colors.white.withValues(alpha: 0.72),
+                          ),
                     ),
-                  ),
+                    const SizedBox(height: 22),
+                    Center(
+                      child: SizedBox(
+                        width: editorWidth,
+                        height: editorHeight,
+                        child: LayoutBuilder(
+                          builder: (context, constraints) {
+                            const controlsHeight = 132.0;
+                            final maxPreviewHeight =
+                                math.max(160.0, constraints.maxHeight - controlsHeight);
+                            final maxAvatarSize = math.min(constraints.maxWidth, maxPreviewHeight);
+                            final viewportHeight = isAvatar
+                                ? maxAvatarSize.clamp(160.0, 320.0)
+                                : math.min(constraints.maxWidth * 0.56, maxPreviewHeight).clamp(150.0, 250.0);
+                            final viewportWidth = isAvatar ? viewportHeight : constraints.maxWidth;
+                            final viewportSize = Size(
+                              math.max(1.0, viewportWidth),
+                              math.max(1.0, viewportHeight),
+                            );
+
+                            return Column(
+                              children: [
+                                Expanded(
+                                  child: Center(
+                                    child: GestureDetector(
+                                      onScaleStart: (details) {
+                                        _gestureStartScale = _scale;
+                                        _gestureStartOffsetX = _offsetX;
+                                        _gestureStartOffsetY = _offsetY;
+                                        _gestureOrigin = details.focalPoint;
+                                      },
+                                      onScaleUpdate: (details) {
+                                        final nextScale = _gestureStartScale * details.scale;
+                                        if (!nextScale.isFinite) {
+                                          return;
+                                        }
+
+                                        setState(() {
+                                          _scale = nextScale.clamp(1.0, 4.0);
+                                          final delta = details.focalPoint - _gestureOrigin;
+                                          final nextOffsetX =
+                                              _gestureStartOffsetX + (delta.dx / viewportSize.width) * 1.15;
+                                          final nextOffsetY =
+                                              _gestureStartOffsetY + (delta.dy / viewportSize.height) * 1.15;
+
+                                          _offsetX = nextOffsetX.isFinite ? nextOffsetX.clamp(-2.0, 2.0) : 0.0;
+                                          _offsetY = nextOffsetY.isFinite ? nextOffsetY.clamp(-2.0, 2.0) : 0.0;
+                                        });
+                                      },
+                                      child: _EditorPreview(
+                                        bytes: widget.imageBytes,
+                                        kind: widget.kind,
+                                        scale: _scale,
+                                        offsetX: _offsetX,
+                                        offsetY: _offsetY,
+                                        width: viewportSize.width,
+                                        height: viewportSize.height,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(height: 16),
+                                Row(
+                                  children: [
+                                    const Icon(Icons.zoom_in_rounded, color: Colors.white70),
+                                    Expanded(
+                                      child: Slider(
+                                        value: _scale,
+                                        min: 1,
+                                        max: 4,
+                                        onChanged: (value) => setState(() => _scale = value),
+                                      ),
+                                    ),
+                                    SizedBox(
+                                      width: 44,
+                                      child: Text(
+                                        _scale.toStringAsFixed(1),
+                                        style: const TextStyle(color: Colors.white),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 10),
+                                Row(
+                                  children: [
+                                    OutlinedButton.icon(
+                                      onPressed: () {
+                                        setState(() {
+                                          _scale = 1;
+                                          _offsetX = 0;
+                                          _offsetY = 0;
+                                        });
+                                      },
+                                      icon: const Icon(Icons.refresh_rounded),
+                                      label: const Text('Reset'),
+                                    ),
+                                    const SizedBox(width: 12),
+                                    Expanded(
+                                      child: Text(
+                                        isAvatar
+                                            ? 'Pinch or drag inside the circle.'
+                                            : 'Pinch or drag inside the banner.',
+                                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                              color: Colors.white70,
+                                            ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            );
+                          },
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
-            ],
-          ),
+            );
+          },
         ),
       ),
     );

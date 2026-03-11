@@ -66,6 +66,7 @@ class UserPosts extends _$UserPosts {
       imageUrl: oldPost.imageUrl,
       createdAt: oldPost.createdAt,
       likesCount: newLikesCount,
+      commentsCount: oldPost.commentsCount,
       isLiked: newLikeState,
       isFollowingAuthor: oldPost.isFollowingAuthor,
     );

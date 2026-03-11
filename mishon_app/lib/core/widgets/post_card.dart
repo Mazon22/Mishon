@@ -32,6 +32,9 @@ class PostCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final dateLabel = DateFormat('dd MMM, HH:mm').format(post.createdAt.toLocal());
+    final commentsLabel = post.commentsCount == 1
+        ? '1 comment'
+        : '${post.commentsCount} comments';
 
     return Container(
       decoration: BoxDecoration(
@@ -221,7 +224,7 @@ class PostCard extends StatelessWidget {
                   const SizedBox(width: 10),
                   _ActionPill(
                     icon: Icons.chat_bubble_outline_rounded,
-                    label: 'Comments',
+                    label: commentsLabel,
                     tint: const Color(0xFFEAF1FF),
                     foreground: const Color(0xFF235CFF),
                     onTap: onComment,

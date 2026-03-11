@@ -74,6 +74,7 @@ public class PostRepository : IPostRepository
         await _context.Posts
             .Include(p => p.User)
             .Include(p => p.Likes)
+            .Include(p => p.Comments)
             .FirstOrDefaultAsync(p => p.Id == id);
 
     public async Task<PagedResult<Post>> GetFeedAsync(int userId, int page, int pageSize)
@@ -93,6 +94,7 @@ public class PostRepository : IPostRepository
                 .AsNoTracking()
                 .Include(p => p.User)
                 .Include(p => p.Likes)
+                .Include(p => p.Comments)
                 .Where(p => followingIds.Contains(p.UserId) || p.UserId == userId)
                 .OrderByDescending(p => p.CreatedAt);
         }
@@ -103,6 +105,7 @@ public class PostRepository : IPostRepository
                 .AsNoTracking()
                 .Include(p => p.User)
                 .Include(p => p.Likes)
+                .Include(p => p.Comments)
                 .OrderByDescending(p => p.Likes.Count)
                 .ThenByDescending(p => p.CreatedAt);
         }
@@ -122,6 +125,7 @@ public class PostRepository : IPostRepository
                 .AsNoTracking()
                 .Include(p => p.User)
                 .Include(p => p.Likes)
+                .Include(p => p.Comments)
                 .OrderByDescending(p => p.CreatedAt);
 
             totalCount = await fallbackQuery.CountAsync();
@@ -139,6 +143,7 @@ public class PostRepository : IPostRepository
             .AsNoTracking()
             .Include(p => p.User)
             .Include(p => p.Likes)
+            .Include(p => p.Comments)
             .Where(p => p.UserId == userId)
             .OrderByDescending(p => p.CreatedAt)
             .Skip((page - 1) * pageSize)

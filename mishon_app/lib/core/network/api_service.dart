@@ -135,12 +135,12 @@ class ApiServiceImpl implements ApiService {
     bool removeBanner = false,
   }) async {
     final formData = FormData.fromMap({
-      'avatarScale': avatarScale,
-      'avatarOffsetX': avatarOffsetX,
-      'avatarOffsetY': avatarOffsetY,
-      'bannerScale': bannerScale,
-      'bannerOffsetX': bannerOffsetX,
-      'bannerOffsetY': bannerOffsetY,
+      'avatarScale': _formatFormDouble(avatarScale, fallback: 1),
+      'avatarOffsetX': _formatFormDouble(avatarOffsetX),
+      'avatarOffsetY': _formatFormDouble(avatarOffsetY),
+      'bannerScale': _formatFormDouble(bannerScale, fallback: 1),
+      'bannerOffsetX': _formatFormDouble(bannerOffsetX),
+      'bannerOffsetY': _formatFormDouble(bannerOffsetY),
       'removeAvatar': removeAvatar,
       'removeBanner': removeBanner,
     });
@@ -171,6 +171,12 @@ class ApiServiceImpl implements ApiService {
       options: Options(sendTimeout: const Duration(seconds: 60)),
     );
     return UserProfile.fromJson(response.data);
+  }
+
+  String _formatFormDouble(double value, {double fallback = 0}) {
+    final safeValue = value.isFinite ? value : fallback;
+    final rounded = (safeValue * 10000).round() / 10000;
+    return rounded.toString();
   }
 
   @override

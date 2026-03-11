@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using System.Globalization;
 using FluentValidation;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -155,16 +156,46 @@ public class AuthController : ControllerBase
     public async Task<ActionResult<UserProfileDto>> UpdateProfileMedia(
         [FromForm] IFormFile? avatar,
         [FromForm] IFormFile? banner,
-        [FromForm] double avatarScale = 1,
-        [FromForm] double avatarOffsetX = 0,
-        [FromForm] double avatarOffsetY = 0,
-        [FromForm] double bannerScale = 1,
-        [FromForm] double bannerOffsetX = 0,
-        [FromForm] double bannerOffsetY = 0,
+        [FromForm] string? avatarScale = null,
+        [FromForm] string? avatarOffsetX = null,
+        [FromForm] string? avatarOffsetY = null,
+        [FromForm] string? bannerScale = null,
+        [FromForm] string? bannerOffsetX = null,
+        [FromForm] string? bannerOffsetY = null,
         [FromForm] bool removeAvatar = false,
         [FromForm] bool removeBanner = false,
         CancellationToken cancellationToken = default)
     {
+        if (!TryParseDouble(avatarScale, 1d, out var parsedAvatarScale, out var avatarScaleError))
+        {
+            return BadRequest(new { error = avatarScaleError });
+        }
+
+        if (!TryParseDouble(avatarOffsetX, 0d, out var parsedAvatarOffsetX, out var avatarOffsetXError))
+        {
+            return BadRequest(new { error = avatarOffsetXError });
+        }
+
+        if (!TryParseDouble(avatarOffsetY, 0d, out var parsedAvatarOffsetY, out var avatarOffsetYError))
+        {
+            return BadRequest(new { error = avatarOffsetYError });
+        }
+
+        if (!TryParseDouble(bannerScale, 1d, out var parsedBannerScale, out var bannerScaleError))
+        {
+            return BadRequest(new { error = bannerScaleError });
+        }
+
+        if (!TryParseDouble(bannerOffsetX, 0d, out var parsedBannerOffsetX, out var bannerOffsetXError))
+        {
+            return BadRequest(new { error = bannerOffsetXError });
+        }
+
+        if (!TryParseDouble(bannerOffsetY, 0d, out var parsedBannerOffsetY, out var bannerOffsetYError))
+        {
+            return BadRequest(new { error = bannerOffsetYError });
+        }
+
         var userId = GetUserId();
         var previousProfile = await _authService.GetProfileAsync(userId);
 
@@ -206,12 +237,12 @@ public class AuthController : ControllerBase
             var dto = new UpdateProfileMediaDto(
                 avatarUrl,
                 bannerUrl,
-                avatarScale,
-                avatarOffsetX,
-                avatarOffsetY,
-                bannerScale,
-                bannerOffsetX,
-                bannerOffsetY,
+                parsedAvatarScale,
+                parsedAvatarOffsetX,
+                parsedAvatarOffsetY,
+                parsedBannerScale,
+                parsedBannerOffsetX,
+                parsedBannerOffsetY,
                 removeAvatar,
                 removeBanner);
 
@@ -355,6 +386,27 @@ public class AuthController : ControllerBase
 
         var fullPath = Path.Combine(Directory.GetCurrentDirectory(), "uploads", fileName);
         DeleteLocalFile(fullPath);
+    }
+
+    private static bool TryParseDouble(string? rawValue, double defaultValue, out double value, out string? error)
+    {
+        if (string.IsNullOrWhiteSpace(rawValue))
+        {
+            value = defaultValue;
+            error = null;
+            return true;
+        }
+
+        if (double.TryParse(rawValue, NumberStyles.Float, CultureInfo.InvariantCulture, out value) ||
+            double.TryParse(rawValue, NumberStyles.Float, CultureInfo.CurrentCulture, out value))
+        {
+            error = null;
+            return true;
+        }
+
+        error = $"Invalid numeric value: {rawValue}";
+        value = defaultValue;
+        return false;
     }
 
     private int GetUserId() =>

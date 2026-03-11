@@ -487,42 +487,29 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                 Positioned(
                   left: 26,
                   bottom: -44,
-                  child: Stack(
-                    children: [
-                      Container(
-                        width: 104,
-                        height: 104,
-                        padding: const EdgeInsets.all(4),
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: Colors.white,
-                          boxShadow: [
-                            BoxShadow(
-                              color: const Color(0xFF10203D).withValues(alpha: 0.18),
-                              blurRadius: 24,
-                              offset: const Offset(0, 14),
-                            ),
-                          ],
+                  child: Container(
+                    width: 104,
+                    height: 104,
+                    padding: const EdgeInsets.all(4),
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: Colors.white,
+                      boxShadow: [
+                        BoxShadow(
+                          color: const Color(0xFF10203D).withValues(alpha: 0.18),
+                          blurRadius: 24,
+                          offset: const Offset(0, 14),
                         ),
-                        child: AppAvatar(
-                          username: profile.username,
-                          imageUrl: profile.avatarUrl,
-                          size: 96,
-                          scale: profile.avatarScale,
-                          offsetX: profile.avatarOffsetX,
-                          offsetY: profile.avatarOffsetY,
-                        ),
-                      ),
-                      if (_isOwnProfile)
-                        Positioned(
-                          right: 0,
-                          bottom: 0,
-                          child: _MediaIconButton(
-                            icon: Icons.photo_camera_outlined,
-                            onTap: _isMediaBusy ? null : () => _pickAndEditMedia(ProfileMediaKind.avatar),
-                          ),
-                        ),
-                    ],
+                      ],
+                    ),
+                    child: AppAvatar(
+                      username: profile.username,
+                      imageUrl: profile.avatarUrl,
+                      size: 96,
+                      scale: profile.avatarScale,
+                      offsetX: profile.avatarOffsetX,
+                      offsetY: profile.avatarOffsetY,
+                    ),
                   ),
                 ),
                 if (_isOwnProfile)
@@ -997,32 +984,6 @@ class _HeaderGhostButton extends StatelessWidget {
               ),
             ],
           ),
-        ),
-      ),
-    );
-  }
-}
-
-class _MediaIconButton extends StatelessWidget {
-  final IconData icon;
-  final VoidCallback? onTap;
-
-  const _MediaIconButton({
-    required this.icon,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: const Color(0xFF15223B),
-      shape: const CircleBorder(),
-      child: InkWell(
-        onTap: onTap,
-        customBorder: const CircleBorder(),
-        child: Padding(
-          padding: const EdgeInsets.all(10),
-          child: Icon(icon, color: Colors.white, size: 18),
         ),
       ),
     );

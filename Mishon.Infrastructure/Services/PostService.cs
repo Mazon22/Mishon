@@ -218,6 +218,7 @@ public class PostService : IPostService
             post.ImageUrl,
             post.CreatedAt,
             likesCount,
+            post.Comments.Count,
             isLiked,
             isFollowingAuthor);
     }

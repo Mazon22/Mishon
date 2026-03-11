@@ -18,6 +18,8 @@ class Post {
   final String? imageUrl;
   final DateTime createdAt;
   final int likesCount;
+  @JsonKey(defaultValue: 0)
+  final int commentsCount;
   final bool isLiked;
   final bool isFollowingAuthor;
 
@@ -33,6 +35,7 @@ class Post {
     this.imageUrl,
     required this.createdAt,
     required this.likesCount,
+    this.commentsCount = 0,
     required this.isLiked,
     required this.isFollowingAuthor,
   });
@@ -53,6 +56,7 @@ class Post {
     String? imageUrl,
     DateTime? createdAt,
     int? likesCount,
+    int? commentsCount,
     bool? isLiked,
     bool? isFollowingAuthor,
   }) {
@@ -68,6 +72,7 @@ class Post {
       imageUrl: imageUrl ?? this.imageUrl,
       createdAt: createdAt ?? this.createdAt,
       likesCount: likesCount ?? this.likesCount,
+      commentsCount: commentsCount ?? this.commentsCount,
       isLiked: isLiked ?? this.isLiked,
       isFollowingAuthor: isFollowingAuthor ?? this.isFollowingAuthor,
     );
