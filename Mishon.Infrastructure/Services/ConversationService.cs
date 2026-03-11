@@ -9,12 +9,10 @@ namespace Mishon.Infrastructure.Services;
 public class ConversationService : IConversationService
 {
     private readonly MishonDbContext _context;
-    private readonly INotificationService _notificationService;
 
-    public ConversationService(MishonDbContext context, INotificationService notificationService)
+    public ConversationService(MishonDbContext context)
     {
         _context = context;
-        _notificationService = notificationService;
     }
 
     public async Task<Result<IEnumerable<ConversationDto>>> GetConversationsAsync(int userId, CancellationToken cancellationToken = default)
@@ -26,6 +24,7 @@ public class ConversationService : IConversationService
                 .Include(c => c.UserA)
                 .Include(c => c.UserB)
                 .Include(c => c.Messages)
+                    .ThenInclude(m => m.Attachments)
                 .Where(c => c.UserAId == userId || c.UserBId == userId)
                 .OrderByDescending(c => c.UpdatedAt)
                 .ToListAsync(cancellationToken);
@@ -45,7 +44,7 @@ public class ConversationService : IConversationService
                     peer.AvatarScale,
                     peer.AvatarOffsetX,
                     peer.AvatarOffsetY,
-                    lastMessage?.Content,
+                    lastMessage != null ? BuildMessagePreview(lastMessage) : null,
                     lastMessage?.CreatedAt,
                     unreadCount);
             });
@@ -137,8 +136,11 @@ public class ConversationService : IConversationService
             var messages = await _context.Messages
                 .AsNoTracking()
                 .Include(m => m.Sender)
+                .Include(m => m.Attachments)
                 .Include(m => m.ReplyToMessage)
                     .ThenInclude(m => m!.Sender)
+                .Include(m => m.ReplyToMessage)
+                    .ThenInclude(m => m!.Attachments)
                 .Where(m => m.ConversationId == conversationId)
                 .OrderBy(m => m.CreatedAt)
                 .ToListAsync(cancellationToken);
@@ -146,7 +148,8 @@ public class ConversationService : IConversationService
             MarkAsRead(conversation, userId);
             await _context.SaveChangesAsync(cancellationToken);
 
-            return Result<IEnumerable<MessageDto>>.Success(messages.Select(message => MapToDto(message, userId)));
+            var peerReadAt = conversation.UserAId == userId ? conversation.UserBReadAt : conversation.UserAReadAt;
+            return Result<IEnumerable<MessageDto>>.Success(messages.Select(message => MapToDto(message, userId, peerReadAt)));
         }
         catch (Exception ex)
         {
@@ -158,10 +161,12 @@ public class ConversationService : IConversationService
     {
         try
         {
-            var content = dto.Content.Trim();
-            if (string.IsNullOrWhiteSpace(content))
+            var content = dto.Content?.Trim() ?? string.Empty;
+            var attachments = dto.Attachments?.ToList() ?? [];
+
+            if (string.IsNullOrWhiteSpace(content) && attachments.Count == 0)
             {
-                return Result<MessageDto>.Failure("Текст сообщения обязателен", ResultError.ValidationError);
+                return Result<MessageDto>.Failure("Сообщение должно содержать текст или вложения", ResultError.ValidationError);
             }
 
             var conversation = await _context.Conversations
@@ -184,6 +189,7 @@ public class ConversationService : IConversationService
             {
                 replyToMessage = await _context.Messages
                     .Include(m => m.Sender)
+                    .Include(m => m.Attachments)
                     .FirstOrDefaultAsync(
                         m => m.Id == dto.ReplyToMessageId.Value && m.ConversationId == conversationId,
                         cancellationToken);
@@ -199,7 +205,15 @@ public class ConversationService : IConversationService
                 ConversationId = conversationId,
                 SenderId = userId,
                 Content = content,
-                ReplyToMessageId = replyToMessage?.Id
+                ReplyToMessageId = replyToMessage?.Id,
+                Attachments = attachments.Select(attachment => new MessageAttachment
+                {
+                    FileName = attachment.FileName,
+                    FileUrl = attachment.FileUrl,
+                    ContentType = attachment.ContentType,
+                    SizeBytes = attachment.SizeBytes,
+                    IsImage = attachment.IsImage
+                }).ToList()
             };
 
             _context.Messages.Add(message);
@@ -208,24 +222,10 @@ public class ConversationService : IConversationService
 
             await _context.SaveChangesAsync(cancellationToken);
 
-            var sender = conversation.UserAId == userId ? conversation.UserA : conversation.UserB;
-            var peer = conversation.UserAId == userId ? conversation.UserB : conversation.UserA;
-
-            await _notificationService.CreateAsync(new CreateNotificationDto(
-                peer.Id,
-                userId,
-                replyToMessage != null ? NotificationTypes.MessageReply : NotificationTypes.Message,
-                replyToMessage != null ? "ответил(а) вам в личных сообщениях" : "отправил(а) вам сообщение",
-                null,
-                null,
-                conversationId,
-                message.Id,
-                userId), cancellationToken);
-
-            message.Sender = sender;
+            message.Sender = conversation.UserAId == userId ? conversation.UserA : conversation.UserB;
             message.ReplyToMessage = replyToMessage;
 
-            return Result<MessageDto>.Success(MapToDto(message, userId));
+            return Result<MessageDto>.Success(MapToDto(message, userId, null));
         }
         catch (Exception ex)
         {
@@ -239,8 +239,11 @@ public class ConversationService : IConversationService
         {
             var message = await _context.Messages
                 .Include(m => m.Sender)
+                .Include(m => m.Attachments)
                 .Include(m => m.ReplyToMessage)
                     .ThenInclude(m => m!.Sender)
+                .Include(m => m.ReplyToMessage)
+                    .ThenInclude(m => m!.Attachments)
                 .FirstOrDefaultAsync(m => m.Id == messageId && m.ConversationId == conversationId, cancellationToken);
 
             if (message == null)
@@ -263,7 +266,10 @@ public class ConversationService : IConversationService
             }
 
             await _context.SaveChangesAsync(cancellationToken);
-            return Result<MessageDto>.Success(MapToDto(message, userId));
+            var peerReadAt = conversation == null
+                ? null
+                : conversation.UserAId == userId ? conversation.UserBReadAt : conversation.UserAReadAt;
+            return Result<MessageDto>.Success(MapToDto(message, userId, peerReadAt));
         }
         catch (Exception ex)
         {
@@ -271,22 +277,28 @@ public class ConversationService : IConversationService
         }
     }
 
-    public async Task<Result> DeleteMessageAsync(int userId, int conversationId, int messageId, CancellationToken cancellationToken = default)
+    public async Task<Result<DeleteMessageResultDto>> DeleteMessageAsync(int userId, int conversationId, int messageId, CancellationToken cancellationToken = default)
     {
         try
         {
             var message = await _context.Messages
+                .Include(m => m.Attachments)
                 .FirstOrDefaultAsync(m => m.Id == messageId && m.ConversationId == conversationId, cancellationToken);
 
             if (message == null)
             {
-                return Result.Failure("Сообщение не найдено", ResultError.NotFound);
+                return Result<DeleteMessageResultDto>.Failure("Сообщение не найдено", ResultError.NotFound);
             }
 
             if (message.SenderId != userId)
             {
-                return Result.Failure("Нет прав для удаления сообщения", ResultError.Forbidden);
+                return Result<DeleteMessageResultDto>.Failure("Нет прав для удаления сообщения", ResultError.Forbidden);
             }
+
+            var attachmentUrls = message.Attachments
+                .Select(a => a.FileUrl)
+                .Where(url => !string.IsNullOrWhiteSpace(url))
+                .ToList();
 
             _context.Messages.Remove(message);
 
@@ -297,15 +309,15 @@ public class ConversationService : IConversationService
             }
 
             await _context.SaveChangesAsync(cancellationToken);
-            return Result.Success();
+            return Result<DeleteMessageResultDto>.Success(new DeleteMessageResultDto(attachmentUrls));
         }
         catch (Exception ex)
         {
-            return Result.Failure($"Ошибка удаления сообщения: {ex.Message}", ResultError.InternalError);
+            return Result<DeleteMessageResultDto>.Failure($"Ошибка удаления сообщения: {ex.Message}", ResultError.InternalError);
         }
     }
 
-    private static MessageDto MapToDto(Message message, int userId)
+    private static MessageDto MapToDto(Message message, int userId, DateTime? peerReadAt)
     {
         return new MessageDto(
             message.Id,
@@ -316,9 +328,51 @@ public class ConversationService : IConversationService
             message.CreatedAt,
             message.EditedAt,
             message.SenderId == userId,
+            message.SenderId == userId && peerReadAt.HasValue && message.CreatedAt <= peerReadAt.Value,
             message.ReplyToMessageId,
             message.ReplyToMessage?.Sender.Username,
-            message.ReplyToMessage?.Content);
+            message.ReplyToMessage != null ? BuildMessagePreview(message.ReplyToMessage) : null,
+            message.Attachments.Select(MapAttachmentToDto).ToList());
+    }
+
+    private static MessageAttachmentDto MapAttachmentToDto(MessageAttachment attachment)
+    {
+        return new MessageAttachmentDto(
+            attachment.Id,
+            attachment.FileName,
+            attachment.FileUrl,
+            attachment.ContentType,
+            attachment.SizeBytes,
+            attachment.IsImage);
+    }
+
+    private static string BuildMessagePreview(Message message)
+    {
+        if (!string.IsNullOrWhiteSpace(message.Content))
+        {
+            return message.Content;
+        }
+
+        var attachments = message.Attachments.ToList();
+        if (attachments.Count == 0)
+        {
+            return string.Empty;
+        }
+
+        var imageCount = attachments.Count(a => a.IsImage);
+        var fileCount = attachments.Count - imageCount;
+
+        if (imageCount > 0 && fileCount == 0)
+        {
+            return imageCount == 1 ? "Фото" : $"Фотографии: {imageCount}";
+        }
+
+        if (fileCount > 0 && imageCount == 0)
+        {
+            return fileCount == 1 ? "Файл" : $"Файлы: {fileCount}";
+        }
+
+        return $"Вложения: {attachments.Count}";
     }
 
     private async Task<bool> AreFriendsAsync(int userId, int otherUserId, CancellationToken cancellationToken)

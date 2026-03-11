@@ -149,12 +149,18 @@ class SocialRepository {
     }
   }
 
-  Future<ChatMessageModel> sendMessage(int conversationId, String content, {int? replyToMessageId}) async {
+  Future<ChatMessageModel> sendMessage(
+    int conversationId,
+    String? content, {
+    int? replyToMessageId,
+    List<ChatUploadAttachment> attachments = const [],
+  }) async {
     try {
       return await _apiService.sendMessage(
         conversationId,
         content,
         replyToMessageId: replyToMessageId,
+        attachments: attachments,
       );
     } on ApiException catch (e) {
       _logger.e('Send message failed: ${e.apiError.message}');
@@ -165,9 +171,17 @@ class SocialRepository {
     }
   }
 
-  Future<ChatMessageModel> updateMessage(int conversationId, int messageId, String content) async {
+  Future<ChatMessageModel> updateMessage(
+    int conversationId,
+    int messageId,
+    String content,
+  ) async {
     try {
-      return await _apiService.updateMessage(conversationId, messageId, content);
+      return await _apiService.updateMessage(
+        conversationId,
+        messageId,
+        content,
+      );
     } on ApiException catch (e) {
       _logger.e('Update message failed: ${e.apiError.message}');
       rethrow;
@@ -194,14 +208,18 @@ class SocialRepository {
       return await _apiService.getNotifications();
     } on ApiException catch (e) {
       if (_isNotificationsEndpointMissing(e)) {
-        _logger.w('Notifications endpoint is unavailable on the current backend build');
+        _logger.w(
+          'Notifications endpoint is unavailable on the current backend build',
+        );
         return const [];
       }
       _logger.e('Get notifications failed: ${e.apiError.message}');
       rethrow;
     } on DioException catch (e) {
       if (_isNotificationsEndpointMissing(e)) {
-        _logger.w('Notifications endpoint is unavailable on the current backend build');
+        _logger.w(
+          'Notifications endpoint is unavailable on the current backend build',
+        );
         return const [];
       }
       rethrow;
@@ -216,14 +234,18 @@ class SocialRepository {
       return await _apiService.getNotificationSummary();
     } on ApiException catch (e) {
       if (_isNotificationsEndpointMissing(e)) {
-        _logger.w('Notification summary endpoint is unavailable on the current backend build');
+        _logger.w(
+          'Notification summary endpoint is unavailable on the current backend build',
+        );
         return _emptyNotificationSummary;
       }
       _logger.e('Get notification summary failed: ${e.apiError.message}');
       rethrow;
     } on DioException catch (e) {
       if (_isNotificationsEndpointMissing(e)) {
-        _logger.w('Notification summary endpoint is unavailable on the current backend build');
+        _logger.w(
+          'Notification summary endpoint is unavailable on the current backend build',
+        );
         return _emptyNotificationSummary;
       }
       rethrow;
@@ -238,14 +260,18 @@ class SocialRepository {
       await _apiService.markNotificationRead(notificationId);
     } on ApiException catch (e) {
       if (_isNotificationsEndpointMissing(e)) {
-        _logger.w('Skipping mark notification read because endpoint is unavailable');
+        _logger.w(
+          'Skipping mark notification read because endpoint is unavailable',
+        );
         return;
       }
       _logger.e('Mark notification read failed: ${e.apiError.message}');
       rethrow;
     } on DioException catch (e) {
       if (_isNotificationsEndpointMissing(e)) {
-        _logger.w('Skipping mark notification read because endpoint is unavailable');
+        _logger.w(
+          'Skipping mark notification read because endpoint is unavailable',
+        );
         return;
       }
       rethrow;
@@ -260,14 +286,18 @@ class SocialRepository {
       await _apiService.markAllNotificationsRead();
     } on ApiException catch (e) {
       if (_isNotificationsEndpointMissing(e)) {
-        _logger.w('Skipping mark all notifications read because endpoint is unavailable');
+        _logger.w(
+          'Skipping mark all notifications read because endpoint is unavailable',
+        );
         return;
       }
       _logger.e('Mark all notifications read failed: ${e.apiError.message}');
       rethrow;
     } on DioException catch (e) {
       if (_isNotificationsEndpointMissing(e)) {
-        _logger.w('Skipping mark all notifications read because endpoint is unavailable');
+        _logger.w(
+          'Skipping mark all notifications read because endpoint is unavailable',
+        );
         return;
       }
       rethrow;

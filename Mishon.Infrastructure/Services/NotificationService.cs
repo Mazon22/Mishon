@@ -8,6 +8,12 @@ namespace Mishon.Infrastructure.Services;
 
 public class NotificationService : INotificationService
 {
+    private static readonly string[] HiddenNotificationTypes =
+    [
+        NotificationTypes.Message,
+        NotificationTypes.MessageReply
+    ];
+
     private readonly MishonDbContext _context;
 
     public NotificationService(MishonDbContext context)
@@ -51,7 +57,7 @@ public class NotificationService : INotificationService
             var notifications = await _context.Notifications
                 .AsNoTracking()
                 .Include(n => n.ActorUser)
-                .Where(n => n.UserId == userId)
+                .Where(n => n.UserId == userId && !HiddenNotificationTypes.Contains(n.Type))
                 .OrderByDescending(n => n.CreatedAt)
                 .Take(100)
                 .ToListAsync(cancellationToken);
@@ -70,7 +76,11 @@ public class NotificationService : INotificationService
         {
             var unreadNotifications = await _context.Notifications
                 .AsNoTracking()
-                .CountAsync(n => n.UserId == userId && !n.IsRead, cancellationToken);
+                .CountAsync(
+                    n => n.UserId == userId &&
+                         !n.IsRead &&
+                         !HiddenNotificationTypes.Contains(n.Type),
+                    cancellationToken);
 
             var incomingFriendRequests = await _context.FriendRequests
                 .AsNoTracking()
@@ -126,7 +136,7 @@ public class NotificationService : INotificationService
         try
         {
             var notifications = await _context.Notifications
-                .Where(n => n.UserId == userId && !n.IsRead)
+                .Where(n => n.UserId == userId && !n.IsRead && !HiddenNotificationTypes.Contains(n.Type))
                 .ToListAsync(cancellationToken);
 
             if (notifications.Count == 0)

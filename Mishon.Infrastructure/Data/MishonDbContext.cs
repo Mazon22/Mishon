@@ -16,6 +16,7 @@ public class MishonDbContext : DbContext
     public DbSet<Friendship> Friendships => Set<Friendship>();
     public DbSet<Conversation> Conversations => Set<Conversation>();
     public DbSet<Message> Messages => Set<Message>();
+    public DbSet<MessageAttachment> MessageAttachments => Set<MessageAttachment>();
     public DbSet<Notification> Notifications => Set<Notification>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -165,6 +166,19 @@ public class MishonDbContext : DbContext
                   .WithMany(m => m.Replies)
                   .HasForeignKey(e => e.ReplyToMessageId)
                   .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        modelBuilder.Entity<MessageAttachment>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.FileName).IsRequired().HasMaxLength(260);
+            entity.Property(e => e.FileUrl).IsRequired().HasMaxLength(1000);
+            entity.Property(e => e.ContentType).IsRequired().HasMaxLength(200);
+            entity.HasIndex(e => e.MessageId);
+            entity.HasOne(e => e.Message)
+                  .WithMany(m => m.Attachments)
+                  .HasForeignKey(e => e.MessageId)
+                  .OnDelete(DeleteBehavior.Cascade);
         });
 
         modelBuilder.Entity<Notification>(entity =>

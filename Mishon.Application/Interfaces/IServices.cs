@@ -68,7 +68,7 @@ public interface IConversationService
     Task<Result<IEnumerable<MessageDto>>> GetMessagesAsync(int userId, int conversationId, CancellationToken cancellationToken = default);
     Task<Result<MessageDto>> SendMessageAsync(int userId, int conversationId, CreateMessageDto dto, CancellationToken cancellationToken = default);
     Task<Result<MessageDto>> UpdateMessageAsync(int userId, int conversationId, int messageId, UpdateMessageDto dto, CancellationToken cancellationToken = default);
-    Task<Result> DeleteMessageAsync(int userId, int conversationId, int messageId, CancellationToken cancellationToken = default);
+    Task<Result<DeleteMessageResultDto>> DeleteMessageAsync(int userId, int conversationId, int messageId, CancellationToken cancellationToken = default);
 }
 
 public interface INotificationService

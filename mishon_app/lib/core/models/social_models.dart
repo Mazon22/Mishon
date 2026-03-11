@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 class DiscoverUser {
   final int id;
   final String username;
@@ -141,9 +143,10 @@ class ConversationModel {
       avatarOffsetX: (json['avatarOffsetX'] as num?)?.toDouble() ?? 0,
       avatarOffsetY: (json['avatarOffsetY'] as num?)?.toDouble() ?? 0,
       lastMessage: json['lastMessage'] as String?,
-      lastMessageAt: json['lastMessageAt'] != null
-          ? DateTime.parse(json['lastMessageAt'] as String)
-          : null,
+      lastMessageAt:
+          json['lastMessageAt'] != null
+              ? DateTime.parse(json['lastMessageAt'] as String)
+              : null,
       unreadCount: json['unreadCount'] as int? ?? 0,
     );
   }
@@ -190,9 +193,11 @@ class ChatMessageModel {
   final DateTime createdAt;
   final DateTime? editedAt;
   final bool isMine;
+  final bool isReadByPeer;
   final int? replyToMessageId;
   final String? replyToSenderUsername;
   final String? replyToContent;
+  final List<ChatAttachmentModel> attachments;
 
   const ChatMessageModel({
     required this.id,
@@ -203,9 +208,11 @@ class ChatMessageModel {
     required this.createdAt,
     required this.editedAt,
     required this.isMine,
+    required this.isReadByPeer,
     required this.replyToMessageId,
     required this.replyToSenderUsername,
     required this.replyToContent,
+    required this.attachments,
   });
 
   factory ChatMessageModel.fromJson(Map<String, dynamic> json) {
@@ -216,15 +223,63 @@ class ChatMessageModel {
       senderUsername: json['senderUsername'] as String,
       content: json['content'] as String,
       createdAt: DateTime.parse(json['createdAt'] as String),
-      editedAt: json['editedAt'] != null
-          ? DateTime.parse(json['editedAt'] as String)
-          : null,
+      editedAt:
+          json['editedAt'] != null
+              ? DateTime.parse(json['editedAt'] as String)
+              : null,
       isMine: json['isMine'] as bool? ?? false,
+      isReadByPeer: json['isReadByPeer'] as bool? ?? false,
       replyToMessageId: json['replyToMessageId'] as int?,
       replyToSenderUsername: json['replyToSenderUsername'] as String?,
       replyToContent: json['replyToContent'] as String?,
+      attachments: (json['attachments'] as List<dynamic>? ?? const [])
+          .map((e) => ChatAttachmentModel.fromJson(e as Map<String, dynamic>))
+          .toList(growable: false),
     );
   }
+}
+
+class ChatAttachmentModel {
+  final int id;
+  final String fileName;
+  final String fileUrl;
+  final String contentType;
+  final int sizeBytes;
+  final bool isImage;
+
+  const ChatAttachmentModel({
+    required this.id,
+    required this.fileName,
+    required this.fileUrl,
+    required this.contentType,
+    required this.sizeBytes,
+    required this.isImage,
+  });
+
+  factory ChatAttachmentModel.fromJson(Map<String, dynamic> json) {
+    return ChatAttachmentModel(
+      id: json['id'] as int,
+      fileName: json['fileName'] as String,
+      fileUrl: json['fileUrl'] as String,
+      contentType: json['contentType'] as String? ?? 'application/octet-stream',
+      sizeBytes: json['sizeBytes'] as int? ?? 0,
+      isImage: json['isImage'] as bool? ?? false,
+    );
+  }
+}
+
+class ChatUploadAttachment {
+  final String fileName;
+  final Uint8List bytes;
+  final bool isImage;
+
+  const ChatUploadAttachment({
+    required this.fileName,
+    required this.bytes,
+    required this.isImage,
+  });
+
+  int get sizeBytes => bytes.lengthInBytes;
 }
 
 class NotificationItemModel {

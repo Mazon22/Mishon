@@ -68,18 +68,42 @@ public record MessageDto(
     DateTime CreatedAt,
     DateTime? EditedAt,
     bool IsMine,
+    bool IsReadByPeer,
     int? ReplyToMessageId,
     string? ReplyToSenderUsername,
-    string? ReplyToContent
+    string? ReplyToContent,
+    IReadOnlyCollection<MessageAttachmentDto> Attachments
+);
+
+public record MessageAttachmentDto(
+    int Id,
+    string FileName,
+    string FileUrl,
+    string ContentType,
+    long SizeBytes,
+    bool IsImage
+);
+
+public record CreateMessageAttachmentDto(
+    string FileName,
+    string FileUrl,
+    string ContentType,
+    long SizeBytes,
+    bool IsImage
 );
 
 public record CreateMessageDto(
-    string Content,
-    int? ReplyToMessageId
+    string? Content,
+    int? ReplyToMessageId,
+    IReadOnlyCollection<CreateMessageAttachmentDto>? Attachments
 );
 
 public record UpdateMessageDto(
     string Content
+);
+
+public record DeleteMessageResultDto(
+    IReadOnlyCollection<string> AttachmentUrls
 );
 
 public record NotificationDto(
@@ -124,8 +148,12 @@ public class CreateMessageDtoValidator : AbstractValidator<CreateMessageDto>
     public CreateMessageDtoValidator()
     {
         RuleFor(x => x.Content)
-            .NotEmpty().WithMessage("Текст сообщения обязателен")
-            .MaximumLength(1000).WithMessage("Максимум 1000 символов");
+            .MaximumLength(1000).WithMessage("Максимум 1000 символов")
+            .When(x => !string.IsNullOrWhiteSpace(x.Content));
+
+        RuleFor(x => x)
+            .Must(x => !string.IsNullOrWhiteSpace(x.Content) || (x.Attachments?.Count ?? 0) > 0)
+            .WithMessage("Сообщение должно содержать текст или вложения");
     }
 }
 
