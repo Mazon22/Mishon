@@ -16,6 +16,7 @@ class AppShell extends ConsumerWidget {
   final FloatingActionButton? floatingActionButton;
   final double maxContentWidth;
   final bool showNotificationsAction;
+  final bool showAppBar;
 
   const AppShell({
     super.key,
@@ -26,18 +27,22 @@ class AppShell extends ConsumerWidget {
     this.floatingActionButton,
     this.maxContentWidth = 960,
     this.showNotificationsAction = false,
+    this.showAppBar = true,
   });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final currentUserId = ref.watch(userIdProvider).value;
-    final summary = ref.watch(notificationSummaryProvider).maybeWhen(
+    final summary = ref
+        .watch(notificationSummaryProvider)
+        .maybeWhen(
           data: (value) => value,
-          orElse: () => const NotificationSummaryModel(
-            unreadNotifications: 0,
-            unreadChats: 0,
-            incomingFriendRequests: 0,
-          ),
+          orElse:
+              () => const NotificationSummaryModel(
+                unreadNotifications: 0,
+                unreadChats: 0,
+                incomingFriendRequests: 0,
+              ),
         );
     final destinations = _buildDestinations(currentUserId, summary);
     final shellActions = <Widget>[
@@ -55,23 +60,22 @@ class AppShell extends ConsumerWidget {
 
     return Scaffold(
       extendBody: true,
-      appBar: AppBar(
-        titleSpacing: 18,
-        backgroundColor: Colors.white.withValues(alpha: 0.88),
-        title: Text(title),
-        actions: shellActions,
-      ),
+      appBar:
+          showAppBar
+              ? AppBar(
+                titleSpacing: 18,
+                backgroundColor: Colors.white.withValues(alpha: 0.88),
+                title: Text(title),
+                actions: shellActions,
+              )
+              : null,
       floatingActionButton: floatingActionButton,
       body: DecoratedBox(
         decoration: const BoxDecoration(
           gradient: LinearGradient(
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
-            colors: [
-              Color(0xFFF7F6FF),
-              Color(0xFFF7FBFF),
-              Color(0xFFFFFBF5),
-            ],
+            colors: [Color(0xFFF7F6FF), Color(0xFFF7FBFF), Color(0xFFFFFBF5)],
           ),
         ),
         child: Stack(
@@ -129,7 +133,9 @@ class AppShell extends ConsumerWidget {
                               ),
                               boxShadow: [
                                 BoxShadow(
-                                  color: const Color(0xFF15213A).withValues(alpha: 0.08),
+                                  color: const Color(
+                                    0xFF15213A,
+                                  ).withValues(alpha: 0.08),
                                   blurRadius: 28,
                                   offset: const Offset(0, 16),
                                 ),
@@ -137,32 +143,32 @@ class AppShell extends ConsumerWidget {
                             ),
                             child: NavigationRail(
                               selectedIndex: currentSection.index,
-                              onDestinationSelected: (index) => _goTo(
-                                context,
-                                destinations[index].route,
-                              ),
+                              onDestinationSelected:
+                                  (index) =>
+                                      _goTo(context, destinations[index].route),
                               labelType: NavigationRailLabelType.all,
                               minWidth: 96,
                               groupAlignment: -0.4,
                               backgroundColor: Colors.transparent,
                               indicatorColor: const Color(0xFFE8EEFF),
-                              destinations: destinations
-                                  .map(
-                                    (item) => NavigationRailDestination(
-                                      icon: _DestinationIcon(
-                                        icon: item.icon,
-                                        badgeCount: item.badgeCount,
-                                        selected: false,
-                                      ),
-                                      selectedIcon: _DestinationIcon(
-                                        icon: item.selectedIcon,
-                                        badgeCount: item.badgeCount,
-                                        selected: true,
-                                      ),
-                                      label: Text(item.label),
-                                    ),
-                                  )
-                                  .toList(),
+                              destinations:
+                                  destinations
+                                      .map(
+                                        (item) => NavigationRailDestination(
+                                          icon: _DestinationIcon(
+                                            icon: item.icon,
+                                            badgeCount: item.badgeCount,
+                                            selected: false,
+                                          ),
+                                          selectedIcon: _DestinationIcon(
+                                            icon: item.selectedIcon,
+                                            badgeCount: item.badgeCount,
+                                            selected: true,
+                                          ),
+                                          label: Text(item.label),
+                                        ),
+                                      )
+                                      .toList(),
                             ),
                           ),
                         ),
@@ -171,7 +177,9 @@ class AppShell extends ConsumerWidget {
                         child: Align(
                           alignment: Alignment.topCenter,
                           child: ConstrainedBox(
-                            constraints: BoxConstraints(maxWidth: maxContentWidth),
+                            constraints: BoxConstraints(
+                              maxWidth: maxContentWidth,
+                            ),
                             child: child,
                           ),
                         ),
@@ -184,70 +192,79 @@ class AppShell extends ConsumerWidget {
           ],
         ),
       ),
-      bottomNavigationBar: MediaQuery.sizeOf(context).width < 1040
-          ? SafeArea(
-              minimum: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.92),
-                  borderRadius: BorderRadius.circular(28),
-                  border: Border.all(
-                    color: Colors.white.withValues(alpha: 0.85),
-                  ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: const Color(0xFF0F172A).withValues(alpha: 0.10),
-                      blurRadius: 24,
-                      offset: const Offset(0, 12),
+      bottomNavigationBar:
+          MediaQuery.sizeOf(context).width < 1040
+              ? SafeArea(
+                minimum: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.92),
+                    borderRadius: BorderRadius.circular(28),
+                    border: Border.all(
+                      color: Colors.white.withValues(alpha: 0.85),
                     ),
-                  ],
-                ),
-                child: NavigationBarTheme(
-                  data: NavigationBarThemeData(
-                    backgroundColor: Colors.transparent,
-                    indicatorColor: const Color(0xFFE9EEFF),
-                    labelTextStyle: WidgetStateProperty.resolveWith((states) {
-                      final isSelected = states.contains(WidgetState.selected);
-                      return TextStyle(
-                        fontSize: 12,
-                        fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
-                        color: isSelected ? const Color(0xFF18243C) : const Color(0xFF5B687D),
-                      );
-                    }),
+                    boxShadow: [
+                      BoxShadow(
+                        color: const Color(0xFF0F172A).withValues(alpha: 0.10),
+                        blurRadius: 24,
+                        offset: const Offset(0, 12),
+                      ),
+                    ],
                   ),
-                  child: NavigationBar(
-                    height: 76,
-                    selectedIndex: currentSection.index,
-                    onDestinationSelected: (index) => _goTo(
-                      context,
-                      destinations[index].route,
+                  child: NavigationBarTheme(
+                    data: NavigationBarThemeData(
+                      backgroundColor: Colors.transparent,
+                      indicatorColor: const Color(0xFFE9EEFF),
+                      labelTextStyle: WidgetStateProperty.resolveWith((states) {
+                        final isSelected = states.contains(
+                          WidgetState.selected,
+                        );
+                        return TextStyle(
+                          fontSize: 12,
+                          fontWeight:
+                              isSelected ? FontWeight.w700 : FontWeight.w500,
+                          color:
+                              isSelected
+                                  ? const Color(0xFF18243C)
+                                  : const Color(0xFF5B687D),
+                        );
+                      }),
                     ),
-                    destinations: destinations
-                        .map(
-                          (item) => NavigationDestination(
-                            icon: _DestinationIcon(
-                              icon: item.icon,
-                              badgeCount: item.badgeCount,
-                              selected: false,
-                            ),
-                            selectedIcon: _DestinationIcon(
-                              icon: item.selectedIcon,
-                              badgeCount: item.badgeCount,
-                              selected: true,
-                            ),
-                            label: item.label,
-                          ),
-                        )
-                        .toList(),
+                    child: NavigationBar(
+                      height: 76,
+                      selectedIndex: currentSection.index,
+                      onDestinationSelected:
+                          (index) => _goTo(context, destinations[index].route),
+                      destinations:
+                          destinations
+                              .map(
+                                (item) => NavigationDestination(
+                                  icon: _DestinationIcon(
+                                    icon: item.icon,
+                                    badgeCount: item.badgeCount,
+                                    selected: false,
+                                  ),
+                                  selectedIcon: _DestinationIcon(
+                                    icon: item.selectedIcon,
+                                    badgeCount: item.badgeCount,
+                                    selected: true,
+                                  ),
+                                  label: item.label,
+                                ),
+                              )
+                              .toList(),
+                    ),
                   ),
                 ),
-              ),
-            )
-          : null,
+              )
+              : null,
     );
   }
 
-  List<_ShellDestination> _buildDestinations(int? currentUserId, NotificationSummaryModel summary) {
+  List<_ShellDestination> _buildDestinations(
+    int? currentUserId,
+    NotificationSummaryModel summary,
+  ) {
     return [
       _ShellDestination(
         label: 'Лента',
@@ -334,7 +351,10 @@ class _DestinationIcon extends StatelessWidget {
               padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
               constraints: const BoxConstraints(minWidth: 18),
               decoration: BoxDecoration(
-                color: selected ? const Color(0xFF2A5BFF) : const Color(0xFF101727),
+                color:
+                    selected
+                        ? const Color(0xFF2A5BFF)
+                        : const Color(0xFF101727),
                 borderRadius: BorderRadius.circular(999),
               ),
               child: Text(
@@ -357,10 +377,7 @@ class _BellButton extends StatelessWidget {
   final int count;
   final VoidCallback onTap;
 
-  const _BellButton({
-    required this.count,
-    required this.onTap,
-  });
+  const _BellButton({required this.count, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
