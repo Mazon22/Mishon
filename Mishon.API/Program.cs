@@ -6,8 +6,10 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.FileProviders;
 using Microsoft.IdentityModel.Tokens;
+using Mishon.API.Hubs;
 using Microsoft.OpenApi.Models;
 using Mishon.API.Middleware;
+using Mishon.API.Realtime;
 using Mishon.Application.DTOs;
 using Mishon.Application.Interfaces;
 using Mishon.Infrastructure.Data;
@@ -27,6 +29,7 @@ builder.Services.AddControllers()
         options.JsonSerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.CamelCase;
         options.JsonSerializerOptions.DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull;
     });
+builder.Services.AddSignalR();
 
 // Swagger с JWT поддержкой
 builder.Services.AddEndpointsApiExplorer();
@@ -106,6 +109,19 @@ builder.Services.AddAuthentication(options =>
     // Обработка 401
     options.Events = new JwtBearerEvents
     {
+        OnMessageReceived = context =>
+        {
+            var accessToken = context.Request.Query["access_token"];
+            var path = context.HttpContext.Request.Path;
+
+            if (!string.IsNullOrWhiteSpace(accessToken) &&
+                path.StartsWithSegments("/hubs/chat"))
+            {
+                context.Token = accessToken;
+            }
+
+            return Task.CompletedTask;
+        },
         OnAuthenticationFailed = context =>
         {
             if (context.Exception.GetType() == typeof(SecurityTokenExpiredException))
@@ -163,7 +179,10 @@ builder.Services.AddScoped<ICommentService, CommentService>();
 builder.Services.AddScoped<IUserDiscoveryService, UserDiscoveryService>();
 builder.Services.AddScoped<IFriendService, FriendService>();
 builder.Services.AddScoped<IConversationService, ConversationService>();
+builder.Services.AddScoped<IBlockService, BlockService>();
 builder.Services.AddScoped<INotificationService, NotificationService>();
+builder.Services.AddSingleton<IChatConnectionTracker, ChatConnectionTracker>();
+builder.Services.AddSingleton<IChatRealtimeNotifier, ChatRealtimeNotifier>();
 
 // FluentValidation
 builder.Services.AddValidatorsFromAssemblyContaining<RegisterDtoValidator>();
@@ -235,5 +254,6 @@ app.UseMiddleware<UserPresenceMiddleware>();
 app.UseAuthorization();
 
 app.MapControllers();
+app.MapHub<ChatHub>("/hubs/chat");
 
 app.Run();

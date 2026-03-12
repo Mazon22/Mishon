@@ -77,6 +77,8 @@ public record UserProfileDto(
     int FollowersCount,
     int FollowingCount,
     int PostsCount,
+    bool IsBlockedByViewer,
+    bool HasBlockedViewer,
     bool? IsFollowing = null
 );
 

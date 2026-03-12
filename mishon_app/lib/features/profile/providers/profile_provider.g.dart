@@ -26,7 +26,7 @@ final profileNotifierProvider = AutoDisposeNotifierProvider<
 
 typedef _$ProfileNotifier = AutoDisposeNotifier<AsyncValue<UserProfile?>>;
 String _$userProfileNotifierHash() =>
-    r'025e97e05b4b8eef71bd97e4e551bae725b6a537';
+    r'17bd32fae24c1fbdbdf1809dbd486e1dc414f7aa';
 
 /// Copied from Dart SDK
 class _SystemHash {

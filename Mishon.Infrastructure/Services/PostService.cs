@@ -10,17 +10,20 @@ public class PostService : IPostService
     private readonly ILikeRepository _likeRepository;
     private readonly IFollowRepository _followRepository;
     private readonly INotificationService _notificationService;
+    private readonly IBlockService _blockService;
 
     public PostService(
         IPostRepository postRepository,
         ILikeRepository likeRepository,
         IFollowRepository followRepository,
-        INotificationService notificationService)
+        INotificationService notificationService,
+        IBlockService blockService)
     {
         _postRepository = postRepository;
         _likeRepository = likeRepository;
         _followRepository = followRepository;
         _notificationService = notificationService;
+        _blockService = blockService;
     }
 
     public async Task<Result<PostDto>> CreateAsync(int userId, CreatePostDto dto)
@@ -58,12 +61,16 @@ public class PostService : IPostService
             if (page < 1) page = 1;
             if (pageSize < 1 || pageSize > 50) pageSize = 10;
 
+            var restrictedUserIds = await _blockService.GetRestrictedUserIdsAsync(userId);
             var pagedPosts = await _postRepository.GetFeedAsync(userId, page, pageSize);
-            var postIds = pagedPosts.Items.Select(p => p.Id);
+            var visiblePosts = pagedPosts.Items
+                .Where(post => !restrictedUserIds.Contains(post.UserId))
+                .ToList();
+            var postIds = visiblePosts.Select(p => p.Id);
             var userLikes = await _likeRepository.GetUserLikesAsync(userId, postIds);
             var followingIds = await _followRepository.GetFollowingIdsAsync(userId);
 
-            var postDtos = pagedPosts.Items.Select(post => MapToDto(
+            var postDtos = visiblePosts.Select(post => MapToDto(
                 post,
                 post.Likes.Count,
                 userLikes.ContainsKey(post.Id),
@@ -88,6 +95,12 @@ public class PostService : IPostService
         {
             if (page < 1) page = 1;
             if (pageSize < 1 || pageSize > 50) pageSize = 20;
+
+            var restrictedUserIds = await _blockService.GetRestrictedUserIdsAsync(currentUserId);
+            if (currentUserId != profileUserId && restrictedUserIds.Contains(profileUserId))
+            {
+                return Result<IEnumerable<PostDto>>.Success([]);
+            }
 
             var posts = (await _postRepository.GetUserPostsAsync(profileUserId, page, pageSize)).ToList();
             var userLikes = await _likeRepository.GetUserLikesAsync(currentUserId, posts.Select(p => p.Id));
@@ -116,6 +129,11 @@ public class PostService : IPostService
             if (post == null)
             {
                 return Result<PostDto>.Failure("Пост не найден", ResultError.NotFound);
+            }
+
+            if (await _blockService.AreUsersBlockedAsync(userId, post.UserId))
+            {
+                return Result<PostDto>.Failure("Действие недоступно для заблокированного пользователя", ResultError.Forbidden);
             }
 
             var existingLike = await _likeRepository.GetAsync(userId, postId);
@@ -167,6 +185,11 @@ public class PostService : IPostService
             if (post == null)
             {
                 return Result<PostDto>.Failure("Пост не найден", ResultError.NotFound);
+            }
+
+            if (await _blockService.AreUsersBlockedAsync(userId, post.UserId))
+            {
+                return Result<PostDto>.Failure("Пост недоступен", ResultError.Forbidden);
             }
 
             var isLiked = await _likeRepository.GetAsync(userId, postId) != null;

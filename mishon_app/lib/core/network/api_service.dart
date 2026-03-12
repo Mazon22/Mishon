@@ -70,12 +70,17 @@ abstract class ApiService {
 
   Future<List<ConversationModel>> getConversations();
   Future<DirectConversationModel> getOrCreateConversation(int userId);
-  Future<List<ChatMessageModel>> getMessages(int conversationId);
+  Future<ChatMessagePageModel> getMessages(
+    int conversationId, {
+    int limit = 20,
+    int? beforeMessageId,
+  });
   Future<ChatMessageModel> sendMessage(
     int conversationId,
     String? content, {
     int? replyToMessageId,
     List<ChatUploadAttachment> attachments = const [],
+    void Function(int sent, int total)? onSendProgress,
   });
   Future<ChatMessageModel> updateMessage(
     int conversationId,
@@ -83,6 +88,20 @@ abstract class ApiService {
     String content,
   );
   Future<void> deleteMessage(int conversationId, int messageId);
+  Future<void> deleteMessageForAll(int conversationId, int messageId);
+  Future<void> pinConversation(int conversationId, bool isPinned);
+  Future<void> archiveConversation(int conversationId, bool isArchived);
+  Future<void> favoriteConversation(int conversationId, bool isFavorite);
+  Future<void> muteConversation(int conversationId, bool isMuted);
+  Future<void> deleteConversation(
+    int conversationId, {
+    required bool deleteForBoth,
+  });
+  Future<void> clearConversationHistory(int conversationId);
+  Future<void> blockUserFromChat(int userId);
+  Future<void> unblockUserFromChat(int userId);
+  Future<void> sendTypingStart(int conversationId);
+  Future<void> sendTypingStop(int conversationId);
 
   Future<List<NotificationItemModel>> getNotifications();
   Future<NotificationSummaryModel> getNotificationSummary();
@@ -437,11 +456,19 @@ class ApiServiceImpl implements ApiService {
   }
 
   @override
-  Future<List<ChatMessageModel>> getMessages(int conversationId) async {
-    final response = await _dio.get('/conversations/$conversationId/messages');
-    return (response.data as List)
-        .map((e) => ChatMessageModel.fromJson(e))
-        .toList();
+  Future<ChatMessagePageModel> getMessages(
+    int conversationId, {
+    int limit = 20,
+    int? beforeMessageId,
+  }) async {
+    final response = await _dio.get(
+      '/conversations/$conversationId/messages',
+      queryParameters: {
+        'limit': limit,
+        if (beforeMessageId != null) 'beforeMessageId': beforeMessageId,
+      },
+    );
+    return ChatMessagePageModel.fromJson(response.data);
   }
 
   @override
@@ -450,6 +477,7 @@ class ApiServiceImpl implements ApiService {
     String? content, {
     int? replyToMessageId,
     List<ChatUploadAttachment> attachments = const [],
+    void Function(int sent, int total)? onSendProgress,
   }) async {
     final formData = FormData.fromMap({
       if (content != null) 'content': content,
@@ -475,6 +503,7 @@ class ApiServiceImpl implements ApiService {
       '/conversations/$conversationId/messages',
       data: formData,
       options: Options(sendTimeout: const Duration(seconds: 60)),
+      onSendProgress: onSendProgress,
     );
     return ChatMessageModel.fromJson(response.data);
   }
@@ -495,6 +524,85 @@ class ApiServiceImpl implements ApiService {
   @override
   Future<void> deleteMessage(int conversationId, int messageId) async {
     await _dio.delete('/conversations/$conversationId/messages/$messageId');
+  }
+
+  @override
+  Future<void> deleteMessageForAll(int conversationId, int messageId) async {
+    await _dio.post(
+      '/message/delete-for-all',
+      data: {'conversationId': conversationId, 'messageId': messageId},
+    );
+  }
+
+  @override
+  Future<void> pinConversation(int conversationId, bool isPinned) async {
+    await _dio.post(
+      '/chat/pin',
+      data: {'conversationId': conversationId, 'isPinned': isPinned},
+    );
+  }
+
+  @override
+  Future<void> archiveConversation(int conversationId, bool isArchived) async {
+    await _dio.post(
+      '/chat/archive',
+      data: {'conversationId': conversationId, 'isArchived': isArchived},
+    );
+  }
+
+  @override
+  Future<void> favoriteConversation(int conversationId, bool isFavorite) async {
+    await _dio.post(
+      '/chat/favorite',
+      data: {'conversationId': conversationId, 'isFavorite': isFavorite},
+    );
+  }
+
+  @override
+  Future<void> muteConversation(int conversationId, bool isMuted) async {
+    await _dio.post(
+      '/chat/mute',
+      data: {'conversationId': conversationId, 'isMuted': isMuted},
+    );
+  }
+
+  @override
+  Future<void> deleteConversation(
+    int conversationId, {
+    required bool deleteForBoth,
+  }) async {
+    await _dio.delete(
+      '/chat',
+      data: {'conversationId': conversationId, 'deleteForBoth': deleteForBoth},
+    );
+  }
+
+  @override
+  Future<void> clearConversationHistory(int conversationId) async {
+    await _dio.post(
+      '/chat/clear-history',
+      data: {'conversationId': conversationId},
+    );
+  }
+
+  @override
+  Future<void> blockUserFromChat(int userId) async {
+    await _dio.post('/chat/block-user', data: {'userId': userId});
+  }
+
+  @override
+  Future<void> unblockUserFromChat(int userId) async {
+    await _dio.post('/chat/unblock-user', data: {'userId': userId});
+  }
+
+  @override
+  Future<void> sendTypingStart(int conversationId) async {
+    await _dio.post('/chat/typing-start', data: {'conversationId': conversationId});
+  }
+
+  @override
+  Future<void> sendTypingStop(int conversationId) async {
+    await _dio.post('/chat/typing-stop', data: {'conversationId': conversationId});
   }
 
   @override

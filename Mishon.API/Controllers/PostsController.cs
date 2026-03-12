@@ -129,14 +129,18 @@ public class PostsController : ControllerBase
     [HttpGet("{id:int}")]
     [ProducesResponseType(typeof(PostDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]
     public async Task<ActionResult<PostDto>> GetPost(int id)
     {
         var result = await _postService.GetPostAsync(id, GetUserId());
         if (!result.IsSuccess)
         {
-            return result.ResultError == ResultError.NotFound
-                ? NotFound(new { error = result.Error })
-                : StatusCode(500, new { error = result.Error });
+            return result.ResultError switch
+            {
+                ResultError.NotFound => NotFound(new { error = result.Error }),
+                ResultError.Forbidden => StatusCode(403, new { error = result.Error }),
+                _ => StatusCode(500, new { error = result.Error })
+            };
         }
 
         return Ok(result.Data);
@@ -145,14 +149,18 @@ public class PostsController : ControllerBase
     [HttpPost("{id:int}/like")]
     [ProducesResponseType(typeof(PostDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]
     public async Task<ActionResult<PostDto>> ToggleLike(int id)
     {
         var result = await _postService.ToggleLikeAsync(GetUserId(), id);
         if (!result.IsSuccess)
         {
-            return result.ResultError == ResultError.NotFound
-                ? NotFound(new { error = result.Error })
-                : StatusCode(500, new { error = result.Error });
+            return result.ResultError switch
+            {
+                ResultError.NotFound => NotFound(new { error = result.Error }),
+                ResultError.Forbidden => StatusCode(403, new { error = result.Error }),
+                _ => StatusCode(500, new { error = result.Error })
+            };
         }
 
         return Ok(result.Data);

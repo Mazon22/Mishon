@@ -17,12 +17,18 @@ public class AuthService : IAuthService
     private readonly IUserRepository _userRepository;
     private readonly IConfiguration _config;
     private readonly MishonDbContext _context;
+    private readonly IBlockService _blockService;
 
-    public AuthService(IUserRepository userRepository, IConfiguration config, MishonDbContext context)
+    public AuthService(
+        IUserRepository userRepository,
+        IConfiguration config,
+        MishonDbContext context,
+        IBlockService blockService)
     {
         _userRepository = userRepository;
         _config = config;
         _context = context;
+        _blockService = blockService;
     }
 
     public async Task<Result<AuthResponseDto>> RegisterAsync(RegisterDto dto)
@@ -263,8 +269,13 @@ public class AuthService : IAuthService
 
             var isOnline = user.LastSeenAt >= DateTime.UtcNow.AddMinutes(-5);
 
+            var blockStatus = currentUserId.HasValue && currentUserId.Value != userId
+                ? await _blockService.GetStatusAsync(currentUserId.Value, userId)
+                : new UserBlockStatusDto(false, false);
+
+            var canViewProtectedDetails = !blockStatus.HasBlockedViewer;
             bool? isFollowing = null;
-            if (currentUserId.HasValue)
+            if (currentUserId.HasValue && canViewProtectedDetails)
             {
                 isFollowing = await _context.Follows
                     .AsNoTracking()
@@ -274,8 +285,8 @@ public class AuthService : IAuthService
             return Result<UserProfileDto>.Success(new UserProfileDto(
                 user.Id,
                 user.Username,
-                user.Email,
-                user.AboutMe,
+                canViewProtectedDetails ? user.Email : string.Empty,
+                canViewProtectedDetails ? user.AboutMe : null,
                 user.AvatarUrl,
                 user.BannerUrl,
                 user.AvatarScale,
@@ -287,9 +298,11 @@ public class AuthService : IAuthService
                 user.CreatedAt,
                 user.LastSeenAt,
                 isOnline,
-                followersCount,
-                followingCount,
-                postsCount,
+                canViewProtectedDetails ? followersCount : 0,
+                canViewProtectedDetails ? followingCount : 0,
+                canViewProtectedDetails ? postsCount : 0,
+                blockStatus.IsBlockedByViewer,
+                blockStatus.HasBlockedViewer,
                 isFollowing));
         }
         catch (Exception ex)

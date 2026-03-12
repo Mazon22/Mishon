@@ -84,29 +84,15 @@ class UserProfileNotifier extends _$UserProfileNotifier {
   void updateFollowingStatus(bool isFollowing) {
     final currentProfile = state.value;
     if (currentProfile != null) {
-      state = AsyncValue.data(UserProfile(
-        id: currentProfile.id,
-        username: currentProfile.username,
-        email: currentProfile.email,
-        aboutMe: currentProfile.aboutMe,
-        avatarUrl: currentProfile.avatarUrl,
-        bannerUrl: currentProfile.bannerUrl,
-        avatarScale: currentProfile.avatarScale,
-        avatarOffsetX: currentProfile.avatarOffsetX,
-        avatarOffsetY: currentProfile.avatarOffsetY,
-        bannerScale: currentProfile.bannerScale,
-        bannerOffsetX: currentProfile.bannerOffsetX,
-        bannerOffsetY: currentProfile.bannerOffsetY,
-        createdAt: currentProfile.createdAt,
-        lastSeenAt: currentProfile.lastSeenAt,
-        isOnline: currentProfile.isOnline,
-        followersCount: isFollowing 
-            ? currentProfile.followersCount + 1 
-            : currentProfile.followersCount - 1,
-        followingCount: currentProfile.followingCount,
-        postsCount: currentProfile.postsCount,
-        isFollowing: isFollowing,
-      ));
+      state = AsyncValue.data(
+        currentProfile.copyWith(
+          followersCount:
+              isFollowing
+                  ? currentProfile.followersCount + 1
+                  : currentProfile.followersCount - 1,
+          isFollowing: isFollowing,
+        ),
+      );
     }
   }
 }

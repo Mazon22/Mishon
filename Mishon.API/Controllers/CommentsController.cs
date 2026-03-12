@@ -54,6 +54,7 @@ public class CommentsController : ControllerBase
             return result.ResultError switch
             {
                 ResultError.NotFound => NotFound(new { error = result.Error }),
+                ResultError.Forbidden => StatusCode(403, new { error = result.Error }),
                 ResultError.ValidationError => BadRequest(new { error = result.Error }),
                 _ => StatusCode(500, new { error = result.Error })
             };
@@ -68,15 +69,19 @@ public class CommentsController : ControllerBase
     [HttpGet]
     [ProducesResponseType(typeof(IEnumerable<CommentDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]
     public async Task<ActionResult<IEnumerable<CommentDto>>> GetByPostId(int postId)
     {
-        var result = await _commentService.GetByPostIdAsync(postId);
+        var result = await _commentService.GetByPostIdAsync(GetUserId(), postId);
 
         if (!result.IsSuccess)
         {
-            return result.ResultError == ResultError.NotFound
-                ? NotFound(new { error = result.Error })
-                : StatusCode(500, new { error = result.Error });
+            return result.ResultError switch
+            {
+                ResultError.NotFound => NotFound(new { error = result.Error }),
+                ResultError.Forbidden => StatusCode(403, new { error = result.Error }),
+                _ => StatusCode(500, new { error = result.Error })
+            };
         }
 
         return Ok(result.Data);

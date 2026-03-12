@@ -46,6 +46,8 @@ class UserProfile {
   final int followersCount;
   final int followingCount;
   final int postsCount;
+  final bool isBlockedByViewer;
+  final bool hasBlockedViewer;
   final bool? isFollowing;
 
   UserProfile({
@@ -67,8 +69,57 @@ class UserProfile {
     required this.followersCount,
     required this.followingCount,
     required this.postsCount,
+    required this.isBlockedByViewer,
+    required this.hasBlockedViewer,
     this.isFollowing,
   });
+
+  UserProfile copyWith({
+    String? username,
+    String? email,
+    String? aboutMe,
+    String? avatarUrl,
+    String? bannerUrl,
+    double? avatarScale,
+    double? avatarOffsetX,
+    double? avatarOffsetY,
+    double? bannerScale,
+    double? bannerOffsetX,
+    double? bannerOffsetY,
+    DateTime? createdAt,
+    DateTime? lastSeenAt,
+    bool? isOnline,
+    int? followersCount,
+    int? followingCount,
+    int? postsCount,
+    bool? isBlockedByViewer,
+    bool? hasBlockedViewer,
+    bool? isFollowing,
+  }) {
+    return UserProfile(
+      id: id,
+      username: username ?? this.username,
+      email: email ?? this.email,
+      aboutMe: aboutMe ?? this.aboutMe,
+      avatarUrl: avatarUrl ?? this.avatarUrl,
+      bannerUrl: bannerUrl ?? this.bannerUrl,
+      avatarScale: avatarScale ?? this.avatarScale,
+      avatarOffsetX: avatarOffsetX ?? this.avatarOffsetX,
+      avatarOffsetY: avatarOffsetY ?? this.avatarOffsetY,
+      bannerScale: bannerScale ?? this.bannerScale,
+      bannerOffsetX: bannerOffsetX ?? this.bannerOffsetX,
+      bannerOffsetY: bannerOffsetY ?? this.bannerOffsetY,
+      createdAt: createdAt ?? this.createdAt,
+      lastSeenAt: lastSeenAt ?? this.lastSeenAt,
+      isOnline: isOnline ?? this.isOnline,
+      followersCount: followersCount ?? this.followersCount,
+      followingCount: followingCount ?? this.followingCount,
+      postsCount: postsCount ?? this.postsCount,
+      isBlockedByViewer: isBlockedByViewer ?? this.isBlockedByViewer,
+      hasBlockedViewer: hasBlockedViewer ?? this.hasBlockedViewer,
+      isFollowing: isFollowing ?? this.isFollowing,
+    );
+  }
 
   factory UserProfile.fromJson(Map<String, dynamic> json) =>
       _$UserProfileFromJson(json);

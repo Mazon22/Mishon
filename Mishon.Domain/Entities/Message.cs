@@ -8,7 +8,10 @@ public class Message
     public string Content { get; set; } = string.Empty;
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime? EditedAt { get; set; }
+    public DateTime? DeliveredToPeerAt { get; set; }
     public int? ReplyToMessageId { get; set; }
+    public bool DeletedForUserA { get; set; }
+    public bool DeletedForUserB { get; set; }
 
     public Conversation Conversation { get; set; } = null!;
     public User Sender { get; set; } = null!;

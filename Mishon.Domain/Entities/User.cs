@@ -33,6 +33,8 @@ public class User
     public ICollection<Conversation> ConversationsA { get; set; } = new List<Conversation>();
     public ICollection<Conversation> ConversationsB { get; set; } = new List<Conversation>();
     public ICollection<Message> SentMessages { get; set; } = new List<Message>();
+    public ICollection<UserBlock> BlockedUsers { get; set; } = new List<UserBlock>();
+    public ICollection<UserBlock> BlockedByUsers { get; set; } = new List<UserBlock>();
     public ICollection<Notification> Notifications { get; set; } = new List<Notification>();
     public ICollection<Notification> CreatedNotifications { get; set; } = new List<Notification>();
 }

@@ -46,6 +46,13 @@ public record ConversationDto(
     double AvatarOffsetY,
     DateTime LastSeenAt,
     bool IsOnline,
+    int? PinOrder,
+    bool IsPinned,
+    bool IsArchived,
+    bool IsFavorite,
+    bool IsMuted,
+    bool IsBlockedByViewer,
+    bool HasBlockedViewer,
     string? LastMessage,
     DateTime? LastMessageAt,
     int UnreadCount
@@ -70,12 +77,56 @@ public record MessageDto(
     DateTime CreatedAt,
     DateTime? EditedAt,
     bool IsMine,
+    bool IsDeliveredToPeer,
+    DateTime? DeliveredToPeerAt,
     bool IsReadByPeer,
     DateTime? ReadByPeerAt,
     int? ReplyToMessageId,
     string? ReplyToSenderUsername,
     string? ReplyToContent,
     IReadOnlyCollection<MessageAttachmentDto> Attachments
+);
+
+public record MessagePageDto(
+    IReadOnlyCollection<MessageDto> Items,
+    bool HasMore,
+    int? NextBeforeMessageId
+);
+
+public record TypingIndicatorDto(
+    int ConversationId
+);
+
+public record ChatTypingEventDto(
+    int ConversationId,
+    int UserId,
+    DateTime SentAt
+);
+
+public record MessageReadEventDto(
+    int ConversationId,
+    int UserId,
+    DateTime ReadAt
+);
+
+public record MessageDeliveredEventDto(
+    int ConversationId,
+    int MessageId,
+    DateTime DeliveredAt
+);
+
+public record ConversationRealtimeContextDto(
+    int ConversationId,
+    int PeerUserId,
+    bool IsBlockedByViewer,
+    bool HasBlockedViewer
+);
+
+public record PendingMessageDeliveryDto(
+    int ConversationId,
+    int MessageId,
+    int SenderUserId,
+    DateTime DeliveredAt
 );
 
 public record MessageAttachmentDto(
@@ -107,6 +158,53 @@ public record UpdateMessageDto(
 
 public record DeleteMessageResultDto(
     IReadOnlyCollection<string> AttachmentUrls
+);
+
+public record DeleteConversationResultDto(
+    IReadOnlyCollection<string> AttachmentUrls
+);
+
+public record ToggleConversationPinDto(
+    int ConversationId,
+    bool IsPinned
+);
+
+public record ToggleConversationArchiveDto(
+    int ConversationId,
+    bool IsArchived
+);
+
+public record ToggleConversationFavoriteDto(
+    int ConversationId,
+    bool IsFavorite
+);
+
+public record ToggleConversationMuteDto(
+    int ConversationId,
+    bool IsMuted
+);
+
+public record DeleteConversationDto(
+    int ConversationId,
+    bool DeleteForBoth
+);
+
+public record ClearConversationHistoryDto(
+    int ConversationId
+);
+
+public record DeleteMessageForAllDto(
+    int ConversationId,
+    int MessageId
+);
+
+public record ToggleUserBlockDto(
+    int UserId
+);
+
+public record UserBlockStatusDto(
+    bool IsBlockedByViewer,
+    bool HasBlockedViewer
 );
 
 public record NotificationDto(

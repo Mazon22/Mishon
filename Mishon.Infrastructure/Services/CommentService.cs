@@ -12,17 +12,20 @@ public class CommentService : ICommentService
     private readonly IPostRepository _postRepository;
     private readonly MishonDbContext _context;
     private readonly INotificationService _notificationService;
+    private readonly IBlockService _blockService;
 
     public CommentService(
         ICommentRepository commentRepository,
         IPostRepository postRepository,
         MishonDbContext context,
-        INotificationService notificationService)
+        INotificationService notificationService,
+        IBlockService blockService)
     {
         _commentRepository = commentRepository;
         _postRepository = postRepository;
         _context = context;
         _notificationService = notificationService;
+        _blockService = blockService;
     }
 
     public async Task<Result<CommentDto>> CreateAsync(int userId, int postId, CreateCommentDto dto, CancellationToken cancellationToken = default)
@@ -37,6 +40,11 @@ public class CommentService : ICommentService
             if (post == null)
             {
                 return Result<CommentDto>.Failure("Пост не найден", ResultError.NotFound);
+            }
+
+            if (await _blockService.AreUsersBlockedAsync(userId, post.UserId, cancellationToken))
+            {
+                return Result<CommentDto>.Failure("Комментарии недоступны для заблокированного пользователя", ResultError.Forbidden);
             }
 
             Comment? parentComment = null;
@@ -123,7 +131,7 @@ public class CommentService : ICommentService
         }
     }
 
-    public async Task<Result<IEnumerable<CommentDto>>> GetByPostIdAsync(int postId, CancellationToken cancellationToken = default)
+    public async Task<Result<IEnumerable<CommentDto>>> GetByPostIdAsync(int currentUserId, int postId, CancellationToken cancellationToken = default)
     {
         try
         {
@@ -131,6 +139,11 @@ public class CommentService : ICommentService
             if (post == null)
             {
                 return Result<IEnumerable<CommentDto>>.Failure("Пост не найден", ResultError.NotFound);
+            }
+
+            if (await _blockService.AreUsersBlockedAsync(currentUserId, post.UserId, cancellationToken))
+            {
+                return Result<IEnumerable<CommentDto>>.Failure("Пост недоступен", ResultError.Forbidden);
             }
 
             var comments = await _context.Comments

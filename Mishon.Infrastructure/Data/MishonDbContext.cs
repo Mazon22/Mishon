@@ -17,6 +17,7 @@ public class MishonDbContext : DbContext
     public DbSet<Conversation> Conversations => Set<Conversation>();
     public DbSet<Message> Messages => Set<Message>();
     public DbSet<MessageAttachment> MessageAttachments => Set<MessageAttachment>();
+    public DbSet<UserBlock> UserBlocks => Set<UserBlock>();
     public DbSet<Notification> Notifications => Set<Notification>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -138,6 +139,8 @@ public class MishonDbContext : DbContext
             entity.HasKey(e => e.Id);
             entity.HasIndex(e => new { e.UserAId, e.UserBId }).IsUnique();
             entity.HasIndex(e => e.UpdatedAt);
+            entity.HasIndex(e => new { e.UserAId, e.UserAPinOrder });
+            entity.HasIndex(e => new { e.UserBId, e.UserBPinOrder });
             entity.HasOne(e => e.UserA)
                   .WithMany(u => u.ConversationsA)
                   .HasForeignKey(e => e.UserAId)
@@ -178,6 +181,21 @@ public class MishonDbContext : DbContext
             entity.HasOne(e => e.Message)
                   .WithMany(m => m.Attachments)
                   .HasForeignKey(e => e.MessageId)
+                  .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<UserBlock>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.HasIndex(e => new { e.BlockerId, e.BlockedUserId }).IsUnique();
+            entity.HasIndex(e => new { e.BlockedUserId, e.CreatedAt });
+            entity.HasOne(e => e.Blocker)
+                  .WithMany(u => u.BlockedUsers)
+                  .HasForeignKey(e => e.BlockerId)
+                  .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(e => e.BlockedUser)
+                  .WithMany(u => u.BlockedByUsers)
+                  .HasForeignKey(e => e.BlockedUserId)
                   .OnDelete(DeleteBehavior.Cascade);
         });
 

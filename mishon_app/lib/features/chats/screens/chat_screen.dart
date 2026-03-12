@@ -18,6 +18,8 @@ import 'package:mishon_app/core/utils/external_url.dart';
 import 'package:mishon_app/core/widgets/fullscreen_image_screen.dart';
 import 'package:mishon_app/core/widgets/profile_media.dart';
 import 'package:mishon_app/core/widgets/states.dart';
+import 'package:mishon_app/features/chats/providers/chat_messages_provider.dart';
+import 'package:mishon_app/features/chats/providers/chat_realtime_service.dart';
 import 'package:mishon_app/features/notifications/providers/notification_summary_provider.dart';
 
 class ChatScreenArgs {
@@ -49,128 +51,93 @@ class ChatScreen extends ConsumerStatefulWidget {
   ConsumerState<ChatScreen> createState() => _ChatScreenState();
 }
 
-class _ChatScreenState extends ConsumerState<ChatScreen> {
+class _ChatScreenState extends ConsumerState<ChatScreen>
+    with AutomaticKeepAliveClientMixin {
   static const int _maxAttachmentBytes = 15 * 1024 * 1024;
 
   final _messageController = TextEditingController();
   final _scrollController = ScrollController();
-  Timer? _poller;
-  bool _isLoading = true;
+  Timer? _profilePoller;
   bool _isSending = false;
-  bool _isTyping = false;
-  String? _errorMessage;
-  List<ChatMessageModel> _messages = const [];
   ChatMessageModel? _replyingTo;
   ChatMessageModel? _editingMessage;
   UserProfile? _peerProfile;
   List<_PendingAttachment> _pendingAttachments = const [];
-  List<_FailedOutgoingMessage> _failedMessages = const [];
+  List<_LocalOutgoingMessage> _localOutgoingMessages = const [];
 
   @override
   void initState() {
     super.initState();
     _messageController.addListener(_handleComposerChanged);
-    _loadMessages();
+    _scrollController.addListener(_handleScrollChanged);
+    ref
+        .read(chatMessagesNotifierProvider(widget.args.conversationId).notifier)
+        .ensureLoaded();
+    unawaited(ref.read(chatRealtimeServiceProvider).ensureConnected());
     unawaited(_loadPeerProfile());
-    _poller = Timer.periodic(const Duration(seconds: 3), (timer) {
-      _loadMessages(silent: true);
-      if (timer.tick % 5 == 0) {
-        _loadPeerProfile(silent: true);
-      }
+    _profilePoller = Timer.periodic(const Duration(seconds: 15), (_) {
+      _loadPeerProfile(silent: true);
     });
   }
 
   @override
   void dispose() {
-    _poller?.cancel();
+    _profilePoller?.cancel();
     _messageController.removeListener(_handleComposerChanged);
+    _scrollController.removeListener(_handleScrollChanged);
+    unawaited(
+      ref.read(chatRealtimeServiceProvider).stopTyping(widget.args.conversationId),
+    );
     _messageController.dispose();
     _scrollController.dispose();
     super.dispose();
   }
 
+  @override
+  bool get wantKeepAlive => true;
+
   void _handleComposerChanged() {
     final isTyping = _messageController.text.trim().isNotEmpty;
-    if (!mounted || isTyping == _isTyping) {
+    if (_editingMessage != null) {
+      unawaited(
+        ref.read(chatRealtimeServiceProvider).stopTyping(widget.args.conversationId),
+      );
       return;
     }
 
-    setState(() {
-      _isTyping = isTyping;
-    });
+    unawaited(
+      ref.read(chatRealtimeServiceProvider).reportTypingActivity(
+        widget.args.conversationId,
+        isComposing: isTyping,
+      ),
+    );
   }
 
-  bool _isNearBottom({double threshold = 96}) {
+  bool _isNearLatest({double threshold = 96}) {
     if (!_scrollController.hasClients) {
       return true;
     }
 
     final position = _scrollController.position;
-    return position.maxScrollExtent - position.pixels <= threshold;
+    return position.pixels <= threshold;
   }
 
-  Future<void> _loadMessages({
-    bool silent = false,
-    bool forceScrollToBottom = false,
-  }) async {
-    if (!silent) {
-      setState(() {
-        _isLoading = true;
-        _errorMessage = null;
-      });
+  bool _isNearHistoryTop({double threshold = 200}) {
+    if (!_scrollController.hasClients) {
+      return false;
     }
 
-    final shouldAutoScroll =
-        forceScrollToBottom ||
-        !silent ||
-        !_scrollController.hasClients ||
-        _isNearBottom();
+    final position = _scrollController.position;
+    return position.pixels >= position.maxScrollExtent - threshold;
+  }
 
-    try {
-      final messages = await ref
-          .read(socialRepositoryProvider)
-          .getMessages(widget.args.conversationId);
-      if (!mounted) {
-        return;
-      }
-
-      setState(() {
-        _messages = messages;
-        _isLoading = false;
-      });
-      unawaited(
-        ref.read(notificationSummaryProvider.notifier).refresh(silent: true),
-      );
-      if (shouldAutoScroll) {
-        _scrollToBottom();
-      }
-    } on ApiException catch (e) {
-      if (!mounted) {
-        return;
-      }
-
-      setState(() {
-        _errorMessage = e.apiError.message;
-        _isLoading = false;
-      });
-    } on OfflineException catch (e) {
-      if (!mounted) {
-        return;
-      }
-
-      setState(() {
-        _errorMessage = e.message;
-        _isLoading = false;
-      });
-    } catch (_) {
-      if (!mounted) {
-        return;
-      }
-
-      setState(() {
-        _errorMessage = 'Не удалось загрузить сообщения';
-        _isLoading = false;
-      });
+  void _handleScrollChanged() {
+    final notifier = ref.read(
+      chatMessagesNotifierProvider(widget.args.conversationId).notifier,
+    );
+    notifier.setLiveUpdatesEnabled(_isNearLatest());
+    if (_isNearHistoryTop()) {
+      unawaited(notifier.loadOlder());
     }
   }
 
@@ -251,69 +218,82 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   Future<void> _submit() async {
     final content = _messageController.text.trim();
     final hasAttachments = _pendingAttachments.isNotEmpty;
-    final draftAttachments = List<_PendingAttachment>.of(_pendingAttachments);
-    final draftReplyingTo = _replyingTo;
-
+    final peerBlockedViewer = _peerProfile?.hasBlockedViewer ?? false;
+    final viewerBlockedPeer = _peerProfile?.isBlockedByViewer ?? false;
     if (_isSending) {
       return;
     }
-
+    if (peerBlockedViewer || viewerBlockedPeer) {
+      _showSnackBar(
+        peerBlockedViewer
+            ? 'You cannot send messages to this user.'
+            : 'Unblock the user first.',
+        isError: true,
+      );
+      return;
+    }
     if (_editingMessage != null && content.isEmpty) {
       return;
     }
-
     if (_editingMessage == null && content.isEmpty && !hasAttachments) {
       return;
     }
-
-    setState(() => _isSending = true);
-    try {
-      final repository = ref.read(socialRepositoryProvider);
-      if (_editingMessage != null) {
-        await repository.updateMessage(
-          widget.args.conversationId,
-          _editingMessage!.id,
-          content,
-        );
-        _showSnackBar('Сообщение изменено');
-      } else {
-        await repository.sendMessage(
-          widget.args.conversationId,
-          content.isEmpty ? null : content,
-          replyToMessageId: _replyingTo?.id,
-          attachments: _pendingAttachments
-              .map(
-                (attachment) => ChatUploadAttachment(
-                  fileName: attachment.fileName,
-                  bytes: attachment.bytes,
-                  isImage: attachment.isImage,
-                ),
-              )
-              .toList(growable: false),
-        );
-      }
-
-      _resetComposer();
-      await _loadMessages(silent: true);
-    } on ApiException catch (e) {
-      _showSnackBar(e.apiError.message, isError: true);
-    } on OfflineException catch (e) {
-      if (_editingMessage == null) {
-        _addFailedMessage(content, draftAttachments, draftReplyingTo);
+    final wasNearLatest = _isNearLatest();
+    final messagesNotifier = ref.read(
+      chatMessagesNotifierProvider(widget.args.conversationId).notifier,
+    );
+    final realtimeService = ref.read(chatRealtimeServiceProvider);
+    if (_editingMessage != null) {
+      setState(() => _isSending = true);
+      try {
+        final updatedMessage = await ref
+            .read(socialRepositoryProvider)
+            .updateMessage(
+              widget.args.conversationId,
+              _editingMessage!.id,
+              content,
+            );
+        messagesNotifier.upsertMessage(updatedMessage);
+        _showSnackBar('Message updated');
         _resetComposer();
-        _scrollToBottom();
+        await realtimeService.stopTyping(widget.args.conversationId);
+      } on ApiException catch (e) {
+        _showSnackBar(e.apiError.message, isError: true);
+      } on OfflineException catch (e) {
+        _showSnackBar(e.message, isError: true);
+      } catch (_) {
+        _showSnackBar(
+          'Failed to save the message.',
+          isError: true,
+        );
+      } finally {
+        if (mounted) {
+          setState(() => _isSending = false);
+        }
       }
-      _showSnackBar(e.message, isError: true);
-    } catch (_) {
-      _showSnackBar('Не удалось сохранить сообщение', isError: true);
-    } finally {
-      if (mounted) {
-        setState(() => _isSending = false);
-      }
+      return;
     }
+    final localMessage = _createLocalOutgoingMessage(
+      content,
+      List<_PendingAttachment>.of(_pendingAttachments),
+      _replyingTo,
+    );
+    setState(() {
+      _localOutgoingMessages = [..._localOutgoingMessages, localMessage];
+      _isSending = true;
+    });
+    _resetComposer();
+    await realtimeService.stopTyping(widget.args.conversationId);
+    if (wasNearLatest) {
+      _scrollToLatest();
+    }
+    await _sendLocalOutgoingMessage(localMessage, scrollToLatest: wasNearLatest);
+    unawaited(
+      ref.read(notificationSummaryProvider.notifier).refresh(silent: true),
+    );
   }
 
-  Future<void> _deleteMessage(ChatMessageModel message) async {
+  Future<void> _deleteMessageForMe(ChatMessageModel message) async {
     final confirmed =
         await showDialog<bool>(
           context: context,
@@ -348,7 +328,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       if (_editingMessage?.id == message.id || _replyingTo?.id == message.id) {
         _resetComposer();
       }
-      await _loadMessages(silent: true, forceScrollToBottom: true);
+      ref
+          .read(chatMessagesNotifierProvider(widget.args.conversationId).notifier)
+          .removeMessage(message.id);
       _showSnackBar('Сообщение удалено');
     } on ApiException catch (e) {
       _showSnackBar(e.apiError.message, isError: true);
@@ -356,6 +338,163 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       _showSnackBar(e.message, isError: true);
     } catch (_) {
       _showSnackBar('Не удалось удалить сообщение', isError: true);
+    }
+  }
+
+  Future<void> _deleteMessageForEveryone(ChatMessageModel message) async {
+    final confirmed =
+        await showDialog<bool>(
+          context: context,
+          builder:
+              (context) => AlertDialog(
+                title: const Text('Удалить у всех?'),
+                content: const Text(
+                  'Сообщение исчезнет у вас и у собеседника.',
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.of(context).pop(false),
+                    child: const Text('Отмена'),
+                  ),
+                  FilledButton(
+                    onPressed: () => Navigator.of(context).pop(true),
+                    child: const Text('Удалить'),
+                  ),
+                ],
+              ),
+        ) ??
+        false;
+
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      await ref
+          .read(socialRepositoryProvider)
+          .deleteMessageForAll(widget.args.conversationId, message.id);
+      if (_editingMessage?.id == message.id || _replyingTo?.id == message.id) {
+        _resetComposer();
+      }
+      ref
+          .read(chatMessagesNotifierProvider(widget.args.conversationId).notifier)
+          .removeMessage(message.id);
+      _showSnackBar('Сообщение удалено у всех');
+    } on ApiException catch (e) {
+      _showSnackBar(e.apiError.message, isError: true);
+    } on OfflineException catch (e) {
+      _showSnackBar(e.message, isError: true);
+    } catch (_) {
+      _showSnackBar('Не удалось удалить сообщение у всех', isError: true);
+    }
+  }
+
+  Future<void> _clearHistory() async {
+    final confirmed =
+        await showDialog<bool>(
+          context: context,
+          builder:
+              (context) => AlertDialog(
+                title: const Text('Очистить историю?'),
+                content: const Text(
+                  'Все сообщения исчезнут только у вас, сам чат останется.',
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.of(context).pop(false),
+                    child: const Text('Отмена'),
+                  ),
+                  FilledButton(
+                    onPressed: () => Navigator.of(context).pop(true),
+                    child: const Text('Очистить'),
+                  ),
+                ],
+              ),
+        ) ??
+        false;
+
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      await ref
+          .read(socialRepositoryProvider)
+          .clearConversationHistory(widget.args.conversationId);
+      _resetComposer();
+      ref
+          .read(chatMessagesNotifierProvider(widget.args.conversationId).notifier)
+          .clearHistory();
+      _showSnackBar('История очищена');
+    } on ApiException catch (e) {
+      _showSnackBar(e.apiError.message, isError: true);
+    } on OfflineException catch (e) {
+      _showSnackBar(e.message, isError: true);
+    } catch (_) {
+      _showSnackBar('Не удалось очистить историю', isError: true);
+    }
+  }
+
+  Future<void> _toggleBlockUser({required bool unblock}) async {
+    final confirmed =
+        await showDialog<bool>(
+          context: context,
+          builder:
+              (context) => AlertDialog(
+                title: Text(
+                  unblock
+                      ? 'Разблокировать пользователя?'
+                      : 'Заблокировать пользователя?',
+                ),
+                content: Text(
+                  unblock
+                      ? 'После разблокировки вы снова сможете писать друг другу.'
+                      : 'После блокировки никто из вас не сможет писать сообщения.',
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.of(context).pop(false),
+                    child: const Text('Отмена'),
+                  ),
+                  FilledButton(
+                    onPressed: () => Navigator.of(context).pop(true),
+                    child: Text(unblock ? 'Разблокировать' : 'Заблокировать'),
+                  ),
+                ],
+              ),
+        ) ??
+        false;
+
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      final repository = ref.read(socialRepositoryProvider);
+      if (unblock) {
+        await repository.unblockUserFromChat(widget.args.peerId);
+      } else {
+        await repository.blockUserFromChat(widget.args.peerId);
+      }
+      _resetComposer();
+      await _loadPeerProfile(silent: true);
+      await ref
+          .read(chatMessagesNotifierProvider(widget.args.conversationId).notifier)
+          .refresh(silent: true, force: true);
+      _showSnackBar(
+        unblock ? 'Пользователь разблокирован' : 'Пользователь заблокирован',
+      );
+    } on ApiException catch (e) {
+      _showSnackBar(e.apiError.message, isError: true);
+    } on OfflineException catch (e) {
+      _showSnackBar(e.message, isError: true);
+    } catch (_) {
+      _showSnackBar(
+        unblock
+            ? 'Не удалось разблокировать пользователя'
+            : 'Не удалось заблокировать пользователя',
+        isError: true,
+      );
     }
   }
 
@@ -386,54 +525,49 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     });
   }
 
-  void _addFailedMessage(
+  _LocalOutgoingMessage _createLocalOutgoingMessage(
     String content,
     List<_PendingAttachment> attachments,
     ChatMessageModel? replyTo,
   ) {
-    setState(() {
-      _failedMessages = [
-        ..._failedMessages,
-        _FailedOutgoingMessage(
-          localId: DateTime.now().microsecondsSinceEpoch,
-          content: content,
-          createdAt: DateTime.now(),
-          replyToMessageId: replyTo?.id,
-          replyToSenderUsername: replyTo?.senderUsername,
-          replyToContent:
-              replyTo?.content.isNotEmpty == true
-                  ? replyTo!.content
-                  : replyTo != null && replyTo.attachments.isNotEmpty
-                  ? 'Вложение'
-                  : null,
-          attachments: attachments
-              .map(
-                (attachment) => _PendingAttachment(
-                  fileName: attachment.fileName,
-                  bytes: attachment.bytes,
-                  isImage: attachment.isImage,
-                ),
-              )
-              .toList(growable: false),
-        ),
-      ];
-    });
+    return _LocalOutgoingMessage(
+      localId: DateTime.now().microsecondsSinceEpoch,
+      content: content,
+      createdAt: DateTime.now(),
+      replyToMessageId: replyTo?.id,
+      replyToSenderUsername: replyTo?.senderUsername,
+      replyToContent: _buildReplyPreview(replyTo),
+      attachments: attachments,
+      status: attachments.isNotEmpty
+          ? _LocalOutgoingMessageStatus.uploading
+          : _LocalOutgoingMessageStatus.sending,
+      uploadProgress: attachments.isNotEmpty ? 0 : null,
+    );
   }
-
-  Future<void> _retryFailedMessage(_FailedOutgoingMessage message) async {
-    if (_isSending) {
-      return;
+  String? _buildReplyPreview(ChatMessageModel? replyTo) {
+    if (replyTo == null) {
+      return null;
     }
-
-    setState(() => _isSending = true);
+    if (replyTo.content.isNotEmpty) {
+      return replyTo.content;
+    }
+    if (replyTo.attachments.isNotEmpty) {
+      return 'Attachment';
+    }
+    return null;
+  }
+  Future<void> _sendLocalOutgoingMessage(
+    _LocalOutgoingMessage localMessage, {
+    required bool scrollToLatest,
+  }) async {
     try {
-      await ref
+      final sentMessage = await ref
           .read(socialRepositoryProvider)
           .sendMessage(
             widget.args.conversationId,
-            message.content.isEmpty ? null : message.content,
-            replyToMessageId: message.replyToMessageId,
-            attachments: message.attachments
+            localMessage.content.isEmpty ? null : localMessage.content,
+            replyToMessageId: localMessage.replyToMessageId,
+            attachments: localMessage.attachments
                 .map(
                   (attachment) => ChatUploadAttachment(
                     fileName: attachment.fileName,
@@ -442,57 +576,129 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                   ),
                 )
                 .toList(growable: false),
+            onSendProgress: (sent, total) {
+              if (!mounted || total <= 0) {
+                return;
+              }
+              final progress = (sent / total).clamp(0, 1).toDouble();
+              _updateLocalOutgoingMessage(
+                localMessage.localId,
+                status: _LocalOutgoingMessageStatus.uploading,
+                uploadProgress: progress,
+              );
+            },
           );
-
       if (!mounted) {
         return;
       }
-
-      setState(() {
-        _failedMessages = _failedMessages
-            .where((item) => item.localId != message.localId)
-            .toList(growable: false);
-      });
-      await _loadMessages(silent: true, forceScrollToBottom: true);
+      _removeLocalOutgoingMessage(localMessage.localId);
+      ref
+          .read(chatMessagesNotifierProvider(widget.args.conversationId).notifier)
+          .upsertMessage(sentMessage);
+      if (scrollToLatest) {
+        _scrollToLatest();
+      }
     } on ApiException catch (e) {
+      _updateLocalOutgoingMessage(
+        localMessage.localId,
+        status: _LocalOutgoingMessageStatus.failed,
+        uploadProgress: null,
+        errorMessage: e.apiError.message,
+      );
       _showSnackBar(e.apiError.message, isError: true);
     } on OfflineException catch (e) {
+      _updateLocalOutgoingMessage(
+        localMessage.localId,
+        status: _LocalOutgoingMessageStatus.failed,
+        uploadProgress: null,
+        errorMessage: e.message,
+      );
       _showSnackBar(e.message, isError: true);
     } catch (_) {
-      _showSnackBar('Не удалось отправить сообщение', isError: true);
+      _updateLocalOutgoingMessage(
+        localMessage.localId,
+        status: _LocalOutgoingMessageStatus.failed,
+        uploadProgress: null,
+        errorMessage: 'Failed to send the message.',
+      );
+      _showSnackBar(
+        'Failed to send the message.',
+        isError: true,
+      );
     } finally {
       if (mounted) {
         setState(() => _isSending = false);
       }
     }
   }
-
-  void _discardFailedMessage(_FailedOutgoingMessage message) {
+  void _updateLocalOutgoingMessage(
+    int localId, {
+    _LocalOutgoingMessageStatus? status,
+    double? uploadProgress,
+    String? errorMessage,
+  }) {
+    if (!mounted) {
+      return;
+    }
     setState(() {
-      _failedMessages = _failedMessages
-          .where((item) => item.localId != message.localId)
+      _localOutgoingMessages = _localOutgoingMessages
+          .map(
+            (message) => message.localId == localId
+                ? message.copyWith(
+                    status: status,
+                    uploadProgress: uploadProgress,
+                    errorMessage: errorMessage,
+                  )
+                : message,
+          )
           .toList(growable: false);
     });
   }
-
-  List<_TimelineMessageItem> _buildTimelineItems() {
+  void _removeLocalOutgoingMessage(int localId) {
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _localOutgoingMessages = _localOutgoingMessages
+          .where((message) => message.localId != localId)
+          .toList(growable: false);
+    });
+  }
+  Future<void> _retryLocalOutgoingMessage(_LocalOutgoingMessage message) async {
+    if (_isSending) {
+      return;
+    }
+    final wasNearLatest = _isNearLatest();
+    _updateLocalOutgoingMessage(
+      message.localId,
+      status: message.attachments.isNotEmpty
+          ? _LocalOutgoingMessageStatus.uploading
+          : _LocalOutgoingMessageStatus.sending,
+      uploadProgress: message.attachments.isNotEmpty ? 0 : null,
+      errorMessage: null,
+    );
+    setState(() => _isSending = true);
+    await _sendLocalOutgoingMessage(message, scrollToLatest: wasNearLatest);
+  }
+  void _discardLocalOutgoingMessage(_LocalOutgoingMessage message) {
+    _removeLocalOutgoingMessage(message.localId);
+  }
+  List<_TimelineMessageItem> _buildTimelineItems(
+    List<ChatMessageModel> messages,
+  ) {
     final items = <_TimelineMessageItem>[
-      ..._messages.map(_TimelineMessageItem.remote),
-      ..._failedMessages.map(_TimelineMessageItem.failed),
+      ...messages.map(_TimelineMessageItem.remote),
+      ..._localOutgoingMessages.map(_TimelineMessageItem.local),
     ];
-
     items.sort((left, right) {
-      final dateCompare = left.createdAt.compareTo(right.createdAt);
+      final dateCompare = right.createdAt.compareTo(left.createdAt);
       if (dateCompare != 0) {
         return dateCompare;
       }
-
-      return left.sortKey.compareTo(right.sortKey);
+      return right.sortKey.compareTo(left.sortKey);
     });
-
     return items;
   }
-
   void _resetComposer() {
     setState(() {
       _replyingTo = null;
@@ -502,16 +708,51 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     });
   }
 
-  void _scrollToBottom() {
+  void _scrollToLatest({
+    bool forceSettle = false,
+    bool immediate = false,
+    VoidCallback? onSettled,
+  }) {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!_scrollController.hasClients) {
         return;
       }
-      _scrollController.animateTo(
-        _scrollController.position.maxScrollExtent + 140,
-        duration: const Duration(milliseconds: 250),
-        curve: Curves.easeOut,
-      );
+
+      final targetOffset = _scrollController.position.minScrollExtent;
+      final currentOffset = _scrollController.position.pixels;
+      if ((targetOffset - currentOffset).abs() < 1) {
+        onSettled?.call();
+        return;
+      }
+
+      if (immediate) {
+        _scrollController.jumpTo(targetOffset);
+      } else {
+        _scrollController.animateTo(
+          targetOffset,
+          duration: const Duration(milliseconds: 220),
+          curve: Curves.easeOutCubic,
+        );
+      }
+
+      if (forceSettle) {
+        Future<void>.delayed(const Duration(milliseconds: 80), () {
+          if (!mounted || !_scrollController.hasClients) {
+            return;
+          }
+
+          final settledTarget = _scrollController.position.minScrollExtent;
+          if ((_scrollController.position.pixels - settledTarget).abs() < 1) {
+            onSettled?.call();
+            return;
+          }
+
+          _scrollController.jumpTo(settledTarget);
+          onSettled?.call();
+        });
+      } else {
+        onSettled?.call();
+      }
     });
   }
 
@@ -592,11 +833,26 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final timelineItems = _buildTimelineItems();
+    super.build(context);
+    final messageState = ref.watch(
+      chatMessagesNotifierProvider(widget.args.conversationId),
+    );
+    final timelineItems = _buildTimelineItems(messageState.messages);
+    final peerBlockedViewer = _peerProfile?.hasBlockedViewer ?? false;
+    final viewerBlockedPeer = _peerProfile?.isBlockedByViewer ?? false;
     final showTypingIndicator =
-        _isTyping &&
+        messageState.isPeerTyping &&
         _editingMessage == null &&
-        (_peerProfile?.isOnline ?? true);
+        !peerBlockedViewer &&
+        !viewerBlockedPeer;
+    final subtitleLabel =
+        showTypingIndicator ? 'Typing...' : _formatPresenceLabel();
+    final subtitleColor =
+        showTypingIndicator
+            ? const Color(0xFF2F67FF)
+            : _peerProfile?.isOnline == true
+            ? const Color(0xFF229C5A)
+            : const Color(0xFF728098);
 
     return Scaffold(
       appBar: AppBar(
@@ -646,17 +902,20 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                           ),
                         ),
                         const SizedBox(height: 2),
-                        Text(
-                          _formatPresenceLabel(),
-                          overflow: TextOverflow.ellipsis,
-                          style: Theme.of(
-                            context,
-                          ).textTheme.bodySmall?.copyWith(
-                            color:
-                                _peerProfile?.isOnline == true
-                                    ? const Color(0xFF229C5A)
-                                    : const Color(0xFF728098),
-                            fontWeight: FontWeight.w600,
+                        AnimatedSwitcher(
+                          duration: const Duration(milliseconds: 180),
+                          switchInCurve: Curves.easeOutCubic,
+                          switchOutCurve: Curves.easeInCubic,
+                          child: Text(
+                            subtitleLabel,
+                            key: ValueKey(subtitleLabel),
+                            overflow: TextOverflow.ellipsis,
+                            style: Theme.of(
+                              context,
+                            ).textTheme.bodySmall?.copyWith(
+                              color: subtitleColor,
+                              fontWeight: FontWeight.w600,
+                            ),
                           ),
                         ),
                       ],
@@ -667,6 +926,35 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
             ),
           ),
         ),
+        actions: [
+          PopupMenuButton<String>(
+            tooltip: 'Chat settings',
+            onSelected: (value) {
+              if (value == 'clear') {
+                _clearHistory();
+              } else if (value == 'block') {
+                _toggleBlockUser(unblock: false);
+              } else if (value == 'unblock') {
+                _toggleBlockUser(unblock: true);
+              }
+            },
+            itemBuilder:
+                (context) => [
+                  const PopupMenuItem(
+                    value: 'clear',
+                    child: Text('Очистить историю'),
+                  ),
+                  PopupMenuItem(
+                    value: viewerBlockedPeer ? 'unblock' : 'block',
+                    child: Text(
+                      viewerBlockedPeer
+                          ? 'Разблокировать пользователя'
+                          : 'Заблокировать пользователя',
+                    ),
+                  ),
+                ],
+          ),
+        ],
       ),
       body: DecoratedBox(
         decoration: const BoxDecoration(
@@ -706,16 +994,31 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
               children: [
                 Expanded(
                   child:
-                      _isLoading
+                      messageState.isInitialLoading
                           ? const LoadingState()
-                          : _errorMessage != null
+                          : messageState.errorMessage != null &&
+                              timelineItems.isEmpty
                           ? ErrorState(
-                            message: _errorMessage!,
-                            onRetry: () => _loadMessages(),
+                            message: messageState.errorMessage!,
+                            onRetry:
+                                () => ref
+                                    .read(
+                                      chatMessagesNotifierProvider(
+                                        widget.args.conversationId,
+                                      ).notifier,
+                                    )
+                                    .refresh(force: true),
                           )
                           : timelineItems.isEmpty
                           ? RefreshIndicator(
-                            onRefresh: () => _loadMessages(),
+                            onRefresh:
+                                () => ref
+                                    .read(
+                                      chatMessagesNotifierProvider(
+                                        widget.args.conversationId,
+                                      ).notifier,
+                                    )
+                                    .refresh(force: true),
                             child: ListView(
                               physics: const AlwaysScrollableScrollPhysics(
                                 parent: BouncingScrollPhysics(),
@@ -732,11 +1035,19 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                             ),
                           )
                           : RefreshIndicator(
-                            onRefresh: () => _loadMessages(),
+                            onRefresh:
+                                () => ref
+                                    .read(
+                                      chatMessagesNotifierProvider(
+                                        widget.args.conversationId,
+                                      ).notifier,
+                                    )
+                                    .refresh(force: true),
                             child: Scrollbar(
                               controller: _scrollController,
                               child: ListView.builder(
                                 controller: _scrollController,
+                                reverse: true,
                                 physics: const AlwaysScrollableScrollPhysics(
                                   parent: BouncingScrollPhysics(),
                                 ),
@@ -748,8 +1059,25 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                                   16,
                                   24,
                                 ),
-                                itemCount: timelineItems.length,
+                                itemCount:
+                                    timelineItems.length +
+                                    (messageState.isLoadingOlder ? 1 : 0),
                                 itemBuilder: (context, index) {
+                                  if (index >= timelineItems.length) {
+                                    return const Padding(
+                                      padding: EdgeInsets.only(bottom: 8),
+                                      child: Center(
+                                        child: SizedBox(
+                                          width: 22,
+                                          height: 22,
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 2.2,
+                                          ),
+                                        ),
+                                      ),
+                                    );
+                                  }
+
                                   final item = timelineItems[index];
                                   if (item.message != null) {
                                     final message = item.message!;
@@ -760,23 +1088,29 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                                           message.isMine
                                               ? () => _startEdit(message)
                                               : null,
-                                      onDelete:
+                                      onDeleteForMe:
+                                          () => _deleteMessageForMe(message),
+                                      onDeleteForEveryone:
                                           message.isMine
-                                              ? () => _deleteMessage(message)
+                                              ? () => _deleteMessageForEveryone(
+                                                message,
+                                              )
                                               : null,
                                       onOpenAttachment: _openAttachment,
                                     );
                                   }
 
-                                  final failedMessage = item.failedMessage!;
-                                  return _FailedMessageBubble(
-                                    message: failedMessage,
+                                  final localMessage = item.localMessage!;
+                                  return _LocalOutgoingMessageBubble(
+                                    message: localMessage,
                                     onRetry:
                                         () =>
-                                            _retryFailedMessage(failedMessage),
+                                            _retryLocalOutgoingMessage(
+                                              localMessage,
+                                            ),
                                     onDelete:
-                                        () => _discardFailedMessage(
-                                          failedMessage,
+                                        () => _discardLocalOutgoingMessage(
+                                          localMessage,
                                         ),
                                   );
                                 },
@@ -812,23 +1146,37 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                             key: ValueKey('typing-empty'),
                           ),
                 ),
-                _MessageComposer(
-                  controller: _messageController,
-                  isSending: _isSending,
-                  onSubmit: _submit,
-                  replyingTo: _replyingTo,
-                  editingMessage: _editingMessage,
-                  onCancelContext: _resetComposer,
-                  pendingAttachments: _pendingAttachments,
-                  onPickImages:
-                      () => _pickAttachments(AttachmentPickType.image),
-                  onPickFiles: () => _pickAttachments(AttachmentPickType.any),
-                  onRemoveAttachment: _removePendingAttachment,
-                  totalAttachmentBytes: _pendingAttachments.fold<int>(
-                    0,
-                    (sum, item) => sum + item.sizeBytes,
+                if (peerBlockedViewer)
+                  const _BlockedComposerBanner(
+                    message: 'You cannot send messages to this user.',
+                    icon: Icons.block_rounded,
+                  )
+                else if (viewerBlockedPeer)
+                  _BlockedComposerBanner(
+                    message: 'Вы заблокировали этого пользователя',
+                    icon: Icons.lock_open_rounded,
+                    actionLabel: 'Unblock user',
+                    onAction: () => _toggleBlockUser(unblock: true),
+                  )
+                else
+                  _MessageComposer(
+                    controller: _messageController,
+                    isSending: _isSending,
+                    onSubmit: _submit,
+                    replyingTo: _replyingTo,
+                    editingMessage: _editingMessage,
+                    onCancelContext: _resetComposer,
+                    pendingAttachments: _pendingAttachments,
+                    onPickImages:
+                        () => _pickAttachments(AttachmentPickType.image),
+                    onPickFiles:
+                        () => _pickAttachments(AttachmentPickType.any),
+                    onRemoveAttachment: _removePendingAttachment,
+                    totalAttachmentBytes: _pendingAttachments.fold<int>(
+                      0,
+                      (sum, item) => sum + item.sizeBytes,
+                    ),
                   ),
-                ),
               ],
             ),
           ],
@@ -980,6 +1328,78 @@ class _ConversationTypingIndicatorState
               },
             );
           }),
+        ),
+      ),
+    );
+  }
+}
+
+class _BlockedComposerBanner extends StatelessWidget {
+  final String message;
+  final IconData icon;
+  final String? actionLabel;
+  final VoidCallback? onAction;
+
+  const _BlockedComposerBanner({
+    required this.message,
+    required this.icon,
+    this.actionLabel,
+    this.onAction,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return ClipRRect(
+      borderRadius: const BorderRadius.vertical(top: Radius.circular(30)),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+        child: Container(
+          padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.9),
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(30)),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.7)),
+            boxShadow: [
+              BoxShadow(
+                color: const Color(0xFF0F172A).withValues(alpha: 0.10),
+                blurRadius: 32,
+                offset: const Offset(0, -12),
+              ),
+            ],
+          ),
+          child: SafeArea(
+            top: false,
+            child: Row(
+              children: [
+                Container(
+                  width: 42,
+                  height: 42,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFEAF0FF),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Icon(icon, color: const Color(0xFF2F67FF)),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    message,
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: const Color(0xFF24344E),
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+                if (actionLabel != null && onAction != null) ...[
+                  const SizedBox(width: 12),
+                  FilledButton(
+                    onPressed: onAction,
+                    child: Text(actionLabel!),
+                  ),
+                ],
+              ],
+            ),
+          ),
         ),
       ),
     );
@@ -1326,14 +1746,16 @@ class _MessageBubble extends StatelessWidget {
   final ChatMessageModel message;
   final VoidCallback onReply;
   final VoidCallback? onEdit;
-  final VoidCallback? onDelete;
+  final VoidCallback? onDeleteForMe;
+  final VoidCallback? onDeleteForEveryone;
   final ValueChanged<ChatAttachmentModel> onOpenAttachment;
 
   const _MessageBubble({
     required this.message,
     required this.onReply,
     required this.onEdit,
-    required this.onDelete,
+    required this.onDeleteForMe,
+    required this.onDeleteForEveryone,
     required this.onOpenAttachment,
   });
 
@@ -1592,13 +2014,15 @@ class _MessageBubble extends StatelessWidget {
                                 )
                               else
                                 Icon(
-                                  message.isReadByPeer
+                                  message.isDeliveredToPeer
                                       ? Icons.done_all_rounded
                                       : Icons.done_rounded,
                                   size: 18,
                                   color:
                                       message.isReadByPeer
                                           ? const Color(0xFFCFE0FF)
+                                          : message.isDeliveredToPeer
+                                          ? Colors.white.withValues(alpha: 0.88)
                                           : Colors.white70,
                                 ),
                             ],
@@ -1618,8 +2042,10 @@ class _MessageBubble extends StatelessWidget {
                                   onReply();
                                 } else if (value == 'edit') {
                                   onEdit?.call();
-                                } else if (value == 'delete') {
-                                  onDelete?.call();
+                                } else if (value == 'delete_me') {
+                                  onDeleteForMe?.call();
+                                } else if (value == 'delete_all') {
+                                  onDeleteForEveryone?.call();
                                 }
                               },
                               itemBuilder:
@@ -1633,10 +2059,15 @@ class _MessageBubble extends StatelessWidget {
                                         value: 'edit',
                                         child: Text('Редактировать'),
                                       ),
-                                    if (onDelete != null)
+                                    if (onDeleteForMe != null)
                                       const PopupMenuItem(
-                                        value: 'delete',
-                                        child: Text('Удалить'),
+                                        value: 'delete_me',
+                                        child: Text('Delete for me'),
+                                      ),
+                                    if (onDeleteForEveryone != null)
+                                      const PopupMenuItem(
+                                        value: 'delete_all',
+                                        child: Text('Delete for everyone'),
                                       ),
                                   ],
                             ),
@@ -1655,8 +2086,9 @@ class _MessageBubble extends StatelessWidget {
   }
 }
 
+// ignore: unused_element
 class _FailedMessageBubble extends StatelessWidget {
-  final _FailedOutgoingMessage message;
+  final _LocalOutgoingMessage message;
   final VoidCallback onRetry;
   final VoidCallback onDelete;
 
@@ -1848,6 +2280,257 @@ class _FailedMessageBubble extends StatelessWidget {
                                 PopupMenuItem(
                                   value: 'delete',
                                   child: Text('Удалить'),
+                                ),
+                              ],
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _LocalOutgoingMessageBubble extends StatelessWidget {
+  final _LocalOutgoingMessage message;
+  final VoidCallback onRetry;
+  final VoidCallback onDelete;
+
+  const _LocalOutgoingMessageBubble({
+    required this.message,
+    required this.onRetry,
+    required this.onDelete,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final imageAttachments = message.attachments
+        .where((attachment) => attachment.isImage)
+        .toList(growable: false);
+    final fileAttachments = message.attachments
+        .where((attachment) => !attachment.isImage)
+        .toList(growable: false);
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final maxBubbleWidth = math.min(constraints.maxWidth * 0.72, 420.0);
+
+        return Align(
+          alignment: Alignment.centerRight,
+          child: TweenAnimationBuilder<double>(
+            key: ValueKey('local-${message.localId}-${message.status.name}'),
+            duration: const Duration(milliseconds: 220),
+            curve: Curves.easeOutCubic,
+            tween: Tween(begin: 0.96, end: 1),
+            builder: (context, value, child) {
+              return Opacity(
+                opacity: value.clamp(0.0, 1.0),
+                child: Transform.scale(scale: value, child: child),
+              );
+            },
+            child: Container(
+              margin: const EdgeInsets.only(bottom: 12),
+              constraints: BoxConstraints(maxWidth: maxBubbleWidth),
+              decoration: BoxDecoration(
+                color: const Color(0xFF2F67FF),
+                borderRadius: const BorderRadius.only(
+                  topLeft: Radius.circular(24),
+                  topRight: Radius.circular(24),
+                  bottomLeft: Radius.circular(24),
+                  bottomRight: Radius.circular(10),
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: const Color(0xFF2F67FF).withValues(alpha: 0.16),
+                    blurRadius: 22,
+                    offset: const Offset(0, 10),
+                  ),
+                ],
+              ),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(14, 12, 14, 10),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    if (message.replyToContent != null)
+                      Container(
+                        width: double.infinity,
+                        margin: const EdgeInsets.only(bottom: 8),
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.18),
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              message.replyToSenderUsername ?? 'Message',
+                              style: Theme.of(
+                                context,
+                              ).textTheme.bodySmall?.copyWith(
+                                color: Colors.white70,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            if (message.replyToContent != null) ...[
+                              const SizedBox(height: 4),
+                              Text(
+                                message.replyToContent!,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: Theme.of(context).textTheme.bodySmall
+                                    ?.copyWith(color: Colors.white70),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                    if (message.content.isNotEmpty)
+                      Padding(
+                        padding: EdgeInsets.only(
+                          bottom: message.attachments.isNotEmpty ? 10 : 0,
+                        ),
+                        child: Text(
+                          message.content,
+                          style: Theme.of(
+                            context,
+                          ).textTheme.bodyLarge?.copyWith(
+                            color: Colors.white,
+                            height: 1.4,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ),
+                    if (imageAttachments.isNotEmpty)
+                      Padding(
+                        padding: EdgeInsets.only(
+                          bottom: fileAttachments.isNotEmpty ? 10 : 0,
+                        ),
+                        child: Column(
+                          children: imageAttachments
+                              .map(
+                                (attachment) => Padding(
+                                  padding: const EdgeInsets.only(bottom: 8),
+                                  child: _PendingImageAttachmentCard(
+                                    attachment: attachment,
+                                  ),
+                                ),
+                              )
+                              .toList(growable: false),
+                        ),
+                      ),
+                    if (fileAttachments.isNotEmpty)
+                      Column(
+                        children: fileAttachments
+                            .map(
+                              (attachment) => Padding(
+                                padding: const EdgeInsets.only(bottom: 8),
+                                child: _PendingFileAttachmentTile(
+                                  attachment: attachment,
+                                ),
+                              ),
+                            )
+                            .toList(growable: false),
+                      ),
+                    if (message.isUploading) ...[
+                      const SizedBox(height: 4),
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(999),
+                        child: LinearProgressIndicator(
+                          value: message.uploadProgress,
+                          minHeight: 4,
+                          backgroundColor: Colors.white.withValues(alpha: 0.16),
+                          valueColor: const AlwaysStoppedAnimation<Color>(
+                            Colors.white,
+                          ),
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 8),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          DateFormat(
+                            'HH:mm',
+                          ).format(message.createdAt.toLocal()),
+                          style: Theme.of(
+                            context,
+                          ).textTheme.bodySmall?.copyWith(
+                            color: Colors.white70,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          switch (message.status) {
+                            _LocalOutgoingMessageStatus.uploading =>
+                              'Uploading${message.uploadProgress != null ? ' ${(message.uploadProgress! * 100).round()}%' : '...'}',
+                            _LocalOutgoingMessageStatus.sending => 'Sending...',
+                            _LocalOutgoingMessageStatus.failed => 'Failed',
+                          },
+                          style: Theme.of(
+                            context,
+                          ).textTheme.bodySmall?.copyWith(
+                            color:
+                                message.isFailed
+                                    ? const Color(0xFFFFD6D6)
+                                    : Colors.white70,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        if (message.isFailed)
+                          InkWell(
+                            onTap: onRetry,
+                            borderRadius: BorderRadius.circular(999),
+                            child: const Padding(
+                              padding: EdgeInsets.all(2),
+                              child: Icon(
+                                Icons.error_outline_rounded,
+                                size: 18,
+                                color: Color(0xFFFFD6D6),
+                              ),
+                            ),
+                          )
+                        else
+                          Icon(
+                            message.isUploading
+                                ? Icons.schedule_rounded
+                                : Icons.done_rounded,
+                            size: 18,
+                            color: Colors.white70,
+                          ),
+                        PopupMenuButton<String>(
+                          padding: EdgeInsets.zero,
+                          icon: const Icon(
+                            Icons.more_horiz_rounded,
+                            size: 18,
+                            color: Colors.white70,
+                          ),
+                          onSelected: (value) {
+                            if (value == 'retry') {
+                              onRetry();
+                            } else if (value == 'delete') {
+                              onDelete();
+                            }
+                          },
+                          itemBuilder:
+                              (context) => [
+                                if (message.isFailed)
+                                  const PopupMenuItem(
+                                    value: 'retry',
+                                    child: Text('Retry'),
+                                  ),
+                                const PopupMenuItem(
+                                  value: 'delete',
+                                  child: Text('Delete'),
                                 ),
                               ],
                         ),
@@ -2276,7 +2959,9 @@ class _PendingAttachment {
   int get sizeBytes => bytes.lengthInBytes;
 }
 
-class _FailedOutgoingMessage {
+enum _LocalOutgoingMessageStatus { uploading, sending, failed }
+
+class _LocalOutgoingMessage {
   final int localId;
   final String content;
   final DateTime createdAt;
@@ -2284,8 +2969,11 @@ class _FailedOutgoingMessage {
   final String? replyToSenderUsername;
   final String? replyToContent;
   final List<_PendingAttachment> attachments;
+  final _LocalOutgoingMessageStatus status;
+  final double? uploadProgress;
+  final String? errorMessage;
 
-  const _FailedOutgoingMessage({
+  const _LocalOutgoingMessage({
     required this.localId,
     required this.content,
     required this.createdAt,
@@ -2293,24 +2981,51 @@ class _FailedOutgoingMessage {
     required this.replyToSenderUsername,
     required this.replyToContent,
     required this.attachments,
+    required this.status,
+    required this.uploadProgress,
+    this.errorMessage,
   });
+
+  _LocalOutgoingMessage copyWith({
+    _LocalOutgoingMessageStatus? status,
+    double? uploadProgress,
+    String? errorMessage,
+  }) {
+    return _LocalOutgoingMessage(
+      localId: localId,
+      content: content,
+      createdAt: createdAt,
+      replyToMessageId: replyToMessageId,
+      replyToSenderUsername: replyToSenderUsername,
+      replyToContent: replyToContent,
+      attachments: attachments,
+      status: status ?? this.status,
+      uploadProgress: uploadProgress,
+      errorMessage: errorMessage,
+    );
+  }
+
+  bool get isUploading => status == _LocalOutgoingMessageStatus.uploading;
+
+  bool get isFailed => status == _LocalOutgoingMessageStatus.failed;
 }
 
 class _TimelineMessageItem {
   final ChatMessageModel? message;
-  final _FailedOutgoingMessage? failedMessage;
+  final _LocalOutgoingMessage? localMessage;
 
-  const _TimelineMessageItem._({this.message, this.failedMessage});
+  const _TimelineMessageItem._({this.message, this.localMessage});
 
   factory _TimelineMessageItem.remote(ChatMessageModel message) {
     return _TimelineMessageItem._(message: message);
   }
 
-  factory _TimelineMessageItem.failed(_FailedOutgoingMessage message) {
-    return _TimelineMessageItem._(failedMessage: message);
+  factory _TimelineMessageItem.local(_LocalOutgoingMessage message) {
+    return _TimelineMessageItem._(localMessage: message);
   }
 
-  DateTime get createdAt => message?.createdAt ?? failedMessage!.createdAt;
+  DateTime get createdAt => message?.createdAt ?? localMessage!.createdAt;
 
-  int get sortKey => message?.id ?? failedMessage!.localId;
+  int get sortKey => message?.id ?? localMessage!.localId;
 }
+

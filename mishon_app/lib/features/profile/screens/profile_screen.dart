@@ -86,7 +86,13 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
           currentUserId == widget.userId
               ? await authRepository.getProfile()
               : await authRepository.getUserProfile(widget.userId);
-      final posts = await postRepository.getUserPosts(widget.userId);
+      final shouldHidePosts =
+          currentUserId != widget.userId &&
+          (profile.hasBlockedViewer || profile.isBlockedByViewer);
+      final posts =
+          shouldHidePosts
+              ? const <Post>[]
+              : await postRepository.getUserPosts(widget.userId);
 
       if (!mounted) {
         return;
@@ -129,7 +135,10 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   }
 
   Future<void> _toggleFollow() async {
-    if (_profile == null || _isOwnProfile) {
+    if (_profile == null ||
+        _isOwnProfile ||
+        _profile!.hasBlockedViewer ||
+        _profile!.isBlockedByViewer) {
       return;
     }
 
@@ -143,25 +152,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       }
 
       setState(() {
-        _profile = UserProfile(
-          id: _profile!.id,
-          username: _profile!.username,
-          email: _profile!.email,
-          aboutMe: _profile!.aboutMe,
-          avatarUrl: _profile!.avatarUrl,
-          bannerUrl: _profile!.bannerUrl,
-          avatarScale: _profile!.avatarScale,
-          avatarOffsetX: _profile!.avatarOffsetX,
-          avatarOffsetY: _profile!.avatarOffsetY,
-          bannerScale: _profile!.bannerScale,
-          bannerOffsetX: _profile!.bannerOffsetX,
-          bannerOffsetY: _profile!.bannerOffsetY,
-          createdAt: _profile!.createdAt,
-          lastSeenAt: _profile!.lastSeenAt,
-          isOnline: _profile!.isOnline,
+        _profile = _profile!.copyWith(
           followersCount: response.followersCount,
-          followingCount: _profile!.followingCount,
-          postsCount: _profile!.postsCount,
           isFollowing: response.isFollowing,
         );
       });
@@ -180,6 +172,16 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
 
   Future<void> _openChat() async {
     if (_profile == null || _isOwnProfile || _isActionBusy) {
+      return;
+    }
+
+    if (_profile!.hasBlockedViewer) {
+      _showSnackBar('This user has blocked you.', isError: true);
+      return;
+    }
+
+    if (_profile!.isBlockedByViewer) {
+      _showSnackBar('Вы заблокировали этого пользователя', isError: true);
       return;
     }
 
@@ -252,30 +254,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
             .where((post) => post.id != postId)
             .toList(growable: false);
         _profile =
-            _profile == null
-                ? null
-                : UserProfile(
-                  id: _profile!.id,
-                  username: _profile!.username,
-                  email: _profile!.email,
-                  aboutMe: _profile!.aboutMe,
-                  avatarUrl: _profile!.avatarUrl,
-                  bannerUrl: _profile!.bannerUrl,
-                  avatarScale: _profile!.avatarScale,
-                  avatarOffsetX: _profile!.avatarOffsetX,
-                  avatarOffsetY: _profile!.avatarOffsetY,
-                  bannerScale: _profile!.bannerScale,
-                  bannerOffsetX: _profile!.bannerOffsetX,
-                  bannerOffsetY: _profile!.bannerOffsetY,
-                  createdAt: _profile!.createdAt,
-                  lastSeenAt: _profile!.lastSeenAt,
-                  isOnline: _profile!.isOnline,
-                  followersCount: _profile!.followersCount,
-                  followingCount: _profile!.followingCount,
-                  postsCount:
-                      (_profile!.postsCount - 1).clamp(0, 999999).toInt(),
-                  isFollowing: _profile!.isFollowing,
-                );
+            _profile?.copyWith(
+              postsCount: (_profile!.postsCount - 1).clamp(0, 999999).toInt(),
+            );
       });
       _showSnackBar('Post deleted');
     } on ApiException catch (e) {
@@ -744,6 +725,115 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     );
   }
 
+  Widget _buildRestrictedProfileBody(BuildContext context, UserProfile profile) {
+    return RefreshIndicator(
+      onRefresh: () => _loadProfile(),
+      child: ListView(
+        physics: const AlwaysScrollableScrollPhysics(
+          parent: BouncingScrollPhysics(),
+        ),
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 120),
+        children: [
+          Stack(
+            clipBehavior: Clip.none,
+            children: [
+              ProfileBanner(
+                imageUrl: profile.bannerUrl,
+                height: 220,
+                scale: profile.bannerScale,
+                offsetX: profile.bannerOffsetX,
+                offsetY: profile.bannerOffsetY,
+              ),
+              Positioned(
+                left: 20,
+                top: 20,
+                child: Material(
+                  color: Colors.white.withValues(alpha: 0.9),
+                  shape: const CircleBorder(),
+                  child: InkWell(
+                    customBorder: const CircleBorder(),
+                    onTap:
+                        Navigator.of(context).canPop()
+                            ? () => context.pop()
+                            : null,
+                    child: const Padding(
+                      padding: EdgeInsets.all(12),
+                      child: Icon(Icons.arrow_back_ios_new_rounded, size: 18),
+                    ),
+                  ),
+                ),
+              ),
+              Positioned(
+                left: 24,
+                bottom: -44,
+                child: _ProfileAvatarFrame(
+                  username: profile.username,
+                  imageUrl: profile.avatarUrl,
+                  scale: profile.avatarScale,
+                  offsetX: profile.avatarOffsetX,
+                  offsetY: profile.avatarOffsetY,
+                  isOnline: profile.isOnline,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 60),
+          Container(
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.9),
+              borderRadius: BorderRadius.circular(28),
+              boxShadow: [
+                BoxShadow(
+                  color: const Color(0xFF10203D).withValues(alpha: 0.06),
+                  blurRadius: 24,
+                  offset: const Offset(0, 14),
+                ),
+              ],
+            ),
+            child: Column(
+              children: [
+                Container(
+                  width: 64,
+                  height: 64,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFEAF0FF),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Icon(
+                    profile.hasBlockedViewer
+                        ? Icons.block_rounded
+                        : Icons.lock_outline_rounded,
+                    color: const Color(0xFF2A5BFF),
+                    size: 30,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  profile.username,
+                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  profile.hasBlockedViewer
+                      ? 'This user has blocked you.'
+                      : 'Вы заблокировали этого пользователя.',
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                    color: const Color(0xFF63748D),
+                    height: 1.45,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildModernBody(BuildContext context) {
     if (_isLoading) {
       return const LoadingState(key: ValueKey('profile-loading'));
@@ -763,6 +853,14 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
         icon: Icons.person_outline_rounded,
         title: 'Profile not found',
       );
+    }
+
+    final isRestrictedView =
+        !_isOwnProfile &&
+        (_profile!.hasBlockedViewer || _profile!.isBlockedByViewer);
+
+    if (isRestrictedView) {
+      return _buildRestrictedProfileBody(context, _profile!);
     }
 
     final screenWidth = MediaQuery.sizeOf(context).width;

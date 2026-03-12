@@ -118,6 +118,13 @@ class ConversationModel {
   final double avatarOffsetY;
   final DateTime lastSeenAt;
   final bool isOnline;
+  final int? pinOrder;
+  final bool isPinned;
+  final bool isArchived;
+  final bool isFavorite;
+  final bool isMuted;
+  final bool isBlockedByViewer;
+  final bool hasBlockedViewer;
   final String? lastMessage;
   final DateTime? lastMessageAt;
   final int unreadCount;
@@ -132,10 +139,52 @@ class ConversationModel {
     this.avatarOffsetY = 0,
     required this.lastSeenAt,
     required this.isOnline,
+    required this.pinOrder,
+    required this.isPinned,
+    required this.isArchived,
+    required this.isFavorite,
+    required this.isMuted,
+    required this.isBlockedByViewer,
+    required this.hasBlockedViewer,
     required this.lastMessage,
     required this.lastMessageAt,
     required this.unreadCount,
   });
+
+  ConversationModel copyWith({
+    int? pinOrder,
+    bool? isPinned,
+    bool? isArchived,
+    bool? isFavorite,
+    bool? isMuted,
+    bool? isBlockedByViewer,
+    bool? hasBlockedViewer,
+    String? lastMessage,
+    DateTime? lastMessageAt,
+    int? unreadCount,
+  }) {
+    return ConversationModel(
+      id: id,
+      peerId: peerId,
+      username: username,
+      avatarUrl: avatarUrl,
+      avatarScale: avatarScale,
+      avatarOffsetX: avatarOffsetX,
+      avatarOffsetY: avatarOffsetY,
+      lastSeenAt: lastSeenAt,
+      isOnline: isOnline,
+      pinOrder: pinOrder ?? this.pinOrder,
+      isPinned: isPinned ?? this.isPinned,
+      isArchived: isArchived ?? this.isArchived,
+      isFavorite: isFavorite ?? this.isFavorite,
+      isMuted: isMuted ?? this.isMuted,
+      isBlockedByViewer: isBlockedByViewer ?? this.isBlockedByViewer,
+      hasBlockedViewer: hasBlockedViewer ?? this.hasBlockedViewer,
+      lastMessage: lastMessage ?? this.lastMessage,
+      lastMessageAt: lastMessageAt ?? this.lastMessageAt,
+      unreadCount: unreadCount ?? this.unreadCount,
+    );
+  }
 
   factory ConversationModel.fromJson(Map<String, dynamic> json) {
     return ConversationModel(
@@ -148,6 +197,13 @@ class ConversationModel {
       avatarOffsetY: (json['avatarOffsetY'] as num?)?.toDouble() ?? 0,
       lastSeenAt: DateTime.parse(json['lastSeenAt'] as String),
       isOnline: json['isOnline'] as bool? ?? false,
+      pinOrder: json['pinOrder'] as int?,
+      isPinned: json['isPinned'] as bool? ?? false,
+      isArchived: json['isArchived'] as bool? ?? false,
+      isFavorite: json['isFavorite'] as bool? ?? false,
+      isMuted: json['isMuted'] as bool? ?? false,
+      isBlockedByViewer: json['isBlockedByViewer'] as bool? ?? false,
+      hasBlockedViewer: json['hasBlockedViewer'] as bool? ?? false,
       lastMessage: json['lastMessage'] as String?,
       lastMessageAt:
           json['lastMessageAt'] != null
@@ -199,6 +255,8 @@ class ChatMessageModel {
   final DateTime createdAt;
   final DateTime? editedAt;
   final bool isMine;
+  final bool isDeliveredToPeer;
+  final DateTime? deliveredToPeerAt;
   final bool isReadByPeer;
   final DateTime? readByPeerAt;
   final int? replyToMessageId;
@@ -215,6 +273,8 @@ class ChatMessageModel {
     required this.createdAt,
     required this.editedAt,
     required this.isMine,
+    required this.isDeliveredToPeer,
+    required this.deliveredToPeerAt,
     required this.isReadByPeer,
     required this.readByPeerAt,
     required this.replyToMessageId,
@@ -222,6 +282,45 @@ class ChatMessageModel {
     required this.replyToContent,
     required this.attachments,
   });
+
+  ChatMessageModel copyWith({
+    int? id,
+    int? conversationId,
+    int? senderId,
+    String? senderUsername,
+    String? content,
+    DateTime? createdAt,
+    DateTime? editedAt,
+    bool? isMine,
+    bool? isDeliveredToPeer,
+    DateTime? deliveredToPeerAt,
+    bool? isReadByPeer,
+    DateTime? readByPeerAt,
+    int? replyToMessageId,
+    String? replyToSenderUsername,
+    String? replyToContent,
+    List<ChatAttachmentModel>? attachments,
+  }) {
+    return ChatMessageModel(
+      id: id ?? this.id,
+      conversationId: conversationId ?? this.conversationId,
+      senderId: senderId ?? this.senderId,
+      senderUsername: senderUsername ?? this.senderUsername,
+      content: content ?? this.content,
+      createdAt: createdAt ?? this.createdAt,
+      editedAt: editedAt ?? this.editedAt,
+      isMine: isMine ?? this.isMine,
+      isDeliveredToPeer: isDeliveredToPeer ?? this.isDeliveredToPeer,
+      deliveredToPeerAt: deliveredToPeerAt ?? this.deliveredToPeerAt,
+      isReadByPeer: isReadByPeer ?? this.isReadByPeer,
+      readByPeerAt: readByPeerAt ?? this.readByPeerAt,
+      replyToMessageId: replyToMessageId ?? this.replyToMessageId,
+      replyToSenderUsername:
+          replyToSenderUsername ?? this.replyToSenderUsername,
+      replyToContent: replyToContent ?? this.replyToContent,
+      attachments: attachments ?? this.attachments,
+    );
+  }
 
   factory ChatMessageModel.fromJson(Map<String, dynamic> json) {
     return ChatMessageModel(
@@ -236,6 +335,11 @@ class ChatMessageModel {
               ? DateTime.parse(json['editedAt'] as String)
               : null,
       isMine: json['isMine'] as bool? ?? false,
+      isDeliveredToPeer: json['isDeliveredToPeer'] as bool? ?? false,
+      deliveredToPeerAt:
+          json['deliveredToPeerAt'] != null
+              ? DateTime.parse(json['deliveredToPeerAt'] as String)
+              : null,
       isReadByPeer: json['isReadByPeer'] as bool? ?? false,
       readByPeerAt:
           json['readByPeerAt'] != null
@@ -247,6 +351,88 @@ class ChatMessageModel {
       attachments: (json['attachments'] as List<dynamic>? ?? const [])
           .map((e) => ChatAttachmentModel.fromJson(e as Map<String, dynamic>))
           .toList(growable: false),
+    );
+  }
+}
+
+class ChatTypingEventModel {
+  final int conversationId;
+  final int userId;
+  final DateTime sentAt;
+
+  const ChatTypingEventModel({
+    required this.conversationId,
+    required this.userId,
+    required this.sentAt,
+  });
+
+  factory ChatTypingEventModel.fromJson(Map<String, dynamic> json) {
+    return ChatTypingEventModel(
+      conversationId: json['conversationId'] as int,
+      userId: json['userId'] as int,
+      sentAt: DateTime.parse(json['sentAt'] as String),
+    );
+  }
+}
+
+class ChatMessageReadEventModel {
+  final int conversationId;
+  final int userId;
+  final DateTime readAt;
+
+  const ChatMessageReadEventModel({
+    required this.conversationId,
+    required this.userId,
+    required this.readAt,
+  });
+
+  factory ChatMessageReadEventModel.fromJson(Map<String, dynamic> json) {
+    return ChatMessageReadEventModel(
+      conversationId: json['conversationId'] as int,
+      userId: json['userId'] as int,
+      readAt: DateTime.parse(json['readAt'] as String),
+    );
+  }
+}
+
+class ChatMessageDeliveredEventModel {
+  final int conversationId;
+  final int messageId;
+  final DateTime deliveredAt;
+
+  const ChatMessageDeliveredEventModel({
+    required this.conversationId,
+    required this.messageId,
+    required this.deliveredAt,
+  });
+
+  factory ChatMessageDeliveredEventModel.fromJson(Map<String, dynamic> json) {
+    return ChatMessageDeliveredEventModel(
+      conversationId: json['conversationId'] as int,
+      messageId: json['messageId'] as int,
+      deliveredAt: DateTime.parse(json['deliveredAt'] as String),
+    );
+  }
+}
+
+class ChatMessagePageModel {
+  final List<ChatMessageModel> items;
+  final bool hasMore;
+  final int? nextBeforeMessageId;
+
+  const ChatMessagePageModel({
+    required this.items,
+    required this.hasMore,
+    required this.nextBeforeMessageId,
+  });
+
+  factory ChatMessagePageModel.fromJson(Map<String, dynamic> json) {
+    return ChatMessagePageModel(
+      items: (json['items'] as List<dynamic>? ?? const [])
+          .map((e) => ChatMessageModel.fromJson(e as Map<String, dynamic>))
+          .toList(growable: false),
+      hasMore: json['hasMore'] as bool? ?? false,
+      nextBeforeMessageId: json['nextBeforeMessageId'] as int?,
     );
   }
 }

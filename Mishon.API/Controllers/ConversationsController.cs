@@ -44,10 +44,19 @@ public class ConversationsController : ControllerBase
     }
 
     [HttpGet("{conversationId:int}/messages")]
-    [ProducesResponseType(typeof(IEnumerable<MessageDto>), StatusCodes.Status200OK)]
-    public async Task<ActionResult<IEnumerable<MessageDto>>> GetMessages(int conversationId, CancellationToken cancellationToken)
+    [ProducesResponseType(typeof(MessagePageDto), StatusCodes.Status200OK)]
+    public async Task<ActionResult<MessagePageDto>> GetMessages(
+        int conversationId,
+        [FromQuery] int limit = 20,
+        [FromQuery] int? beforeMessageId = null,
+        CancellationToken cancellationToken = default)
     {
-        return FromDataResult(await _conversationService.GetMessagesAsync(GetUserId(), conversationId, cancellationToken));
+        return FromDataResult(await _conversationService.GetMessagesAsync(
+            GetUserId(),
+            conversationId,
+            limit,
+            beforeMessageId,
+            cancellationToken));
     }
 
     [HttpPost("{conversationId:int}/messages")]
@@ -158,7 +167,6 @@ public class ConversationsController : ControllerBase
         var result = await _conversationService.DeleteMessageAsync(GetUserId(), conversationId, messageId, cancellationToken);
         if (result.IsSuccess)
         {
-            DeleteUploadedFiles(result.Data?.AttachmentUrls ?? []);
             return NoContent();
         }
 
@@ -221,29 +229,6 @@ public class ConversationsController : ControllerBase
             if (System.IO.File.Exists(path))
             {
                 System.IO.File.Delete(path);
-            }
-        }
-    }
-
-    private static void DeleteUploadedFiles(IEnumerable<string> urls)
-    {
-        foreach (var url in urls)
-        {
-            if (string.IsNullOrWhiteSpace(url) || !Uri.TryCreate(url, UriKind.Absolute, out var uri))
-            {
-                continue;
-            }
-
-            var relativePath = uri.LocalPath.TrimStart('/').Replace('/', Path.DirectorySeparatorChar);
-            if (!relativePath.StartsWith($"uploads{Path.DirectorySeparatorChar}", StringComparison.OrdinalIgnoreCase))
-            {
-                continue;
-            }
-
-            var fullPath = Path.Combine(Directory.GetCurrentDirectory(), relativePath);
-            if (System.IO.File.Exists(fullPath))
-            {
-                System.IO.File.Delete(fullPath);
             }
         }
     }

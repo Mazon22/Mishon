@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Mishon.Infrastructure.Data;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Mishon.Infrastructure.Migrations
 {
     [DbContext(typeof(MishonDbContext))]
-    partial class MishonDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260312174321_AddChatManagementAndBlocks")]
+    partial class AddChatManagementAndBlocks
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -263,9 +266,6 @@ namespace Mishon.Infrastructure.Migrations
 
                     b.Property<bool>("DeletedForUserB")
                         .HasColumnType("boolean");
-
-                    b.Property<DateTime?>("DeliveredToPeerAt")
-                        .HasColumnType("timestamp with time zone");
 
                     b.Property<DateTime?>("EditedAt")
                         .HasColumnType("timestamp with time zone");

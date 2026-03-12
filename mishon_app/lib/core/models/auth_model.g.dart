@@ -47,6 +47,8 @@ UserProfile _$UserProfileFromJson(Map<String, dynamic> json) => UserProfile(
   followersCount: (json['followersCount'] as num).toInt(),
   followingCount: (json['followingCount'] as num).toInt(),
   postsCount: (json['postsCount'] as num).toInt(),
+  isBlockedByViewer: json['isBlockedByViewer'] as bool,
+  hasBlockedViewer: json['hasBlockedViewer'] as bool,
   isFollowing: json['isFollowing'] as bool?,
 );
 
@@ -70,5 +72,7 @@ Map<String, dynamic> _$UserProfileToJson(UserProfile instance) =>
       'followersCount': instance.followersCount,
       'followingCount': instance.followingCount,
       'postsCount': instance.postsCount,
+      'isBlockedByViewer': instance.isBlockedByViewer,
+      'hasBlockedViewer': instance.hasBlockedViewer,
       'isFollowing': instance.isFollowing,
     };

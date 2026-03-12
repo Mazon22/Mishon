@@ -137,9 +137,17 @@ class SocialRepository {
     }
   }
 
-  Future<List<ChatMessageModel>> getMessages(int conversationId) async {
+  Future<ChatMessagePageModel> getMessages(
+    int conversationId, {
+    int limit = 20,
+    int? beforeMessageId,
+  }) async {
     try {
-      return await _apiService.getMessages(conversationId);
+      return await _apiService.getMessages(
+        conversationId,
+        limit: limit,
+        beforeMessageId: beforeMessageId,
+      );
     } on ApiException catch (e) {
       _logger.e('Get messages failed: ${e.apiError.message}');
       rethrow;
@@ -154,6 +162,7 @@ class SocialRepository {
     String? content, {
     int? replyToMessageId,
     List<ChatUploadAttachment> attachments = const [],
+    void Function(int sent, int total)? onSendProgress,
   }) async {
     try {
       return await _apiService.sendMessage(
@@ -161,6 +170,7 @@ class SocialRepository {
         content,
         replyToMessageId: replyToMessageId,
         attachments: attachments,
+        onSendProgress: onSendProgress,
       );
     } on ApiException catch (e) {
       _logger.e('Send message failed: ${e.apiError.message}');
@@ -199,6 +209,144 @@ class SocialRepository {
       rethrow;
     } on OfflineException {
       _logger.w('No connection deleting message');
+      rethrow;
+    }
+  }
+
+  Future<void> deleteMessageForAll(int conversationId, int messageId) async {
+    try {
+      await _apiService.deleteMessageForAll(conversationId, messageId);
+    } on ApiException catch (e) {
+      _logger.e('Delete message for all failed: ${e.apiError.message}');
+      rethrow;
+    } on OfflineException {
+      _logger.w('No connection deleting message for all');
+      rethrow;
+    }
+  }
+
+  Future<void> pinConversation(int conversationId, bool isPinned) async {
+    try {
+      await _apiService.pinConversation(conversationId, isPinned);
+    } on ApiException catch (e) {
+      _logger.e('Pin conversation failed: ${e.apiError.message}');
+      rethrow;
+    } on OfflineException {
+      _logger.w('No connection pinning conversation');
+      rethrow;
+    }
+  }
+
+  Future<void> archiveConversation(int conversationId, bool isArchived) async {
+    try {
+      await _apiService.archiveConversation(conversationId, isArchived);
+    } on ApiException catch (e) {
+      _logger.e('Archive conversation failed: ${e.apiError.message}');
+      rethrow;
+    } on OfflineException {
+      _logger.w('No connection archiving conversation');
+      rethrow;
+    }
+  }
+
+  Future<void> favoriteConversation(int conversationId, bool isFavorite) async {
+    try {
+      await _apiService.favoriteConversation(conversationId, isFavorite);
+    } on ApiException catch (e) {
+      _logger.e('Favorite conversation failed: ${e.apiError.message}');
+      rethrow;
+    } on OfflineException {
+      _logger.w('No connection favoriting conversation');
+      rethrow;
+    }
+  }
+
+  Future<void> muteConversation(int conversationId, bool isMuted) async {
+    try {
+      await _apiService.muteConversation(conversationId, isMuted);
+    } on ApiException catch (e) {
+      _logger.e('Mute conversation failed: ${e.apiError.message}');
+      rethrow;
+    } on OfflineException {
+      _logger.w('No connection muting conversation');
+      rethrow;
+    }
+  }
+
+  Future<void> deleteConversation(
+    int conversationId, {
+    required bool deleteForBoth,
+  }) async {
+    try {
+      await _apiService.deleteConversation(
+        conversationId,
+        deleteForBoth: deleteForBoth,
+      );
+    } on ApiException catch (e) {
+      _logger.e('Delete conversation failed: ${e.apiError.message}');
+      rethrow;
+    } on OfflineException {
+      _logger.w('No connection deleting conversation');
+      rethrow;
+    }
+  }
+
+  Future<void> clearConversationHistory(int conversationId) async {
+    try {
+      await _apiService.clearConversationHistory(conversationId);
+    } on ApiException catch (e) {
+      _logger.e('Clear conversation history failed: ${e.apiError.message}');
+      rethrow;
+    } on OfflineException {
+      _logger.w('No connection clearing conversation history');
+      rethrow;
+    }
+  }
+
+  Future<void> blockUserFromChat(int userId) async {
+    try {
+      await _apiService.blockUserFromChat(userId);
+    } on ApiException catch (e) {
+      _logger.e('Block user from chat failed: ${e.apiError.message}');
+      rethrow;
+    } on OfflineException {
+      _logger.w('No connection blocking user from chat');
+      rethrow;
+    }
+  }
+
+  Future<void> unblockUserFromChat(int userId) async {
+    try {
+      await _apiService.unblockUserFromChat(userId);
+    } on ApiException catch (e) {
+      _logger.e('Unblock user from chat failed: ${e.apiError.message}');
+      rethrow;
+    } on OfflineException {
+      _logger.w('No connection unblocking user from chat');
+      rethrow;
+    }
+  }
+
+  Future<void> sendTypingStart(int conversationId) async {
+    try {
+      await _apiService.sendTypingStart(conversationId);
+    } on ApiException catch (e) {
+      _logger.e('Typing start failed: ${e.apiError.message}');
+      rethrow;
+    } on OfflineException {
+      _logger.w('No connection sending typing start');
+      rethrow;
+    }
+  }
+
+  Future<void> sendTypingStop(int conversationId) async {
+    try {
+      await _apiService.sendTypingStop(conversationId);
+    } on ApiException catch (e) {
+      _logger.e('Typing stop failed: ${e.apiError.message}');
+      rethrow;
+    } on OfflineException {
+      _logger.w('No connection sending typing stop');
       rethrow;
     }
   }

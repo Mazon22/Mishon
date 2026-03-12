@@ -9,6 +9,16 @@ public class Conversation
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
     public DateTime? UserAReadAt { get; set; }
     public DateTime? UserBReadAt { get; set; }
+    public int? UserAPinOrder { get; set; }
+    public int? UserBPinOrder { get; set; }
+    public bool UserAArchived { get; set; }
+    public bool UserBArchived { get; set; }
+    public bool UserAFavorite { get; set; }
+    public bool UserBFavorite { get; set; }
+    public bool UserAMuted { get; set; }
+    public bool UserBMuted { get; set; }
+    public bool UserADeleted { get; set; }
+    public bool UserBDeleted { get; set; }
 
     public User UserA { get; set; } = null!;
     public User UserB { get; set; } = null!;
