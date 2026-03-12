@@ -44,6 +44,8 @@ public record ConversationDto(
     double AvatarScale,
     double AvatarOffsetX,
     double AvatarOffsetY,
+    DateTime LastSeenAt,
+    bool IsOnline,
     string? LastMessage,
     DateTime? LastMessageAt,
     int UnreadCount
@@ -69,6 +71,7 @@ public record MessageDto(
     DateTime? EditedAt,
     bool IsMine,
     bool IsReadByPeer,
+    DateTime? ReadByPeerAt,
     int? ReplyToMessageId,
     string? ReplyToSenderUsername,
     string? ReplyToContent,

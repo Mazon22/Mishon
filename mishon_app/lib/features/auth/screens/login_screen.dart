@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:mishon_app/core/widgets/buttons.dart';
-import 'package:mishon_app/core/widgets/text_fields.dart';
+import 'package:mishon_app/features/auth/widgets/auth_shell.dart';
+
 import '../providers/auth_provider.dart';
 
 class LoginScreen extends ConsumerStatefulWidget {
@@ -19,46 +19,61 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   String? _errorMessage;
 
   @override
+  void initState() {
+    super.initState();
+    _emailController.addListener(_clearErrorMessage);
+    _passwordController.addListener(_clearErrorMessage);
+  }
+
+  @override
   void dispose() {
+    _emailController.removeListener(_clearErrorMessage);
+    _passwordController.removeListener(_clearErrorMessage);
     _emailController.dispose();
     _passwordController.dispose();
     super.dispose();
   }
 
-  Future<void> _login() async {
-    if (!_formKey.currentState!.validate()) return;
-
-    setState(() => _errorMessage = null);
-
-    final success = await ref.read(authNotifierProvider.notifier).login(
-          _emailController.text.trim(),
-          _passwordController.text,
-        );
-
-    if (mounted) {
-      if (success) {
-        context.go('/feed');
-      } else {
-        final state = ref.read(authNotifierProvider);
-        setState(() {
-          _errorMessage = state.when(
-            data: (_) => null,
-            error: (error, _) => _getErrorMessage(error),
-            loading: () => null,
-          );
-        });
-      }
+  void _clearErrorMessage() {
+    if (_errorMessage != null && mounted) {
+      setState(() => _errorMessage = null);
     }
   }
 
-  String _getErrorMessage(Object error) {
-    if (error is String) {
-      if (error.contains('Неверный email или пароль')) {
-        return 'Неверный email или пароль';
-      }
-      return error;
+  Future<void> _login() async {
+    final currentState = _formKey.currentState;
+    if (currentState == null || !currentState.validate()) {
+      return;
     }
-    return 'Ошибка входа. Проверьте подключение к интернету.';
+
+    FocusScope.of(context).unfocus();
+    setState(() => _errorMessage = null);
+
+    final success = await ref
+        .read(authNotifierProvider.notifier)
+        .login(_emailController.text.trim(), _passwordController.text);
+
+    if (!mounted) {
+      return;
+    }
+
+    if (success) {
+      context.go('/feed');
+      return;
+    }
+
+    final state = ref.read(authNotifierProvider);
+    final message = state.when<String?>(
+      data: (_) => null,
+      error:
+          (error, _) => formatAuthErrorMessage(
+            error,
+            fallback: 'Unable to sign in right now. Please try again.',
+          ),
+      loading: () => null,
+    );
+
+    setState(() => _errorMessage = message);
   }
 
   @override
@@ -66,119 +81,79 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     final authState = ref.watch(authNotifierProvider);
     final isLoading = authState.isLoading;
 
-    return Scaffold(
-      body: SafeArea(
-        child: Center(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(24),
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 420),
-              child: Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(32),
-                  child: Form(
-                    key: _formKey,
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        // Логотип
-                        const Icon(
-                          Icons.rocket_launch_outlined,
-                          size: 56,
-                          color: Color(0xFF1DA1F2),
+    return AuthScreenShell(
+      title: 'Sign in to Mishon',
+      subtitle: 'Continue to your account',
+      children: [
+        Form(
+          key: _formKey,
+          autovalidateMode: AutovalidateMode.onUserInteraction,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              AnimatedSwitcher(
+                duration: const Duration(milliseconds: 220),
+                switchInCurve: Curves.easeOutCubic,
+                switchOutCurve: Curves.easeInCubic,
+                child:
+                    _errorMessage == null
+                        ? const SizedBox.shrink()
+                        : Padding(
+                          key: ValueKey(_errorMessage),
+                          padding: const EdgeInsets.only(bottom: 20),
+                          child: AuthErrorBanner(message: _errorMessage!),
                         ),
-                        const SizedBox(height: 24),
-                        Text(
-                          'Вход в Mishon',
-                          style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                                fontWeight: FontWeight.bold,
-                              ),
-                          textAlign: TextAlign.center,
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          'Войдите для продолжения',
-                          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                color: Colors.grey.shade600,
-                              ),
-                          textAlign: TextAlign.center,
-                        ),
-                        const SizedBox(height: 32),
-
-                        // Сообщение об ошибке
-                        if (_errorMessage != null) ...[
-                          Container(
-                            padding: const EdgeInsets.all(12),
-                            decoration: BoxDecoration(
-                              color: Colors.red.shade50,
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(color: Colors.red.shade100),
-                            ),
-                            child: Row(
-                              children: [
-                                Icon(Icons.error_outline, color: Colors.red.shade700, size: 20),
-                                const SizedBox(width: 8),
-                                Expanded(
-                                  child: Text(
-                                    _errorMessage!,
-                                    style: TextStyle(color: Colors.red.shade700, fontSize: 14),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          const SizedBox(height: 20),
-                        ],
-
-                        // Поля ввода
-                        AppTextField(
-                          controller: _emailController,
-                          labelText: 'Email',
-                          hintText: 'example@mail.com',
-                          prefixIcon: Icons.email_outlined,
-                          keyboardType: TextInputType.emailAddress,
-                          textInputAction: TextInputAction.next,
-                          validator: (v) {
-                            if (v == null || v.isEmpty) return 'Введите email';
-                            if (!v.contains('@')) return 'Некорректный email';
-                            return null;
-                          },
-                        ),
-                        const SizedBox(height: 16),
-                        AppPasswordField(
-                          controller: _passwordController,
-                          labelText: 'Пароль',
-                          hintText: 'Введите пароль',
-                          textInputAction: TextInputAction.done,
-                          onFieldSubmitted: (_) => _login(),
-                        ),
-                        const SizedBox(height: 24),
-
-                        // Кнопка входа
-                        PrimaryButton(
-                          text: 'Войти',
-                          onPressed: _login,
-                          isLoading: isLoading,
-                        ),
-                        const SizedBox(height: 16),
-
-                        // Переход на регистрацию
-                        Center(
-                          child: TextButton(
-                            onPressed: isLoading ? null : () => context.go('/register'),
-                            child: const Text('Нет аккаунта? Зарегистрироваться'),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
               ),
-            ),
+              AuthTextField(
+                controller: _emailController,
+                labelText: 'Email',
+                hintText: 'you@example.com',
+                prefixIcon: Icons.alternate_email_rounded,
+                keyboardType: TextInputType.emailAddress,
+                textInputAction: TextInputAction.next,
+                validator: (value) {
+                  final email = value?.trim() ?? '';
+                  if (email.isEmpty) {
+                    return 'Enter your email.';
+                  }
+                  if (!RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(email)) {
+                    return 'Enter a valid email address.';
+                  }
+                  return null;
+                },
+              ),
+              const SizedBox(height: 16),
+              AuthTextField(
+                controller: _passwordController,
+                labelText: 'Password',
+                hintText: 'Enter your password',
+                prefixIcon: Icons.lock_outline_rounded,
+                obscureText: true,
+                textInputAction: TextInputAction.done,
+                onFieldSubmitted: (_) => _login(),
+                validator: (value) {
+                  if ((value ?? '').isEmpty) {
+                    return 'Enter your password.';
+                  }
+                  return null;
+                },
+              ),
+              const SizedBox(height: 24),
+              AuthPrimaryButton(
+                text: 'Sign In',
+                onPressed: _login,
+                isLoading: isLoading,
+              ),
+              const SizedBox(height: 24),
+              AuthFooter(
+                label: 'Don\'t have an account?',
+                action: 'Sign up',
+                onTap: isLoading ? null : () => context.go('/register'),
+              ),
+            ],
           ),
         ),
-      ),
+      ],
     );
   }
 }

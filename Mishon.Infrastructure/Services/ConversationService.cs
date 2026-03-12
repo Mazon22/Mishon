@@ -44,6 +44,8 @@ public class ConversationService : IConversationService
                     peer.AvatarScale,
                     peer.AvatarOffsetX,
                     peer.AvatarOffsetY,
+                    peer.LastSeenAt,
+                    peer.LastSeenAt >= DateTime.UtcNow.AddMinutes(-5),
                     lastMessage != null ? BuildMessagePreview(lastMessage) : null,
                     lastMessage?.CreatedAt,
                     unreadCount);
@@ -329,6 +331,9 @@ public class ConversationService : IConversationService
             message.EditedAt,
             message.SenderId == userId,
             message.SenderId == userId && peerReadAt.HasValue && message.CreatedAt <= peerReadAt.Value,
+            message.SenderId == userId && peerReadAt.HasValue && message.CreatedAt <= peerReadAt.Value
+                ? peerReadAt.Value
+                : null,
             message.ReplyToMessageId,
             message.ReplyToMessage?.Sender.Username,
             message.ReplyToMessage != null ? BuildMessagePreview(message.ReplyToMessage) : null,

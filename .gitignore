@@ -53,6 +53,7 @@ test-results/
 # Misc
 *.iml
 .metadata
+.tmp/
 
 # Uploaded files (images, etc.)
 **/uploads/*

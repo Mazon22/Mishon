@@ -116,6 +116,8 @@ class ConversationModel {
   final double avatarScale;
   final double avatarOffsetX;
   final double avatarOffsetY;
+  final DateTime lastSeenAt;
+  final bool isOnline;
   final String? lastMessage;
   final DateTime? lastMessageAt;
   final int unreadCount;
@@ -128,6 +130,8 @@ class ConversationModel {
     this.avatarScale = 1,
     this.avatarOffsetX = 0,
     this.avatarOffsetY = 0,
+    required this.lastSeenAt,
+    required this.isOnline,
     required this.lastMessage,
     required this.lastMessageAt,
     required this.unreadCount,
@@ -142,6 +146,8 @@ class ConversationModel {
       avatarScale: (json['avatarScale'] as num?)?.toDouble() ?? 1,
       avatarOffsetX: (json['avatarOffsetX'] as num?)?.toDouble() ?? 0,
       avatarOffsetY: (json['avatarOffsetY'] as num?)?.toDouble() ?? 0,
+      lastSeenAt: DateTime.parse(json['lastSeenAt'] as String),
+      isOnline: json['isOnline'] as bool? ?? false,
       lastMessage: json['lastMessage'] as String?,
       lastMessageAt:
           json['lastMessageAt'] != null
@@ -194,6 +200,7 @@ class ChatMessageModel {
   final DateTime? editedAt;
   final bool isMine;
   final bool isReadByPeer;
+  final DateTime? readByPeerAt;
   final int? replyToMessageId;
   final String? replyToSenderUsername;
   final String? replyToContent;
@@ -209,6 +216,7 @@ class ChatMessageModel {
     required this.editedAt,
     required this.isMine,
     required this.isReadByPeer,
+    required this.readByPeerAt,
     required this.replyToMessageId,
     required this.replyToSenderUsername,
     required this.replyToContent,
@@ -229,6 +237,10 @@ class ChatMessageModel {
               : null,
       isMine: json['isMine'] as bool? ?? false,
       isReadByPeer: json['isReadByPeer'] as bool? ?? false,
+      readByPeerAt:
+          json['readByPeerAt'] != null
+              ? DateTime.parse(json['readByPeerAt'] as String)
+              : null,
       replyToMessageId: json['replyToMessageId'] as int?,
       replyToSenderUsername: json['replyToSenderUsername'] as String?,
       replyToContent: json['replyToContent'] as String?,

@@ -17,6 +17,8 @@ class AppShell extends ConsumerWidget {
   final double maxContentWidth;
   final bool showNotificationsAction;
   final bool showAppBar;
+  final BoxDecoration? bodyDecoration;
+  final List<Widget>? backgroundLayers;
 
   const AppShell({
     super.key,
@@ -28,6 +30,8 @@ class AppShell extends ConsumerWidget {
     this.maxContentWidth = 960,
     this.showNotificationsAction = false,
     this.showAppBar = true,
+    this.bodyDecoration,
+    this.backgroundLayers,
   });
 
   @override
@@ -71,39 +75,10 @@ class AppShell extends ConsumerWidget {
               : null,
       floatingActionButton: floatingActionButton,
       body: DecoratedBox(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [Color(0xFFF7F6FF), Color(0xFFF7FBFF), Color(0xFFFFFBF5)],
-          ),
-        ),
+        decoration: bodyDecoration ?? _defaultBodyDecoration,
         child: Stack(
           children: [
-            Positioned(
-              top: -40,
-              right: -20,
-              child: Container(
-                width: 180,
-                height: 180,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: const Color(0xFF7DA9FF).withValues(alpha: 0.12),
-                ),
-              ),
-            ),
-            Positioned(
-              top: 120,
-              left: -60,
-              child: Container(
-                width: 220,
-                height: 220,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: const Color(0xFFFFB86A).withValues(alpha: 0.10),
-                ),
-              ),
-            ),
+            ...(backgroundLayers ?? _defaultBackgroundLayers),
             SafeArea(
               bottom: false,
               child: LayoutBuilder(
@@ -310,6 +285,41 @@ class AppShell extends ConsumerWidget {
   }
 }
 
+const _defaultBodyDecoration = BoxDecoration(
+  gradient: LinearGradient(
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+    colors: [Color(0xFFF5F8FF), Color(0xFFF0EEFF), Color(0xFFEAF4FF)],
+  ),
+);
+
+const _defaultBackgroundLayers = [
+  Positioned(
+    top: -120,
+    left: -80,
+    child: _ShellGlowOrb(
+      size: 260,
+      colors: [Color(0xFFB5D8FF), Color(0x33B5D8FF)],
+    ),
+  ),
+  Positioned(
+    bottom: -140,
+    right: -60,
+    child: _ShellGlowOrb(
+      size: 280,
+      colors: [Color(0xFFD4C4FF), Color(0x33D4C4FF)],
+    ),
+  ),
+  Positioned(
+    top: 120,
+    right: -40,
+    child: _ShellGlowOrb(
+      size: 180,
+      colors: [Color(0xFFF4D8FF), Color(0x22F4D8FF)],
+    ),
+  ),
+];
+
 class _ShellDestination {
   final String label;
   final IconData icon;
@@ -324,6 +334,27 @@ class _ShellDestination {
     required this.route,
     this.badgeCount = 0,
   });
+}
+
+class _ShellGlowOrb extends StatelessWidget {
+  final double size;
+  final List<Color> colors;
+
+  const _ShellGlowOrb({required this.size, required this.colors});
+
+  @override
+  Widget build(BuildContext context) {
+    return IgnorePointer(
+      child: Container(
+        width: size,
+        height: size,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          gradient: RadialGradient(colors: colors),
+        ),
+      ),
+    );
+  }
 }
 
 class _DestinationIcon extends StatelessWidget {

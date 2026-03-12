@@ -1162,13 +1162,24 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
 
     final localLastSeen = profile.lastSeenAt.toLocal();
     final timeLabel = DateFormat('HH:mm').format(localLastSeen);
-    final difference = DateTime.now().difference(localLastSeen);
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final seenDay = DateTime(
+      localLastSeen.year,
+      localLastSeen.month,
+      localLastSeen.day,
+    );
+    final dayDifference = today.difference(seenDay).inDays;
 
-    if (difference.inDays >= 1) {
-      return 'был в сети ${difference.inDays} д. $timeLabel';
+    if (dayDifference <= 0) {
+      return 'был в сети $timeLabel';
     }
 
-    return 'был в сети $timeLabel';
+    if (dayDifference == 1) {
+      return 'был в сети вчера в $timeLabel';
+    }
+
+    return 'был в сети $dayDifference д. назад в $timeLabel';
   }
 }
 

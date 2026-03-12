@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:mishon_app/core/widgets/buttons.dart';
-import 'package:mishon_app/core/widgets/text_fields.dart';
+import 'package:mishon_app/features/auth/widgets/auth_shell.dart';
+
 import '../providers/auth_provider.dart';
 
 class RegisterScreen extends ConsumerStatefulWidget {
@@ -21,7 +21,20 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
   String? _errorMessage;
 
   @override
+  void initState() {
+    super.initState();
+    _usernameController.addListener(_clearErrorMessage);
+    _emailController.addListener(_clearErrorMessage);
+    _passwordController.addListener(_clearErrorMessage);
+    _confirmPasswordController.addListener(_clearErrorMessage);
+  }
+
+  @override
   void dispose() {
+    _usernameController.removeListener(_clearErrorMessage);
+    _emailController.removeListener(_clearErrorMessage);
+    _passwordController.removeListener(_clearErrorMessage);
+    _confirmPasswordController.removeListener(_clearErrorMessage);
     _usernameController.dispose();
     _emailController.dispose();
     _passwordController.dispose();
@@ -29,44 +42,51 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
     super.dispose();
   }
 
-  Future<void> _register() async {
-    if (!_formKey.currentState!.validate()) return;
+  void _clearErrorMessage() {
+    if (_errorMessage != null && mounted) {
+      setState(() => _errorMessage = null);
+    }
+  }
 
+  Future<void> _register() async {
+    final currentState = _formKey.currentState;
+    if (currentState == null || !currentState.validate()) {
+      return;
+    }
+
+    FocusScope.of(context).unfocus();
     setState(() => _errorMessage = null);
 
-    final success = await ref.read(authNotifierProvider.notifier).register(
+    final success = await ref
+        .read(authNotifierProvider.notifier)
+        .register(
           _usernameController.text.trim(),
           _emailController.text.trim(),
           _passwordController.text,
         );
 
-    if (mounted) {
-      if (success) {
-        context.go('/feed');
-      } else {
-        final state = ref.read(authNotifierProvider);
-        setState(() {
-          _errorMessage = state.when(
-            data: (_) => null,
-            error: (error, _) => _getErrorMessage(error),
-            loading: () => null,
-          );
-        });
-      }
+    if (!mounted) {
+      return;
     }
-  }
 
-  String _getErrorMessage(Object error) {
-    if (error is String) {
-      if (error.contains('Email уже используется')) {
-        return 'Этот email уже зарегистрирован';
-      }
-      if (error.contains('Имя пользователя уже занято')) {
-        return 'Это имя пользователя уже занято';
-      }
-      return error;
+    if (success) {
+      context.go('/feed');
+      return;
     }
-    return 'Ошибка регистрации. Проверьте подключение к интернету.';
+
+    final state = ref.read(authNotifierProvider);
+    final message = state.when<String?>(
+      data: (_) => null,
+      error:
+          (error, _) => formatAuthErrorMessage(
+            error,
+            fallback:
+                'Unable to create your account right now. Please try again.',
+          ),
+      loading: () => null,
+    );
+
+    setState(() => _errorMessage = message);
   }
 
   @override
@@ -74,162 +94,136 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
     final authState = ref.watch(authNotifierProvider);
     final isLoading = authState.isLoading;
 
-    return Scaffold(
-      body: SafeArea(
-        child: Center(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(24),
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 420),
-              child: Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(32),
-                  child: Form(
-                    key: _formKey,
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        // Логотип
-                        const Icon(
-                          Icons.rocket_launch_outlined,
-                          size: 56,
-                          color: Color(0xFF1DA1F2),
+    return AuthScreenShell(
+      title: 'Create your account',
+      subtitle: 'Join Mishon with a clean, secure setup.',
+      children: [
+        Form(
+          key: _formKey,
+          autovalidateMode: AutovalidateMode.onUserInteraction,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              AnimatedSwitcher(
+                duration: const Duration(milliseconds: 220),
+                switchInCurve: Curves.easeOutCubic,
+                switchOutCurve: Curves.easeInCubic,
+                child:
+                    _errorMessage == null
+                        ? const SizedBox.shrink()
+                        : Padding(
+                          key: ValueKey(_errorMessage),
+                          padding: const EdgeInsets.only(bottom: 20),
+                          child: AuthErrorBanner(message: _errorMessage!),
                         ),
-                        const SizedBox(height: 24),
-                        Text(
-                          'Создать аккаунт',
-                          style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                                fontWeight: FontWeight.bold,
-                              ),
-                          textAlign: TextAlign.center,
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          'Присоединяйтесь к Mishon',
-                          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                color: Colors.grey.shade600,
-                              ),
-                          textAlign: TextAlign.center,
-                        ),
-                        const SizedBox(height: 32),
-
-                        // Сообщение об ошибке
-                        if (_errorMessage != null) ...[
-                          Container(
-                            padding: const EdgeInsets.all(12),
-                            decoration: BoxDecoration(
-                              color: Colors.red.shade50,
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(color: Colors.red.shade100),
-                            ),
-                            child: Row(
-                              children: [
-                                Icon(Icons.error_outline, color: Colors.red.shade700, size: 20),
-                                const SizedBox(width: 8),
-                                Expanded(
-                                  child: Text(
-                                    _errorMessage!,
-                                    style: TextStyle(color: Colors.red.shade700, fontSize: 14),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          const SizedBox(height: 20),
-                        ],
-
-                        // Поля ввода
-                        AppTextField(
-                          controller: _usernameController,
-                          labelText: 'Имя пользователя',
-                          hintText: 'username',
-                          prefixIcon: Icons.person_outlined,
-                          helperText: '3-50 символов, только буквы, цифры и _',
-                          textInputAction: TextInputAction.next,
-                          validator: (v) {
-                            if (v == null || v.isEmpty) return 'Введите имя';
-                            if (v.length < 3) return 'Минимум 3 символа';
-                            if (v.length > 50) return 'Максимум 50 символов';
-                            if (!RegExp(r'^[a-zA-Z0-9_]+$').hasMatch(v)) {
-                              return 'Только буквы, цифры и подчёркивание';
-                            }
-                            return null;
-                          },
-                        ),
-                        const SizedBox(height: 16),
-                        AppTextField(
-                          controller: _emailController,
-                          labelText: 'Email',
-                          hintText: 'example@mail.com',
-                          prefixIcon: Icons.email_outlined,
-                          keyboardType: TextInputType.emailAddress,
-                          textInputAction: TextInputAction.next,
-                          validator: (v) {
-                            if (v == null || v.isEmpty) return 'Введите email';
-                            if (!v.contains('@')) return 'Некорректный email';
-                            return null;
-                          },
-                        ),
-                        const SizedBox(height: 16),
-                        AppPasswordField(
-                          controller: _passwordController,
-                          labelText: 'Пароль',
-                          hintText: 'Минимум 8 символов',
-                          textInputAction: TextInputAction.next,
-                          validator: (v) {
-                            if (v == null || v.isEmpty) return 'Введите пароль';
-                            if (v.length < 8) return 'Минимум 8 символов';
-                            if (!v.contains(RegExp(r'[A-Z]'))) {
-                              return 'Нужна заглавная буква';
-                            }
-                            if (!v.contains(RegExp(r'[a-z]'))) {
-                              return 'Нужна строчная буква';
-                            }
-                            if (!v.contains(RegExp(r'\d'))) return 'Нужна цифра';
-                            return null;
-                          },
-                        ),
-                        const SizedBox(height: 16),
-                        AppPasswordField(
-                          controller: _confirmPasswordController,
-                          labelText: 'Подтвердите пароль',
-                          hintText: 'Повторите пароль',
-                          textInputAction: TextInputAction.done,
-                          onFieldSubmitted: (_) => _register(),
-                          validator: (v) {
-                            if (v != _passwordController.text) {
-                              return 'Пароли не совпадают';
-                            }
-                            return null;
-                          },
-                        ),
-                        const SizedBox(height: 24),
-
-                        // Кнопка регистрации
-                        PrimaryButton(
-                          text: 'Зарегистрироваться',
-                          onPressed: _register,
-                          isLoading: isLoading,
-                        ),
-                        const SizedBox(height: 16),
-
-                        // Переход на вход
-                        Center(
-                          child: TextButton(
-                            onPressed: isLoading ? null : () => context.go('/login'),
-                            child: const Text('Есть аккаунт? Войти'),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
               ),
-            ),
+              AuthTextField(
+                controller: _usernameController,
+                labelText: 'Username',
+                hintText: 'michael_design',
+                prefixIcon: Icons.person_outline_rounded,
+                helperText:
+                    '3-50 characters. Letters, numbers, and underscores only.',
+                textInputAction: TextInputAction.next,
+                validator: (value) {
+                  final username = value?.trim() ?? '';
+                  if (username.isEmpty) {
+                    return 'Choose a username.';
+                  }
+                  if (username.length < 3) {
+                    return 'Use at least 3 characters.';
+                  }
+                  if (username.length > 50) {
+                    return 'Use 50 characters or fewer.';
+                  }
+                  if (!RegExp(r'^[a-zA-Z0-9_]+$').hasMatch(username)) {
+                    return 'Use only letters, numbers, and underscores.';
+                  }
+                  return null;
+                },
+              ),
+              const SizedBox(height: 16),
+              AuthTextField(
+                controller: _emailController,
+                labelText: 'Email',
+                hintText: 'you@example.com',
+                prefixIcon: Icons.alternate_email_rounded,
+                keyboardType: TextInputType.emailAddress,
+                textInputAction: TextInputAction.next,
+                validator: (value) {
+                  final email = value?.trim() ?? '';
+                  if (email.isEmpty) {
+                    return 'Enter your email.';
+                  }
+                  if (!RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(email)) {
+                    return 'Enter a valid email address.';
+                  }
+                  return null;
+                },
+              ),
+              const SizedBox(height: 16),
+              AuthTextField(
+                controller: _passwordController,
+                labelText: 'Password',
+                hintText: 'Create a secure password',
+                prefixIcon: Icons.lock_outline_rounded,
+                obscureText: true,
+                textInputAction: TextInputAction.next,
+                validator: (value) {
+                  final password = value ?? '';
+                  if (password.isEmpty) {
+                    return 'Create a password.';
+                  }
+                  if (password.length < 8) {
+                    return 'Use at least 8 characters.';
+                  }
+                  if (!password.contains(RegExp(r'[A-Z]'))) {
+                    return 'Include at least one uppercase letter.';
+                  }
+                  if (!password.contains(RegExp(r'[a-z]'))) {
+                    return 'Include at least one lowercase letter.';
+                  }
+                  if (!password.contains(RegExp(r'\d'))) {
+                    return 'Include at least one number.';
+                  }
+                  return null;
+                },
+              ),
+              const SizedBox(height: 16),
+              AuthTextField(
+                controller: _confirmPasswordController,
+                labelText: 'Confirm password',
+                hintText: 'Repeat your password',
+                prefixIcon: Icons.verified_user_outlined,
+                obscureText: true,
+                textInputAction: TextInputAction.done,
+                onFieldSubmitted: (_) => _register(),
+                validator: (value) {
+                  if ((value ?? '').isEmpty) {
+                    return 'Confirm your password.';
+                  }
+                  if (value != _passwordController.text) {
+                    return 'Passwords do not match.';
+                  }
+                  return null;
+                },
+              ),
+              const SizedBox(height: 24),
+              AuthPrimaryButton(
+                text: 'Create Account',
+                onPressed: _register,
+                isLoading: isLoading,
+              ),
+              const SizedBox(height: 24),
+              AuthFooter(
+                label: 'Already have an account?',
+                action: 'Sign in',
+                onTap: isLoading ? null : () => context.go('/login'),
+              ),
+            ],
           ),
         ),
-      ),
+      ],
     );
   }
 }
