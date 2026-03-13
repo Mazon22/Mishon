@@ -81,6 +81,16 @@ public class ConversationService : IConversationService
 
                     var lastMessage = visibleMessages.FirstOrDefault();
                     var readAt = GetReadAt(conversation, userId);
+                    var lastMessageIsMine = lastMessage?.SenderId == userId;
+                    var lastMessageIsReadByPeer = lastMessageIsMine &&
+                        readAt.HasValue &&
+                        lastMessage != null &&
+                        lastMessage.CreatedAt <= readAt.Value;
+                    var lastMessageDeliveredAt = lastMessageIsReadByPeer
+                        ? readAt
+                        : lastMessage?.DeliveredToPeerAt;
+                    var lastMessageIsDeliveredToPeer = lastMessageIsMine &&
+                        lastMessageDeliveredAt.HasValue;
                     var unreadCount = conversation.Messages.Count(message =>
                         message.SenderId != userId &&
                         !IsMessageDeletedForUser(conversation, userId, message) &&
@@ -105,6 +115,9 @@ public class ConversationService : IConversationService
                         blockedViewer.Contains(peer.Id),
                         lastMessage != null ? BuildMessagePreview(lastMessage) : null,
                         lastMessage?.CreatedAt,
+                        lastMessageIsMine,
+                        lastMessageIsDeliveredToPeer,
+                        lastMessageIsReadByPeer,
                         unreadCount);
 
                     return new
@@ -188,7 +201,9 @@ public class ConversationService : IConversationService
                 peer.AvatarUrl,
                 peer.AvatarScale,
                 peer.AvatarOffsetX,
-                peer.AvatarOffsetY));
+                peer.AvatarOffsetY,
+                peer.LastSeenAt,
+                peer.LastSeenAt >= DateTime.UtcNow.AddMinutes(-5)));
         }
         catch (Exception ex)
         {

@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 
+import 'package:mishon_app/core/localization/app_strings.dart';
 import 'package:mishon_app/core/models/social_models.dart';
 import 'package:mishon_app/core/network/exceptions.dart';
 import 'package:mishon_app/core/repositories/social_repository.dart';
@@ -90,8 +91,12 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
         return;
       }
 
+      final strings = AppStrings.of(context);
       setState(() {
-        _errorMessage = 'Не удалось загрузить уведомления';
+        _errorMessage =
+            strings.isRu
+                ? 'Не удалось загрузить уведомления'
+                : 'Could not load notifications';
         _isLoading = false;
       });
     }
@@ -108,7 +113,8 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
     }
 
     if (item.conversationId != null && item.actorUserId != null) {
-      final username = item.actorUsername ?? 'Диалог';
+      final strings = AppStrings.of(context);
+      final username = item.actorUsername ?? (strings.isRu ? 'Диалог' : 'Chat');
       context.push(
         '/chat',
         extra: ChatScreenArgs(
@@ -137,9 +143,10 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final strings = AppStrings.of(context);
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Уведомления'),
+        title: Text(strings.isRu ? 'Уведомления' : 'Notifications'),
         centerTitle: false,
       ),
       body: DecoratedBox(
@@ -161,10 +168,13 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
                     onRetry: () => _loadNotifications(),
                   )
                 : _items.isEmpty
-                    ? const EmptyState(
+                    ? EmptyState(
                         icon: Icons.notifications_none_rounded,
-                        title: 'Пока тихо',
-                        subtitle: 'Новые реакции, заявки и сообщения появятся здесь.',
+                        title: strings.isRu ? 'Пока тихо' : 'Nothing new yet',
+                        subtitle:
+                            strings.isRu
+                                ? 'Новые реакции, заявки и сообщения появятся здесь.'
+                                : 'New reactions, requests, and messages will appear here.',
                       )
                     : RefreshIndicator(
                         onRefresh: () => _loadNotifications(),
@@ -197,7 +207,11 @@ class _NotificationCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final createdAt = DateFormat('dd MMM, HH:mm').format(item.createdAt.toLocal());
+    final strings = AppStrings.of(context);
+    final createdAt = DateFormat(
+      'dd MMM, HH:mm',
+      strings.localeCode,
+    ).format(item.createdAt.toLocal());
 
     return Material(
       color: item.isRead ? Colors.white.withValues(alpha: 0.92) : const Color(0xFFEFF4FF),
@@ -220,7 +234,7 @@ class _NotificationCard extends StatelessWidget {
                       children: [
                         Expanded(
                           child: Text(
-                            item.actorUsername ?? _titleForType(item.type),
+                            item.actorUsername ?? _titleForType(context, item.type),
                             style: Theme.of(context).textTheme.titleMedium?.copyWith(
                                   fontWeight: FontWeight.w800,
                                 ),
@@ -239,7 +253,7 @@ class _NotificationCard extends StatelessWidget {
                     ),
                     const SizedBox(height: 6),
                     Text(
-                      item.text,
+                      strings.isRu ? item.text : _bodyForType(strings, item),
                       style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                             color: const Color(0xFF45556F),
                             height: 1.35,
@@ -260,16 +274,35 @@ class _NotificationCard extends StatelessWidget {
     );
   }
 
-  String _titleForType(String type) {
+  String _titleForType(BuildContext context, String type) {
+    final strings = AppStrings.of(context);
     return switch (type) {
-      'post_like' => 'Новый лайк',
-      'post_comment' => 'Новый комментарий',
-      'comment_reply' => 'Ответ на комментарий',
-      'friend_request' => 'Заявка в друзья',
-      'friend_accepted' => 'Дружба подтверждена',
-      'message_reply' => 'Ответ в сообщениях',
-      'message' => 'Новое сообщение',
-      _ => 'Уведомление',
+      'post_like' => strings.isRu ? 'Новый лайк' : 'New like',
+      'post_comment' =>
+        strings.isRu ? 'Новый комментарий' : 'New comment',
+      'comment_reply' =>
+        strings.isRu ? 'Ответ на комментарий' : 'Reply to comment',
+      'friend_request' =>
+        strings.isRu ? 'Заявка в друзья' : 'Friend request',
+      'friend_accepted' =>
+        strings.isRu ? 'Дружба подтверждена' : 'Friend request accepted',
+      'message_reply' =>
+        strings.isRu ? 'Ответ в сообщениях' : 'Reply in messages',
+      'message' => strings.isRu ? 'Новое сообщение' : 'New message',
+      _ => strings.isRu ? 'Уведомление' : 'Notification',
+    };
+  }
+
+  String _bodyForType(AppStrings strings, NotificationItemModel item) {
+    return switch (item.type) {
+      'post_like' => 'liked your post',
+      'post_comment' => 'commented on your post',
+      'comment_reply' => 'replied to your comment',
+      'friend_request' => 'sent you a friend request',
+      'friend_accepted' => 'accepted your friend request',
+      'message_reply' => 'replied in messages',
+      'message' => 'sent you a message',
+      _ => item.text,
     };
   }
 }

@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:mishon_app/core/localization/app_strings.dart';
 
-import '../models/social_models.dart';
 import '../../features/auth/providers/auth_provider.dart';
 import '../../features/notifications/providers/notification_summary_provider.dart';
+import '../models/social_models.dart';
 
 enum AppSection { feed, people, friends, chats, profile }
 
@@ -13,10 +14,11 @@ class AppShell extends ConsumerWidget {
   final String title;
   final Widget child;
   final List<Widget>? actions;
-  final FloatingActionButton? floatingActionButton;
+  final Widget? floatingActionButton;
   final double maxContentWidth;
   final bool showNotificationsAction;
   final bool showAppBar;
+  final bool showSectionNavigation;
   final BoxDecoration? bodyDecoration;
   final List<Widget>? backgroundLayers;
 
@@ -30,6 +32,7 @@ class AppShell extends ConsumerWidget {
     this.maxContentWidth = 960,
     this.showNotificationsAction = false,
     this.showAppBar = true,
+    this.showSectionNavigation = true,
     this.bodyDecoration,
     this.backgroundLayers,
   });
@@ -48,7 +51,11 @@ class AppShell extends ConsumerWidget {
                 incomingFriendRequests: 0,
               ),
         );
-    final destinations = _buildDestinations(currentUserId, summary);
+    final destinations = _buildDestinations(
+      context,
+      currentUserId,
+      summary,
+    );
     final shellActions = <Widget>[
       if (showNotificationsAction)
         Padding(
@@ -84,7 +91,7 @@ class AppShell extends ConsumerWidget {
               child: LayoutBuilder(
                 builder: (context, constraints) {
                   final isWide = constraints.maxWidth >= 1040;
-                  if (!isWide) {
+                  if (!isWide || !showSectionNavigation) {
                     return Align(
                       alignment: Alignment.topCenter,
                       child: ConstrainedBox(
@@ -168,7 +175,7 @@ class AppShell extends ConsumerWidget {
         ),
       ),
       bottomNavigationBar:
-          MediaQuery.sizeOf(context).width < 1040
+          showSectionNavigation && MediaQuery.sizeOf(context).width < 1040
               ? SafeArea(
                 minimum: const EdgeInsets.fromLTRB(12, 0, 12, 12),
                 child: DecoratedBox(
@@ -237,50 +244,49 @@ class AppShell extends ConsumerWidget {
   }
 
   List<_ShellDestination> _buildDestinations(
+    BuildContext context,
     int? currentUserId,
     NotificationSummaryModel summary,
   ) {
+    final strings = AppStrings.of(context);
     return [
       _ShellDestination(
-        label: 'Лента',
+        label: strings.feed,
         icon: Icons.newspaper_outlined,
         selectedIcon: Icons.newspaper_rounded,
         route: '/feed',
         badgeCount: summary.unreadNotifications,
       ),
-      const _ShellDestination(
-        label: 'Люди',
+      _ShellDestination(
+        label: strings.people,
         icon: Icons.people_outline_rounded,
         selectedIcon: Icons.people_rounded,
         route: '/people',
       ),
       _ShellDestination(
-        label: 'Друзья',
+        label: strings.friends,
         icon: Icons.favorite_outline_rounded,
         selectedIcon: Icons.favorite_rounded,
         route: '/friends',
         badgeCount: summary.incomingFriendRequests,
       ),
       _ShellDestination(
-        label: 'Чаты',
+        label: strings.chats,
         icon: Icons.forum_outlined,
         selectedIcon: Icons.forum_rounded,
         route: '/chats',
         badgeCount: summary.unreadChats,
       ),
       _ShellDestination(
-        label: 'Профиль',
+        label: strings.profile,
         icon: Icons.person_outline_rounded,
         selectedIcon: Icons.person_rounded,
-        route: '/profile/${currentUserId ?? 0}',
+        route: '/profile',
       ),
     ];
   }
 
   void _goTo(BuildContext context, String route) {
-    if (route.endsWith('/0')) {
-      return;
-    }
     context.go(route);
   }
 }

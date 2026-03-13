@@ -4,6 +4,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:mishon_app/core/localization/app_strings.dart';
 import 'package:mishon_app/core/models/post_model.dart';
 import 'package:mishon_app/core/models/social_models.dart';
 import 'package:mishon_app/core/network/exceptions.dart';
@@ -16,33 +17,45 @@ import 'package:mishon_app/features/notifications/providers/notification_summary
 import '../../auth/providers/auth_provider.dart';
 
 class FeedScreen extends ConsumerStatefulWidget {
-  const FeedScreen({super.key});
+  final bool embeddedInNavigationShell;
+
+  const FeedScreen({super.key, this.embeddedInNavigationShell = false});
 
   @override
   ConsumerState<FeedScreen> createState() => _FeedScreenState();
 }
 
-class _FeedScreenState extends ConsumerState<FeedScreen> {
+class _FeedScreenState extends ConsumerState<FeedScreen>
+    with SingleTickerProviderStateMixin {
+  late final TabController _tabController;
   Timer? _poller;
+
+  FeedTabType get _currentFeedType =>
+      _tabController.index == 0 ? FeedTabType.forYou : FeedTabType.following;
 
   @override
   void initState() {
     super.initState();
+    _tabController = TabController(length: FeedTabType.values.length, vsync: this);
     _poller = Timer.periodic(const Duration(seconds: 12), (_) {
-      ref.read(feedNotifierProvider.notifier).refresh();
+      ref.read(feedNotifierProvider(_currentFeedType).notifier).refresh();
     });
   }
 
   @override
   void dispose() {
     _poller?.cancel();
+    _tabController.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    final feedState = ref.watch(feedNotifierProvider);
-    final userIdAsync = ref.watch(userIdProvider);
+    final strings = AppStrings.of(context);
+    final shellBottomInset =
+        widget.embeddedInNavigationShell && MediaQuery.sizeOf(context).width < 1040
+            ? 92.0
+            : 0.0;
     final notificationSummary = ref
         .watch(notificationSummaryProvider)
         .maybeWhen(
@@ -55,15 +68,11 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
               ),
         );
 
-    final posts = feedState.valueOrNull ?? const <Post>[];
-    final isInitialLoading = feedState.isLoading && posts.isEmpty;
-    final blockingError = feedState.hasError && posts.isEmpty;
-    final inlineError = feedState.hasError && posts.isNotEmpty;
-
     return AppShell(
       currentSection: AppSection.feed,
-      title: 'Feed',
+      title: strings.feed,
       showAppBar: false,
+      showSectionNavigation: !widget.embeddedInNavigationShell,
       maxContentWidth: 760,
       bodyDecoration: const BoxDecoration(
         gradient: LinearGradient(
@@ -98,223 +107,356 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
           ),
         ),
       ],
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => context.go('/create-post'),
-        elevation: 10,
-        highlightElevation: 14,
-        backgroundColor: Colors.white.withValues(alpha: 0.96),
-        foregroundColor: const Color(0xFF18243C),
-        extendedPadding: const EdgeInsets.symmetric(horizontal: 18),
-        shape: const StadiumBorder(side: BorderSide(color: Color(0xFFDCE5F5))),
-        label: Text(
-          'Post',
-          style: Theme.of(context).textTheme.labelLarge?.copyWith(
-            fontWeight: FontWeight.w800,
-            color: const Color(0xFF18243C),
-          ),
-        ),
-        icon: Container(
-          width: 28,
-          height: 28,
-          decoration: const BoxDecoration(
-            shape: BoxShape.circle,
-            gradient: LinearGradient(
-              colors: [Color(0xFF4A8DFF), Color(0xFF7468FF)],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
+      floatingActionButton: Padding(
+        padding: EdgeInsets.only(bottom: shellBottomInset),
+        child: FloatingActionButton.extended(
+          onPressed: () => context.go('/create-post'),
+          elevation: 10,
+          highlightElevation: 14,
+          backgroundColor: Colors.white.withValues(alpha: 0.96),
+          foregroundColor: const Color(0xFF18243C),
+          extendedPadding: const EdgeInsets.symmetric(horizontal: 18),
+          shape: const StadiumBorder(side: BorderSide(color: Color(0xFFDCE5F5))),
+          label: Text(
+            strings.postShort,
+            style: Theme.of(context).textTheme.labelLarge?.copyWith(
+              fontWeight: FontWeight.w800,
+              color: const Color(0xFF18243C),
             ),
           ),
-          child: const Icon(Icons.add_rounded, size: 18, color: Colors.white),
+          icon: Container(
+            width: 28,
+            height: 28,
+            decoration: const BoxDecoration(
+              shape: BoxShape.circle,
+              gradient: LinearGradient(
+                colors: [Color(0xFF4A8DFF), Color(0xFF7468FF)],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+            ),
+            child: const Icon(Icons.add_rounded, size: 18, color: Colors.white),
+          ),
         ),
       ),
-      child: RefreshIndicator(
-        onRefresh: () => ref.read(feedNotifierProvider.notifier).refresh(),
-        edgeOffset: 92,
-        color: const Color(0xFF4A8DFF),
-        child: CustomScrollView(
-          physics: const BouncingScrollPhysics(
-            parent: AlwaysScrollableScrollPhysics(),
+      child: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
+            child: _FeedGlassHeader(
+              tabController: _tabController,
+              notificationCount: notificationSummary.unreadNotifications,
+              onOpenNotifications: () => context.push('/notifications'),
+            ),
           ),
-          slivers: [
-            SliverAppBar(
-              pinned: true,
-              floating: true,
-              snap: false,
-              toolbarHeight: 76,
-              backgroundColor: Colors.transparent,
-              shadowColor: Colors.transparent,
-              surfaceTintColor: Colors.transparent,
-              scrolledUnderElevation: 0,
-              automaticallyImplyLeading: false,
-              titleSpacing: 0,
-              flexibleSpace: ClipRect(
-                child: BackdropFilter(
-                  filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.74),
-                      border: const Border(
-                        bottom: BorderSide(color: Color(0xFFE5ECF7)),
-                      ),
-                      boxShadow: const [
-                        BoxShadow(
-                          color: Color(0x0F162033),
-                          blurRadius: 20,
-                          offset: Offset(0, 8),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-              title:
-                  feedState.isRefreshing
-                      ? const Padding(
-                        padding: EdgeInsets.only(left: 16),
-                        child: SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2.2),
-                        ),
-                      )
-                      : null,
-              actions: [
-                Padding(
-                  padding: const EdgeInsets.only(right: 16),
-                  child: _FeedNotificationButton(
-                    count: notificationSummary.unreadNotifications,
-                    onTap: () => context.push('/notifications'),
-                  ),
-                ),
+          const SizedBox(height: 12),
+          Expanded(
+            child: TabBarView(
+              controller: _tabController,
+              physics: const BouncingScrollPhysics(),
+              children: const [
+                _FeedTimeline(feedType: FeedTabType.forYou),
+                _FeedTimeline(feedType: FeedTabType.following),
               ],
             ),
-            if (isInitialLoading) const _FeedSkeletonSliver(),
-            if (blockingError)
-              SliverFillRemaining(
-                hasScrollBody: false,
-                child: _FeedMessageState(
-                  icon: Icons.wifi_tethering_error_rounded,
-                  title: 'Couldn\'t load the feed',
-                  subtitle: _getErrorMessage(feedState.error),
-                  actionLabel: 'Try again',
-                  onAction:
-                      () => ref.read(feedNotifierProvider.notifier).refresh(),
-                ),
-              ),
-            if (!isInitialLoading && !blockingError && posts.isEmpty)
-              SliverFillRemaining(
-                hasScrollBody: false,
-                child: _FeedMessageState(
-                  icon: Icons.dynamic_feed_outlined,
-                  title: 'Your feed is quiet',
-                  subtitle:
-                      'Follow people or publish your first post to start the conversation.',
-                  actionLabel: 'Create post',
-                  onAction: () => context.go('/create-post'),
-                ),
-              ),
-            if (!isInitialLoading && posts.isNotEmpty) ...[
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
-                  child: _FeedSectionHeader(
-                    title: 'Latest posts',
-                    subtitle:
-                        inlineError
-                            ? 'Showing your last loaded posts. Pull to try again.'
-                            : 'Fresh updates from people in your network.',
-                    isError: inlineError,
-                  ),
-                ),
-              ),
-              if (inlineError)
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-                    child: _FeedInlineErrorBanner(
-                      message: _getErrorMessage(feedState.error),
-                      onRetry:
-                          () =>
-                              ref.read(feedNotifierProvider.notifier).refresh(),
-                    ),
-                  ),
-                ),
-              SliverPadding(
-                padding: const EdgeInsets.fromLTRB(16, 14, 16, 120),
-                sliver: SliverList(
-                  delegate: SliverChildBuilderDelegate((context, index) {
-                    final post = posts[index];
-                    final currentUserId = userIdAsync.value;
-                    final isOwnPost =
-                        currentUserId != null && currentUserId == post.userId;
-
-                    return Padding(
-                      padding: EdgeInsets.only(
-                        bottom: index == posts.length - 1 ? 0 : 14,
-                      ),
-                      child: PostCard(
-                        key: ValueKey(post.id),
-                        post: post,
-                        isOwnPost: isOwnPost,
-                        onLike:
-                            () => ref
-                                .read(feedNotifierProvider.notifier)
-                                .toggleLike(post.id),
-                        onFollow:
-                            isOwnPost
-                                ? null
-                                : () => ref
-                                    .read(feedNotifierProvider.notifier)
-                                    .toggleFollow(post.userId),
-                        onOpenProfile:
-                            () => context.push('/profile/${post.userId}'),
-                        onComment:
-                            () => context.push(
-                              '/comments',
-                              extra: CommentsScreenArgs(
-                                postId: post.id,
-                                postUserId: post.userId,
-                              ),
-                            ),
-                        onShare: () => _showSharePlaceholder(context, post),
-                      ),
-                    );
-                  }, childCount: posts.length),
-                ),
-              ),
-            ],
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
 
   static void _showSharePlaceholder(BuildContext context, Post post) {
-    final handle = _buildHandle(post.username);
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Share for @$handle is not connected yet.')),
-    );
+    // Intentionally silent: informational snackbars are disabled.
   }
 
-  static String _buildHandle(String username) {
-    final handle = username.trim().toLowerCase().replaceAll(
-      RegExp(r'[^a-z0-9_]+'),
-      '',
-    );
-    return handle.isEmpty ? 'mishon' : handle;
-  }
-
-  static String _getErrorMessage(Object? error) {
+  static String _getErrorMessage(BuildContext context, Object? error) {
+    final strings = AppStrings.of(context);
     if (error is String) {
-      if (error.contains('Р')) {
-        return 'Check your connection and try again.';
+      if (error == 'feed_load_failed') {
+        return strings.feedLoadGenericError;
+      }
+      if (error.contains('Р ')) {
+        return strings.feedCheckConnection;
       }
       return error;
     }
     if (error is OfflineException) {
-      return 'No internet connection right now.';
+      return strings.noInternetConnectionRightNow;
     }
-    return 'Something went wrong while loading your feed.';
+    return strings.feedLoadGenericError;
+  }
+}
+
+class _FeedGlassHeader extends StatelessWidget {
+  final TabController tabController;
+  final int notificationCount;
+  final VoidCallback onOpenNotifications;
+
+  const _FeedGlassHeader({
+    required this.tabController,
+    required this.notificationCount,
+    required this.onOpenNotifications,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final strings = AppStrings.of(context);
+    final theme = Theme.of(context);
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(28),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+        child: Container(
+          padding: const EdgeInsets.fromLTRB(18, 18, 18, 16),
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.78),
+            borderRadius: BorderRadius.circular(28),
+            border: Border.all(color: const Color(0xFFE5ECF7)),
+            boxShadow: const [
+              BoxShadow(
+                color: Color(0x12162033),
+                blurRadius: 20,
+                offset: Offset(0, 8),
+              ),
+            ],
+          ),
+          child: Column(
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          strings.feed,
+                          style: theme.textTheme.headlineSmall?.copyWith(
+                            fontWeight: FontWeight.w800,
+                            color: const Color(0xFF18243C),
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          strings.feedSubtitle,
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            color: const Color(0xFF64748B),
+                            height: 1.35,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  _FeedNotificationButton(
+                    count: notificationCount,
+                    onTap: onOpenNotifications,
+                  ),
+                ],
+              ),
+              const SizedBox(height: 18),
+              Container(
+                padding: const EdgeInsets.all(4),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF1F5FF),
+                  borderRadius: BorderRadius.circular(18),
+                  border: Border.all(color: const Color(0xFFDCE5F5)),
+                ),
+                child: TabBar(
+                  controller: tabController,
+                  dividerColor: Colors.transparent,
+                  indicatorSize: TabBarIndicatorSize.tab,
+                  indicator: BoxDecoration(
+                    borderRadius: BorderRadius.circular(14),
+                    gradient: const LinearGradient(
+                      colors: [Color(0xFF4A8DFF), Color(0xFF7468FF)],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                    boxShadow: const [
+                      BoxShadow(
+                        color: Color(0x1F4A67FF),
+                        blurRadius: 12,
+                        offset: Offset(0, 8),
+                      ),
+                    ],
+                  ),
+                  labelColor: Colors.white,
+                  unselectedLabelColor: const Color(0xFF64748B),
+                  labelStyle: theme.textTheme.labelLarge?.copyWith(
+                    fontWeight: FontWeight.w800,
+                  ),
+                  unselectedLabelStyle: theme.textTheme.labelLarge?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
+                  tabs: FeedTabType.values.map((feedType) {
+                    final label =
+                        feedType == FeedTabType.forYou
+                            ? strings.forYou
+                            : strings.following;
+                    return Tab(text: label);
+                  }).toList(),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _FeedTimeline extends ConsumerWidget {
+  final FeedTabType feedType;
+
+  const _FeedTimeline({required this.feedType});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final strings = AppStrings.of(context);
+    final feedState = ref.watch(feedNotifierProvider(feedType));
+    final userIdAsync = ref.watch(userIdProvider);
+
+    final posts = feedState.valueOrNull ?? const <Post>[];
+    final isInitialLoading = feedState.isLoading && posts.isEmpty;
+    final blockingError = feedState.hasError && posts.isEmpty;
+    final inlineError = feedState.hasError && posts.isNotEmpty;
+
+    final title =
+        feedType == FeedTabType.forYou ? strings.forYou : strings.following;
+    final subtitle =
+        feedType == FeedTabType.forYou
+            ? strings.forYouFeedDescription
+            : strings.followingFeedDescription;
+
+    final emptyTitle =
+        feedType == FeedTabType.forYou
+            ? strings.feedRecommendationsWarmupTitle
+            : strings.feedFollowingEmptyTitle;
+    final emptySubtitle =
+        feedType == FeedTabType.forYou
+            ? strings.feedRecommendationsWarmupSubtitle
+            : strings.feedFollowingEmptySubtitle;
+
+    return RefreshIndicator(
+      onRefresh: () => ref.read(feedNotifierProvider(feedType).notifier).refresh(),
+      edgeOffset: 16,
+      color: const Color(0xFF4A8DFF),
+      child: CustomScrollView(
+        key: PageStorageKey<String>('feed-${feedType.name}'),
+        physics: const BouncingScrollPhysics(
+          parent: AlwaysScrollableScrollPhysics(),
+        ),
+        slivers: [
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
+              child: _FeedSectionHeader(
+                title: title,
+                subtitle:
+                    inlineError
+                        ? strings.feedShowingCachedPosts
+                        : subtitle,
+                isError: inlineError,
+              ),
+            ),
+          ),
+          if (isInitialLoading) const _FeedSkeletonSliver(),
+          if (blockingError)
+            SliverFillRemaining(
+              hasScrollBody: false,
+              child: _FeedMessageState(
+                icon: Icons.wifi_tethering_error_rounded,
+                title: strings.feedLoadFailedTitle,
+                subtitle: _FeedScreenState._getErrorMessage(
+                  context,
+                  feedState.error,
+                ),
+                actionLabel: strings.retry,
+                onAction:
+                    () => ref.read(feedNotifierProvider(feedType).notifier).refresh(),
+              ),
+            ),
+          if (!isInitialLoading && !blockingError && posts.isEmpty)
+            SliverFillRemaining(
+              hasScrollBody: false,
+              child: _FeedMessageState(
+                icon:
+                    feedType == FeedTabType.forYou
+                        ? Icons.auto_awesome_rounded
+                        : Icons.people_outline_rounded,
+                title: emptyTitle,
+                subtitle: emptySubtitle,
+                actionLabel: strings.createPost,
+                onAction: () => context.go('/create-post'),
+              ),
+            ),
+          if (!isInitialLoading && posts.isNotEmpty) ...[
+            if (inlineError)
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                  child: _FeedInlineErrorBanner(
+                    message: _FeedScreenState._getErrorMessage(
+                      context,
+                      feedState.error,
+                    ),
+                    onRetry:
+                        () => ref.read(feedNotifierProvider(feedType).notifier).refresh(),
+                  ),
+                ),
+              ),
+            SliverPadding(
+              padding: const EdgeInsets.fromLTRB(16, 14, 16, 120),
+              sliver: SliverList(
+                delegate: SliverChildBuilderDelegate((context, index) {
+                  final post = posts[index];
+                  final currentUserId = userIdAsync.value;
+                  final isOwnPost =
+                      currentUserId != null && currentUserId == post.userId;
+
+                  return Padding(
+                    padding: EdgeInsets.only(
+                      bottom: index == posts.length - 1 ? 0 : 14,
+                    ),
+                    child: PostCard(
+                      key: ValueKey('${feedType.name}-${post.id}'),
+                      post: post,
+                      isOwnPost: isOwnPost,
+                      onLike:
+                          () => ref
+                              .read(feedNotifierProvider(feedType).notifier)
+                              .toggleLike(post.id),
+                      onFollow:
+                          isOwnPost
+                              ? null
+                              : () => ref
+                                  .read(feedNotifierProvider(feedType).notifier)
+                                  .toggleFollow(post.userId),
+                      onOpenProfile:
+                          () => context.push('/profile/${post.userId}'),
+                      onComment:
+                          () => context.push(
+                            '/comments',
+                            extra: CommentsScreenArgs(
+                              postId: post.id,
+                              postUserId: post.userId,
+                            ),
+                          ),
+                      onShare:
+                          () => _FeedScreenState._showSharePlaceholder(
+                            context,
+                            post,
+                          ),
+                    ),
+                  );
+                }, childCount: posts.length),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
   }
 }
 
@@ -478,6 +620,7 @@ class _FeedInlineErrorBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final strings = AppStrings.of(context);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       decoration: BoxDecoration(
@@ -502,7 +645,7 @@ class _FeedInlineErrorBanner extends StatelessWidget {
               ),
             ),
           ),
-          TextButton(onPressed: onRetry, child: const Text('Retry')),
+          TextButton(onPressed: onRetry, child: Text(strings.retry)),
         ],
       ),
     );

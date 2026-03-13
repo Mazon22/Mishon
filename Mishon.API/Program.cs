@@ -8,6 +8,7 @@ using Microsoft.Extensions.FileProviders;
 using Microsoft.IdentityModel.Tokens;
 using Mishon.API.Hubs;
 using Microsoft.OpenApi.Models;
+using Mishon.API.Background;
 using Mishon.API.Middleware;
 using Mishon.API.Realtime;
 using Mishon.Application.DTOs;
@@ -174,6 +175,7 @@ builder.Services.AddScoped<ICommentRepository, CommentRepository>();
 // Регистрация сервисов
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IPostService, PostService>();
+builder.Services.AddScoped<IFeedService, FeedService>();
 builder.Services.AddScoped<IFollowService, FollowService>();
 builder.Services.AddScoped<ICommentService, CommentService>();
 builder.Services.AddScoped<IUserDiscoveryService, UserDiscoveryService>();
@@ -181,6 +183,8 @@ builder.Services.AddScoped<IFriendService, FriendService>();
 builder.Services.AddScoped<IConversationService, ConversationService>();
 builder.Services.AddScoped<IBlockService, BlockService>();
 builder.Services.AddScoped<INotificationService, NotificationService>();
+builder.Services.AddSingleton<IFeedCacheStore, FeedCacheStore>();
+builder.Services.AddHostedService<FeedRefreshBackgroundService>();
 builder.Services.AddSingleton<IChatConnectionTracker, ChatConnectionTracker>();
 builder.Services.AddSingleton<IChatRealtimeNotifier, ChatRealtimeNotifier>();
 

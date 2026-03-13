@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import 'package:mishon_app/core/localization/app_strings.dart';
 import 'package:mishon_app/core/models/social_models.dart';
 import 'package:mishon_app/core/network/exceptions.dart';
 import 'package:mishon_app/core/repositories/post_repository.dart';
@@ -14,7 +15,9 @@ import 'package:mishon_app/core/widgets/states.dart';
 import 'package:mishon_app/features/chats/screens/chat_screen.dart';
 
 class PeopleScreen extends ConsumerStatefulWidget {
-  const PeopleScreen({super.key});
+  final bool embeddedInNavigationShell;
+
+  const PeopleScreen({super.key, this.embeddedInNavigationShell = false});
 
   @override
   ConsumerState<PeopleScreen> createState() => _PeopleScreenState();
@@ -84,8 +87,12 @@ class _PeopleScreenState extends ConsumerState<PeopleScreen> {
       });
     } catch (_) {
       if (!mounted) return;
+      final strings = AppStrings.of(context);
       setState(() {
-        _errorMessage = 'Не удалось загрузить список пользователей';
+        _errorMessage =
+            strings.isRu
+                ? 'Не удалось загрузить список пользователей'
+                : 'Could not load the people list';
         _isLoading = false;
       });
     }
@@ -142,6 +149,8 @@ class _PeopleScreenState extends ConsumerState<PeopleScreen> {
           peerAvatarScale: conversation.avatarScale,
           peerAvatarOffsetX: conversation.avatarOffsetX,
           peerAvatarOffsetY: conversation.avatarOffsetY,
+          initialIsOnline: conversation.isOnline,
+          initialLastSeenAt: conversation.lastSeenAt,
         ),
       );
     } on ApiException catch (e) {
@@ -149,7 +158,7 @@ class _PeopleScreenState extends ConsumerState<PeopleScreen> {
     } on OfflineException catch (e) {
       _showSnackBar(e.message, isError: true);
     } catch (_) {
-      _showSnackBar('Не удалось открыть диалог', isError: true);
+      _showSnackBar(AppStrings.of(context).couldNotOpenChat, isError: true);
     } finally {
       if (mounted) {
         setState(() => _busyUserIds.remove(user.id));
@@ -162,6 +171,7 @@ class _PeopleScreenState extends ConsumerState<PeopleScreen> {
     Future<void> Function() action, {
     required String successMessage,
   }) async {
+    final strings = AppStrings.of(context);
     setState(() => _busyUserIds.add(userId));
     try {
       await action();
@@ -172,7 +182,7 @@ class _PeopleScreenState extends ConsumerState<PeopleScreen> {
     } on OfflineException catch (e) {
       _showSnackBar(e.message, isError: true);
     } catch (_) {
-      _showSnackBar('Операция не выполнена', isError: true);
+      _showSnackBar(strings.operationError, isError: true);
     } finally {
       if (mounted) {
         setState(() => _busyUserIds.remove(userId));
@@ -181,7 +191,7 @@ class _PeopleScreenState extends ConsumerState<PeopleScreen> {
   }
 
   void _showSnackBar(String message, {bool isError = false}) {
-    if (!mounted) return;
+    if (!mounted || !isError) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(message),
@@ -192,9 +202,11 @@ class _PeopleScreenState extends ConsumerState<PeopleScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final strings = AppStrings.of(context);
     return AppShell(
       currentSection: AppSection.people,
-      title: 'Люди',
+      title: strings.people,
+      showSectionNavigation: !widget.embeddedInNavigationShell,
       actions: [
         IconButton(
           onPressed: _isLoading ? null : () => _loadUsers(),
@@ -214,14 +226,18 @@ class _PeopleScreenState extends ConsumerState<PeopleScreen> {
                     _HeroCard(searchController: _searchController),
                     const SizedBox(height: 16),
                     Text(
-                      'Люди рядом с вашей лентой',
+                      strings.isRu
+                          ? 'Люди рядом с вашей лентой'
+                          : 'People around your feed',
                       style: Theme.of(context).textTheme.titleMedium?.copyWith(
                             fontWeight: FontWeight.w700,
                           ),
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      'Ищите друзей, принимайте заявки и переходите в личные сообщения.',
+                      strings.isRu
+                          ? 'Ищите друзей, принимайте заявки и переходите в личные сообщения.'
+                          : 'Find friends, accept requests, and jump into direct messages.',
                       style: Theme.of(context).textTheme.bodyMedium,
                     ),
                   ],
@@ -242,12 +258,15 @@ class _PeopleScreenState extends ConsumerState<PeopleScreen> {
                 ),
               )
             else if (_users.isEmpty)
-              const SliverFillRemaining(
+              SliverFillRemaining(
                 hasScrollBody: false,
                 child: EmptyState(
                   icon: Icons.person_search_outlined,
-                  title: 'Никого не найдено',
-                  subtitle: 'Попробуйте изменить запрос или обновить список.',
+                  title: strings.isRu ? 'Никого не найдено' : 'Nobody found',
+                  subtitle:
+                      strings.isRu
+                          ? 'Попробуйте изменить запрос или обновить список.'
+                          : 'Try changing the query or refreshing the list.',
                 ),
               )
             else
@@ -285,6 +304,7 @@ class _HeroCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final strings = AppStrings.of(context);
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
@@ -300,7 +320,7 @@ class _HeroCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'Найдите новых людей',
+            strings.isRu ? 'Найдите новых людей' : 'Find new people',
             style: Theme.of(context).textTheme.headlineSmall?.copyWith(
                   color: Colors.white,
                   fontWeight: FontWeight.w800,
@@ -308,7 +328,9 @@ class _HeroCard extends StatelessWidget {
           ),
           const SizedBox(height: 6),
           Text(
-            'Добавляйте в друзья, подписывайтесь и открывайте личные чаты без отдельного сайта.',
+            strings.isRu
+                ? 'Добавляйте в друзья, подписывайтесь и открывайте личные чаты без отдельного сайта.'
+                : 'Add friends, follow people, and open direct chats from one place.',
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                   color: Colors.white70,
                 ),
@@ -317,7 +339,8 @@ class _HeroCard extends StatelessWidget {
           TextField(
             controller: searchController,
             decoration: InputDecoration(
-              hintText: 'Поиск по username',
+              hintText:
+                  strings.isRu ? 'Поиск по username' : 'Search by username',
               prefixIcon: const Icon(Icons.search),
               fillColor: Colors.white,
               filled: true,
@@ -356,6 +379,7 @@ class _UserCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final strings = AppStrings.of(context);
     final hasIncomingRequest = user.incomingFriendRequestId != null;
     final hasOutgoingRequest = user.outgoingFriendRequestId != null;
 
@@ -392,12 +416,27 @@ class _UserCard extends StatelessWidget {
                         spacing: 8,
                         runSpacing: 8,
                         children: [
-                          if (user.isFriend) const _StatusChip(label: 'Друг'),
-                          if (user.isFollowing) const _StatusChip(label: 'Подписка'),
+                          if (user.isFriend)
+                            _StatusChip(label: strings.isRu ? 'Друг' : 'Friend'),
+                          if (user.isFollowing)
+                            _StatusChip(
+                              label:
+                                  strings.isRu ? 'Подписка' : 'Following',
+                            ),
                           if (hasIncomingRequest)
-                            const _StatusChip(label: 'Входящая заявка'),
+                            _StatusChip(
+                              label:
+                                  strings.isRu
+                                      ? 'Входящая заявка'
+                                      : 'Incoming request',
+                            ),
                           if (hasOutgoingRequest)
-                            const _StatusChip(label: 'Заявка отправлена'),
+                            _StatusChip(
+                              label:
+                                  strings.isRu
+                                      ? 'Заявка отправлена'
+                                      : 'Request sent',
+                            ),
                         ],
                       ),
                     ],
@@ -420,29 +459,35 @@ class _UserCard extends StatelessWidget {
                   ElevatedButton.icon(
                     onPressed: isBusy ? null : onOpenChat,
                     icon: const Icon(Icons.chat_bubble_outline),
-                    label: const Text('Сообщение'),
+                    label: Text(strings.message),
                   )
                 else if (hasIncomingRequest)
                   ElevatedButton.icon(
                     onPressed: isBusy ? null : onAcceptRequest,
                     icon: const Icon(Icons.done),
-                    label: const Text('Принять'),
+                    label: Text(strings.isRu ? 'Принять' : 'Accept'),
                   )
                 else if (!hasOutgoingRequest)
                   ElevatedButton.icon(
                     onPressed: isBusy ? null : onSendFriendRequest,
                     icon: const Icon(Icons.person_add_alt_1),
-                    label: const Text('В друзья'),
+                    label: Text(strings.isRu ? 'В друзья' : 'Add friend'),
                   ),
                 OutlinedButton.icon(
                   onPressed: isBusy ? null : onToggleFollow,
                   icon: Icon(user.isFollowing ? Icons.remove_circle_outline : Icons.add_circle_outline),
-                  label: Text(user.isFollowing ? 'Отписаться' : 'Подписаться'),
+                  label: Text(
+                    user.isFollowing ? strings.unfollow : strings.follow,
+                  ),
                 ),
                 if (hasIncomingRequest || hasOutgoingRequest)
                   TextButton(
                     onPressed: isBusy ? null : onDeleteRequest,
-                    child: Text(hasIncomingRequest ? 'Отклонить' : 'Отменить'),
+                    child: Text(
+                      hasIncomingRequest
+                          ? (strings.isRu ? 'Отклонить' : 'Decline')
+                          : strings.cancel,
+                    ),
                   ),
               ],
             ),

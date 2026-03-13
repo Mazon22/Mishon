@@ -6,13 +6,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:intl/intl.dart';
 
 import 'package:mishon_app/core/constants/api_constants.dart';
+import 'package:mishon_app/core/localization/app_strings.dart';
 import 'package:mishon_app/core/models/auth_model.dart';
 import 'package:mishon_app/core/models/post_model.dart';
 import 'package:mishon_app/core/network/exceptions.dart';
 import 'package:mishon_app/core/repositories/auth_repository.dart';
+import 'package:mishon_app/core/settings/app_settings_provider.dart';
 import 'package:mishon_app/core/repositories/post_repository.dart';
 import 'package:mishon_app/core/repositories/social_repository.dart';
 import 'package:mishon_app/core/widgets/app_shell.dart';
@@ -27,14 +28,22 @@ import 'package:mishon_app/features/comments/screens/comments_screen.dart';
 import 'package:mishon_app/features/feed/providers/feed_provider.dart';
 import 'package:mishon_app/features/profile/providers/profile_provider.dart';
 import 'package:mishon_app/features/profile/screens/profile_media_editor_screen.dart';
+import 'package:mishon_app/features/profile/screens/profile_settings_screen.dart';
+import 'package:mishon_app/features/profile/screens/profile_setup_screen.dart';
 import 'package:mishon_app/features/profile/widgets/follow_tab.dart';
 
 const _kProfileMotionDuration = Duration(milliseconds: 240);
+const _kProfileTabBarHeight = 56.0;
 
 class ProfileScreen extends ConsumerStatefulWidget {
   final int userId;
+  final bool embeddedInNavigationShell;
 
-  const ProfileScreen({super.key, required this.userId});
+  const ProfileScreen({
+    super.key,
+    required this.userId,
+    this.embeddedInNavigationShell = false,
+  });
 
   @override
   ConsumerState<ProfileScreen> createState() => _ProfileScreenState();
@@ -60,7 +69,11 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     _loadProfile();
     _poller = Timer.periodic(
       const Duration(seconds: 15),
-      (_) => _loadProfile(silent: true),
+      (_) {
+        if (ref.read(appSettingsProvider).profileAutoRefresh) {
+          _loadProfile(silent: true);
+        }
+      },
     );
   }
 
@@ -128,7 +141,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       }
 
       setState(() {
-        _errorMessage = 'Could not load the profile';
+        _errorMessage = AppStrings.of(context).couldNotLoadProfile;
         _isLoading = false;
       });
     }
@@ -162,7 +175,10 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     } on OfflineException catch (e) {
       _showSnackBar(e.message, isError: true);
     } catch (_) {
-      _showSnackBar('Could not update follow status', isError: true);
+      _showSnackBar(
+        AppStrings.of(context).couldNotUpdateFollowStatus,
+        isError: true,
+      );
     } finally {
       if (mounted) {
         setState(() => _isActionBusy = false);
@@ -176,12 +192,12 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     }
 
     if (_profile!.hasBlockedViewer) {
-      _showSnackBar('This user has blocked you.', isError: true);
+      _showSnackBar(AppStrings.of(context).userBlockedYou, isError: true);
       return;
     }
 
     if (_profile!.isBlockedByViewer) {
-      _showSnackBar('Вы заблокировали этого пользователя', isError: true);
+      _showSnackBar(AppStrings.of(context).youBlockedUser, isError: true);
       return;
     }
 
@@ -204,6 +220,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
           peerAvatarScale: conversation.avatarScale,
           peerAvatarOffsetX: conversation.avatarOffsetX,
           peerAvatarOffsetY: conversation.avatarOffsetY,
+          initialIsOnline: conversation.isOnline,
+          initialLastSeenAt: conversation.lastSeenAt,
         ),
       );
     } on ApiException catch (e) {
@@ -211,7 +229,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     } on OfflineException catch (e) {
       _showSnackBar(e.message, isError: true);
     } catch (_) {
-      _showSnackBar('Could not open chat', isError: true);
+      _showSnackBar(AppStrings.of(context).couldNotOpenChat, isError: true);
     } finally {
       if (mounted) {
         setState(() => _isActionBusy = false);
@@ -238,7 +256,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     } on OfflineException catch (e) {
       _showSnackBar(e.message, isError: true);
     } catch (_) {
-      _showSnackBar('Could not update the like', isError: true);
+      _showSnackBar(AppStrings.of(context).couldNotUpdateLike, isError: true);
     }
   }
 
@@ -258,34 +276,13 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
               postsCount: (_profile!.postsCount - 1).clamp(0, 999999).toInt(),
             );
       });
-      _showSnackBar('Post deleted');
+      _showSnackBar(AppStrings.of(context).postDeleted);
     } on ApiException catch (e) {
       _showSnackBar(e.apiError.message, isError: true);
     } on OfflineException catch (e) {
       _showSnackBar(e.message, isError: true);
     } catch (_) {
-      _showSnackBar('Could not delete the post', isError: true);
-    }
-  }
-
-  Future<void> _updateProfile(String username, String aboutMe) async {
-    try {
-      final updatedProfile = await ref
-          .read(authRepositoryProvider)
-          .updateProfile(username: username, aboutMe: aboutMe);
-      if (!mounted) {
-        return;
-      }
-
-      setState(() => _profile = updatedProfile);
-      ref.invalidate(profileNotifierProvider);
-      _showSnackBar('Profile updated');
-    } on ApiException catch (e) {
-      _showSnackBar(e.apiError.message, isError: true);
-    } on OfflineException catch (e) {
-      _showSnackBar(e.message, isError: true);
-    } catch (_) {
-      _showSnackBar('Could not update the profile', isError: true);
+      _showSnackBar(AppStrings.of(context).couldNotDeletePost, isError: true);
     }
   }
 
@@ -348,16 +345,11 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
         bannerOffsetY: kind == ProfileMediaKind.banner ? result.offsetY : null,
       );
     } catch (_) {
-      _showSnackBar('Could not prepare the image', isError: true);
+      if (!mounted) {
+        return;
+      }
+      _showSnackBar(AppStrings.of(context).couldNotPrepareImage, isError: true);
     }
-  }
-
-  Future<void> _removeAvatar() async {
-    await _applyProfileMediaUpdate(removeAvatar: true);
-  }
-
-  Future<void> _removeBanner() async {
-    await _applyProfileMediaUpdate(removeBanner: true);
   }
 
   Future<void> _applyProfileMediaUpdate({
@@ -400,13 +392,16 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       setState(() => _profile = updatedProfile);
       ref.invalidate(profileNotifierProvider);
       ref.invalidate(feedNotifierProvider);
-      _showSnackBar('Profile media updated');
+      _showSnackBar(AppStrings.of(context).profileMediaUpdated);
     } on ApiException catch (e) {
       _showSnackBar(e.apiError.message, isError: true);
     } on OfflineException catch (e) {
       _showSnackBar(e.message, isError: true);
     } catch (_) {
-      _showSnackBar('Could not update profile media', isError: true);
+      _showSnackBar(
+        AppStrings.of(context).couldNotUpdateProfileMedia,
+        isError: true,
+      );
     } finally {
       if (mounted) {
         setState(() => _isMediaBusy = false);
@@ -424,7 +419,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   }
 
   void _showSnackBar(String message, {bool isError = false}) {
-    if (!mounted) {
+    if (!mounted || !isError) {
       return;
     }
 
@@ -437,7 +432,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   }
 
   void _sharePost(Post post) {
-    _showSnackBar('Sharing for "${post.username}" is not configured yet.');
+    _showSnackBar(AppStrings.of(context).shareNotConfigured(post.username));
   }
 
   List<Post> get _mediaPosts =>
@@ -448,12 +443,17 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final settings = ref.watch(appSettingsProvider);
+    final motionDuration =
+        settings.motionEffects ? _kProfileMotionDuration : Duration.zero;
+
     return AppShell(
       currentSection: AppSection.profile,
       title: '',
       showAppBar: false,
+      showSectionNavigation: !widget.embeddedInNavigationShell,
       child: AnimatedSwitcher(
-        duration: _kProfileMotionDuration,
+        duration: motionDuration,
         switchInCurve: Curves.easeOutCubic,
         switchOutCurve: Curves.easeInCubic,
         child: _buildModernBody(context),
@@ -463,6 +463,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
 
   // ignore: unused_element
   Widget _buildLegacyBody(BuildContext context) {
+    final strings = AppStrings.of(context);
     final profile = _profile!;
     final isFollowing = profile.isFollowing ?? false;
 
@@ -573,7 +574,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                           if ((profile.aboutMe ?? '').trim().isNotEmpty) ...[
                             const SizedBox(height: 12),
                             Text(
-                              'Обо мне',
+                              strings.about,
                               style: Theme.of(
                                 context,
                               ).textTheme.bodySmall?.copyWith(
@@ -818,8 +819,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                 const SizedBox(height: 10),
                 Text(
                   profile.hasBlockedViewer
-                      ? 'This user has blocked you.'
-                      : 'Вы заблокировали этого пользователя.',
+                      ? AppStrings.of(context).userBlockedYou
+                      : AppStrings.of(context).youBlockedUser,
                   textAlign: TextAlign.center,
                   style: Theme.of(context).textTheme.bodyLarge?.copyWith(
                     color: const Color(0xFF63748D),
@@ -835,6 +836,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   }
 
   Widget _buildModernBody(BuildContext context) {
+    final strings = AppStrings.of(context);
+
     if (_isLoading) {
       return const LoadingState(key: ValueKey('profile-loading'));
     }
@@ -848,10 +851,10 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     }
 
     if (_profile == null) {
-      return const EmptyState(
-        key: ValueKey('profile-missing'),
+      return EmptyState(
+        key: const ValueKey('profile-missing'),
         icon: Icons.person_outline_rounded,
-        title: 'Profile not found',
+        title: strings.profileNotFound,
       );
     }
 
@@ -869,12 +872,15 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     final hasBio = (_profile?.aboutMe ?? '').trim().isNotEmpty;
     final baseHeaderHeight =
         screenWidth < 700
-            ? 572.0
+            ? 496.0
             : screenWidth < 1200
-            ? 560.0
-            : 540.0;
+            ? 526.0
+            : 544.0;
     final expandedHeaderHeight =
-        baseHeaderHeight + (hasBio ? 24.0 : 0.0) + (_isOwnProfile ? 0.0 : 36.0);
+        baseHeaderHeight +
+        (hasBio ? 24.0 : 0.0) +
+        (_isOwnProfile ? 0.0 : 36.0) +
+        12.0;
 
     return DefaultTabController(
       length: 3,
@@ -1003,7 +1009,10 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
 
     if (_isOwnProfile) {
       actions.insertAll(0, [
-        _TopBarIconButton(icon: Icons.tune_rounded, onTap: _showEditSheet),
+        _TopBarIconButton(
+          icon: Icons.settings_outlined,
+          onTap: _showSettingsScreen,
+        ),
         _TopBarIconButton(icon: Icons.logout_rounded, onTap: _showLogoutDialog),
       ]);
     }
@@ -1023,6 +1032,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   }
 
   void _showFollowBottomSheet(BuildContext context, bool showFollowers) {
+    final strings = AppStrings.of(context);
+
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -1038,8 +1049,11 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                   initialIndex: showFollowers ? 0 : 1,
                   child: Column(
                     children: [
-                      const TabBar(
-                        tabs: [Tab(text: 'Followers'), Tab(text: 'Following')],
+                      TabBar(
+                        tabs: [
+                          Tab(text: strings.followers),
+                          Tab(text: strings.following),
+                        ],
                       ),
                       Expanded(
                         child: TabBarView(
@@ -1062,167 +1076,54 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     );
   }
 
-  void _showEditSheet() {
-    final controller = TextEditingController(text: _profile?.username ?? '');
-    final aboutMeController = TextEditingController(
-      text: _profile?.aboutMe ?? '',
+  Future<void> _showEditSheet() async {
+    if (_profile == null) {
+      return;
+    }
+
+    final updatedProfile = await Navigator.of(context).push<UserProfile>(
+      MaterialPageRoute(
+        fullscreenDialog: true,
+        builder: (_) => ProfileSetupScreen(initialProfile: _profile!),
+      ),
     );
 
-    showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (context) {
-        return Padding(
-          padding: EdgeInsets.only(
-            left: 12,
-            right: 12,
-            top: 24,
-            bottom: MediaQuery.of(context).viewInsets.bottom + 12,
-          ),
-          child: Container(
-            padding: const EdgeInsets.fromLTRB(18, 18, 18, 18),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(30),
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Profile setup',
-                  style: Theme.of(
-                    context,
-                  ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  'Update the public look of your profile and the way your images sit in the frame.',
-                  style: Theme.of(context).textTheme.bodyMedium,
-                ),
-                const SizedBox(height: 18),
-                TextField(
-                  controller: controller,
-                  decoration: const InputDecoration(
-                    labelText: 'Username',
-                    prefixIcon: Icon(Icons.alternate_email_rounded),
-                  ),
-                  autofocus: true,
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: aboutMeController,
-                  minLines: 3,
-                  maxLines: 5,
-                  decoration: const InputDecoration(
-                    labelText: 'Обо мне',
-                    alignLabelWithHint: true,
-                    prefixIcon: Padding(
-                      padding: EdgeInsets.only(bottom: 52),
-                      child: Icon(Icons.notes_rounded),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 14),
-                Wrap(
-                  spacing: 10,
-                  runSpacing: 10,
-                  children: [
-                    _SheetActionButton(
-                      icon: Icons.account_circle_outlined,
-                      label: 'Change avatar',
-                      onTap: () {
-                        Navigator.pop(context);
-                        _pickAndEditMedia(ProfileMediaKind.avatar);
-                      },
-                    ),
-                    _SheetActionButton(
-                      icon: Icons.wallpaper_rounded,
-                      label: 'Change banner',
-                      onTap: () {
-                        Navigator.pop(context);
-                        _pickAndEditMedia(ProfileMediaKind.banner);
-                      },
-                    ),
-                    _SheetActionButton(
-                      icon: Icons.hide_image_outlined,
-                      label: 'Remove avatar',
-                      onTap:
-                          _profile?.avatarUrl == null
-                              ? null
-                              : () {
-                                Navigator.pop(context);
-                                _removeAvatar();
-                              },
-                    ),
-                    _SheetActionButton(
-                      icon: Icons.layers_clear_outlined,
-                      label: 'Remove banner',
-                      onTap:
-                          _profile?.bannerUrl == null
-                              ? null
-                              : () {
-                                Navigator.pop(context);
-                                _removeBanner();
-                              },
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 18),
-                Row(
-                  children: [
-                    Expanded(
-                      child: OutlinedButton(
-                        onPressed: () => Navigator.pop(context),
-                        child: const Text('Close'),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: FilledButton(
-                        onPressed: () async {
-                          final username = controller.text.trim();
-                          final aboutMe = aboutMeController.text.trim();
-                          Navigator.pop(context);
-                          if (username.isNotEmpty &&
-                              (username != _profile?.username ||
-                                  aboutMe !=
-                                      (_profile?.aboutMe ?? '').trim())) {
-                            await _updateProfile(username, aboutMe);
-                          }
-                        },
-                        child: const Text('Save'),
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-        );
-      },
+    if (!mounted || updatedProfile == null) {
+      return;
+    }
+
+    setState(() => _profile = updatedProfile);
+    ref.invalidate(profileNotifierProvider);
+    ref.invalidate(feedNotifierProvider);
+    return;
+  }
+
+  Future<void> _showSettingsScreen() async {
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(builder: (_) => const ProfileSettingsScreen()),
     );
   }
 
   void _showLogoutDialog() {
+    final strings = AppStrings.of(context);
+
     showDialog<void>(
       context: context,
       builder:
           (context) => AlertDialog(
-            title: const Text('Log out?'),
-            content: const Text('You will be taken back to the login screen.'),
+            title: Text(strings.logoutQuestion),
+            content: Text(strings.logoutContent),
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(context),
-                child: const Text('Cancel'),
+                child: Text(strings.cancel),
               ),
               FilledButton(
                 onPressed: () async {
                   Navigator.pop(context);
                   await _logout();
                 },
-                child: const Text('Log out'),
+                child: Text(strings.logout),
               ),
             ],
           ),
@@ -1230,23 +1131,25 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   }
 
   void _showDeleteDialog(int postId) {
+    final strings = AppStrings.of(context);
+
     showDialog<void>(
       context: context,
       builder:
           (context) => AlertDialog(
-            title: const Text('Delete this post?'),
-            content: const Text('This action cannot be undone.'),
+            title: Text(strings.deletePostQuestion),
+            content: Text(strings.actionCannotBeUndone),
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(context),
-                child: const Text('Cancel'),
+                child: Text(strings.cancel),
               ),
               FilledButton(
                 onPressed: () async {
                   Navigator.pop(context);
                   await _deletePost(postId);
                 },
-                child: const Text('Delete'),
+                child: Text(strings.delete),
               ),
             ],
           ),
@@ -1254,12 +1157,14 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   }
 
   String _formatPresenceLabel(UserProfile profile) {
+    final strings = AppStrings.of(context);
+
     if (profile.isOnline) {
-      return 'онлайн';
+      return strings.online;
     }
 
     final localLastSeen = profile.lastSeenAt.toLocal();
-    final timeLabel = DateFormat('HH:mm').format(localLastSeen);
+    final timeLabel = strings.formatShortTime(localLastSeen);
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
     final seenDay = DateTime(
@@ -1270,14 +1175,14 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     final dayDifference = today.difference(seenDay).inDays;
 
     if (dayDifference <= 0) {
-      return 'был в сети $timeLabel';
+      return strings.lastSeenAt(timeLabel);
     }
 
     if (dayDifference == 1) {
-      return 'был в сети вчера в $timeLabel';
+      return strings.lastSeenYesterdayAt(timeLabel);
     }
 
-    return 'был в сети $dayDifference д. назад в $timeLabel';
+    return strings.lastSeenDaysAgoAt(dayDifference, timeLabel);
   }
 }
 
@@ -1314,6 +1219,7 @@ class _ProfileHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final strings = AppStrings.of(context);
     final colorScheme = Theme.of(context).colorScheme;
     final width = MediaQuery.sizeOf(context).width;
     final isCompactHeader = width < 700;
@@ -1347,6 +1253,7 @@ class _ProfileHeader extends StatelessWidget {
                   AnimatedContainer(
                     duration: _kProfileMotionDuration,
                     curve: Curves.easeOutCubic,
+                    clipBehavior: Clip.antiAlias,
                     decoration: BoxDecoration(
                       color: Colors.white.withValues(alpha: 0.96),
                       borderRadius: BorderRadius.circular(34),
@@ -1444,8 +1351,8 @@ class _ProfileHeader extends StatelessWidget {
                                     icon: Icons.wallpaper_rounded,
                                     label:
                                         isMediaBusy
-                                            ? 'Saving...'
-                                            : 'Change banner',
+                                            ? strings.saving
+                                            : strings.changeBanner,
                                     compact: isCompactControls,
                                     onTap: isMediaBusy ? null : onChangeBanner,
                                   ),
@@ -1507,7 +1414,7 @@ class _ProfileHeader extends StatelessWidget {
                                           if (isOwnProfile) ...[
                                             const SizedBox(width: 12),
                                             _PrimaryProfileButton(
-                                              label: 'Edit profile',
+                                              label: strings.editProfile,
                                               icon: Icons.edit_outlined,
                                               compact: isCompactControls,
                                               onTap: onEditProfile,
@@ -1524,7 +1431,7 @@ class _ProfileHeader extends StatelessWidget {
                                         identity,
                                         const SizedBox(height: 12),
                                         _PrimaryProfileButton(
-                                          label: 'Edit profile',
+                                          label: strings.editProfile,
                                           icon: Icons.edit_outlined,
                                           compact: isCompactControls,
                                           onTap: onEditProfile,
@@ -1552,7 +1459,7 @@ class _ProfileHeader extends StatelessWidget {
                                     runSpacing: isCompactHeader ? 8 : 10,
                                     children: [
                                       _SecondaryProfileButton(
-                                        label: 'Message',
+                                        label: strings.message,
                                         icon: Icons.chat_bubble_outline_rounded,
                                         compact: isCompactControls,
                                         onTap: isActionBusy ? null : onOpenChat,
@@ -1560,10 +1467,10 @@ class _ProfileHeader extends StatelessWidget {
                                       _PrimaryProfileButton(
                                         label:
                                             isActionBusy
-                                                ? 'Working...'
+                                                ? strings.working
                                                 : isFollowing
-                                                ? 'Following'
-                                                : 'Follow',
+                                                ? strings.followingLabel
+                                                : strings.follow,
                                         icon:
                                             isActionBusy
                                                 ? Icons.autorenew_rounded
@@ -1594,7 +1501,7 @@ class _ProfileHeader extends StatelessWidget {
                                       children: [
                                         Expanded(
                                           child: _MetricCard(
-                                            label: 'Posts',
+                                            label: strings.posts,
                                             value: '${profile.postsCount}',
                                             accent: colorScheme.primary,
                                             compact: scaleFactor < 0.94,
@@ -1605,7 +1512,7 @@ class _ProfileHeader extends StatelessWidget {
                                         SizedBox(width: spacing),
                                         Expanded(
                                           child: _MetricCard(
-                                            label: 'Followers',
+                                            label: strings.followers,
                                             value: '${profile.followersCount}',
                                             accent: const Color(0xFF1B8D64),
                                             compact: scaleFactor < 0.94,
@@ -1616,7 +1523,7 @@ class _ProfileHeader extends StatelessWidget {
                                         SizedBox(width: spacing),
                                         Expanded(
                                           child: _MetricCard(
-                                            label: 'Following',
+                                            label: strings.following,
                                             value: '${profile.followingCount}',
                                             accent: const Color(0xFF8B4DFF),
                                             compact: scaleFactor < 0.94,
@@ -1670,17 +1577,19 @@ class _ProfilePostsTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final strings = AppStrings.of(context);
+
     return _ProfileSliverTab(
       storageKey: 'profile-posts-tab',
       bottomPadding: bottomPadding,
       emptyChild: _ProfileTabEmptyState(
         icon: Icons.edit_note_rounded,
-        title: 'No posts yet',
+        title: strings.noPostsYet,
         subtitle:
             isOwnProfile
-                ? 'Your profile is ready for the first post.'
-                : 'This profile has not posted anything yet.',
-        ctaLabel: isOwnProfile ? 'Create post' : null,
+                ? strings.firstPostPrompt
+                : strings.profileHasNoPosts,
+        ctaLabel: isOwnProfile ? strings.createPost : null,
         onTap: onCreatePost,
       ),
       sliver:
@@ -1724,14 +1633,15 @@ class _ProfileMediaTab extends StatelessWidget {
   Widget build(BuildContext context) {
     final width = MediaQuery.sizeOf(context).width;
     final crossAxisCount = width >= 840 ? 3 : 2;
+    final strings = AppStrings.of(context);
 
     return _ProfileSliverTab(
       storageKey: 'profile-media-tab',
       bottomPadding: bottomPadding,
-      emptyChild: const _ProfileTabEmptyState(
+      emptyChild: _ProfileTabEmptyState(
         icon: Icons.photo_library_outlined,
-        title: 'No media yet',
-        subtitle: 'Images from posts will appear here.',
+        title: strings.noMediaYet,
+        subtitle: strings.mediaWillAppearHere,
       ),
       sliver:
           posts.isEmpty
@@ -1774,13 +1684,15 @@ class _ProfileLikesTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final strings = AppStrings.of(context);
+
     return _ProfileSliverTab(
       storageKey: 'profile-likes-tab',
       bottomPadding: bottomPadding,
-      emptyChild: const _ProfileTabEmptyState(
+      emptyChild: _ProfileTabEmptyState(
         icon: Icons.favorite_outline_rounded,
-        title: 'Nothing liked yet',
-        subtitle: 'Posts you liked in this profile will surface here.',
+        title: strings.nothingLikedYet,
+        subtitle: strings.likedPostsWillAppearHere,
       ),
       sliver:
           posts.isEmpty
@@ -1861,7 +1773,8 @@ class _ProfilePostCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final dateLabel = DateFormat('dd MMM').format(post.createdAt.toLocal());
+    final strings = AppStrings.of(context);
+    final dateLabel = strings.formatMonthDay(post.createdAt.toLocal());
 
     return AnimatedContainer(
       duration: _kProfileMotionDuration,
@@ -1965,6 +1878,7 @@ class _ProfilePostCard extends StatelessWidget {
                     if (onDelete != null)
                       Material(
                         color: Colors.transparent,
+                        clipBehavior: Clip.antiAlias,
                         child: InkWell(
                           borderRadius: BorderRadius.circular(14),
                           onTap: onDelete,
@@ -2023,7 +1937,7 @@ class _ProfilePostCard extends StatelessWidget {
                     Expanded(
                       child: _PostActionButton(
                         icon: Icons.share_outlined,
-                        label: 'Share',
+                        label: strings.share,
                         foreground: const Color(0xFF0E7D68),
                         background: const Color(0xFFE7F8F3),
                         onTap: onShare,
@@ -2100,6 +2014,7 @@ class _MediaPostTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final strings = AppStrings.of(context);
     final imageUrl = _resolvedImageUrl(post.imageUrl);
 
     return AnimatedContainer(
@@ -2177,9 +2092,7 @@ class _MediaPostTile extends StatelessWidget {
                           ),
                           const SizedBox(height: 4),
                           Text(
-                            DateFormat(
-                              'dd MMM',
-                            ).format(post.createdAt.toLocal()),
+                            strings.formatMonthDay(post.createdAt.toLocal()),
                             style: const TextStyle(
                               color: Colors.white70,
                               fontSize: 12,
@@ -2192,6 +2105,7 @@ class _MediaPostTile extends StatelessWidget {
                     Material(
                       color: Colors.white.withValues(alpha: 0.16),
                       borderRadius: BorderRadius.circular(16),
+                      clipBehavior: Clip.antiAlias,
                       child: InkWell(
                         onTap: onOpenComments,
                         borderRadius: BorderRadius.circular(16),
@@ -2237,63 +2151,58 @@ class _HeaderAvatar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        customBorder: const CircleBorder(),
-        onTap: onTap,
-        child: Container(
-          width: 104,
-          height: 104,
-          padding: const EdgeInsets.all(4),
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: Colors.white,
-            border: Border.all(color: Colors.white, width: 3),
-            boxShadow: [
-              BoxShadow(
-                color: const Color(0xFF10203D).withValues(alpha: 0.18),
-                blurRadius: 22,
-                offset: const Offset(0, 14),
-              ),
-            ],
-          ),
-          child: Stack(
-            clipBehavior: Clip.none,
-            children: [
-              AppAvatar(
-                username: username,
-                imageUrl: imageUrl,
-                size: 92,
-                scale: scale,
-                offsetX: offsetX,
-                offsetY: offsetY,
-              ),
-              if (isOnline)
-                Positioned(
-                  right: 1,
-                  bottom: 5,
-                  child: Container(
-                    width: 16,
-                    height: 16,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF2ED573),
-                      shape: BoxShape.circle,
-                      border: Border.all(color: Colors.white, width: 3),
-                      boxShadow: [
-                        BoxShadow(
-                          color: const Color(
-                            0xFF2ED573,
-                          ).withValues(alpha: 0.18),
-                          blurRadius: 8,
-                          offset: const Offset(0, 2),
-                        ),
-                      ],
-                    ),
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: Container(
+        width: 104,
+        height: 104,
+        padding: const EdgeInsets.all(4),
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: Colors.white,
+          border: Border.all(color: Colors.white, width: 3),
+          boxShadow: [
+            BoxShadow(
+              color: const Color(0xFF10203D).withValues(alpha: 0.18),
+              blurRadius: 22,
+              offset: const Offset(0, 14),
+            ),
+          ],
+        ),
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            AppAvatar(
+              username: username,
+              imageUrl: imageUrl,
+              size: 92,
+              scale: scale,
+              offsetX: offsetX,
+              offsetY: offsetY,
+            ),
+            if (isOnline)
+              Positioned(
+                right: 1,
+                bottom: 5,
+                child: Container(
+                  width: 16,
+                  height: 16,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF2ED573),
+                    shape: BoxShape.circle,
+                    border: Border.all(color: Colors.white, width: 3),
+                    boxShadow: [
+                      BoxShadow(
+                        color: const Color(0xFF2ED573).withValues(alpha: 0.18),
+                        blurRadius: 8,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
                   ),
                 ),
-            ],
-          ),
+              ),
+          ],
         ),
       ),
     );
@@ -2324,47 +2233,54 @@ class _MetricCard extends StatelessWidget {
     final verticalPadding = compact ? 10.0 * safeScale : 14.0 * safeScale;
     final valueFontSize = compact ? 18.0 * safeScale : 22.0 * safeScale;
     final labelFontSize = compact ? 12.0 * safeScale : 13.0 * safeScale;
+    final borderRadius = BorderRadius.circular(22);
 
-    return AnimatedContainer(
-      duration: _kProfileMotionDuration,
-      decoration: BoxDecoration(
-        color: accent.withValues(alpha: 0.08),
-        borderRadius: BorderRadius.circular(22),
-      ),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(22),
-          child: Padding(
-            padding: EdgeInsets.symmetric(
-              horizontal: horizontalPadding,
-              vertical: verticalPadding,
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  value,
-                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: -0.5,
-                    fontSize: valueFontSize,
-                  ),
+    return Material(
+      color: accent.withValues(alpha: 0.08),
+      borderRadius: borderRadius,
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: borderRadius,
+        overlayColor: WidgetStateProperty.resolveWith((states) {
+          if (states.contains(WidgetState.pressed)) {
+            return accent.withValues(alpha: 0.08);
+          }
+          if (states.contains(WidgetState.hovered)) {
+            return accent.withValues(alpha: 0.04);
+          }
+          return Colors.transparent;
+        }),
+        child: AnimatedContainer(
+          duration: _kProfileMotionDuration,
+          padding: EdgeInsets.symmetric(
+            horizontal: horizontalPadding,
+            vertical: verticalPadding,
+          ),
+          decoration: BoxDecoration(borderRadius: borderRadius),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                value,
+                style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: -0.5,
+                  fontSize: valueFontSize,
                 ),
-                SizedBox(height: compact ? 2 : 4),
-                Text(
-                  label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: const Color(0xFF5F708A),
-                    fontWeight: FontWeight.w700,
-                    fontSize: labelFontSize,
-                  ),
+              ),
+              SizedBox(height: compact ? 2 : 4),
+              Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: const Color(0xFF5F708A),
+                  fontWeight: FontWeight.w700,
+                  fontSize: labelFontSize,
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
       ),
@@ -2376,54 +2292,66 @@ class _ProfileTabBar extends StatelessWidget implements PreferredSizeWidget {
   const _ProfileTabBar();
 
   @override
-  Size get preferredSize => const Size.fromHeight(56);
+  Size get preferredSize => const Size.fromHeight(_kProfileTabBarHeight);
 
   @override
   Widget build(BuildContext context) {
     final width = MediaQuery.sizeOf(context).width;
     final indicatorInset = width < 360 ? 20.0 : 32.0;
+    final strings = AppStrings.of(context);
+    const horizontalMargin = 16.0;
+    const tabBarRadius = BorderRadius.only(
+      bottomLeft: Radius.circular(34),
+      bottomRight: Radius.circular(34),
+    );
 
-    return Material(
-      color: Colors.white,
-      child: SizedBox(
-        height: preferredSize.height,
-        child: TabBar(
-          padding: const EdgeInsets.symmetric(horizontal: 8),
-          labelPadding: const EdgeInsets.symmetric(
-            horizontal: 12,
-            vertical: 10,
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: horizontalMargin),
+      child: ClipRRect(
+        borderRadius: tabBarRadius,
+        child: Material(
+          color: Colors.white.withValues(alpha: 0.94),
+          child: SizedBox(
+            height: preferredSize.height,
+            child: TabBar(
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              labelPadding: const EdgeInsets.symmetric(
+                horizontal: 12,
+                vertical: 10,
+              ),
+              dividerColor: Colors.transparent,
+              indicatorSize: TabBarIndicatorSize.tab,
+              indicator: UnderlineTabIndicator(
+                borderSide: const BorderSide(width: 3, color: Color(0xFF1D4ED8)),
+                insets: EdgeInsets.symmetric(horizontal: indicatorInset),
+              ),
+              labelColor: const Color(0xFF17263D),
+              unselectedLabelColor: const Color(0xFF728198),
+              labelStyle: const TextStyle(
+                fontWeight: FontWeight.w600,
+                fontSize: 15,
+              ),
+              unselectedLabelStyle: const TextStyle(
+                fontWeight: FontWeight.w500,
+                fontSize: 15,
+              ),
+              splashBorderRadius: BorderRadius.circular(14),
+              overlayColor: WidgetStateProperty.resolveWith((states) {
+                if (states.contains(WidgetState.pressed)) {
+                  return const Color(0x141D4ED8);
+                }
+                if (states.contains(WidgetState.hovered)) {
+                  return const Color(0x0F1D4ED8);
+                }
+                return Colors.transparent;
+              }),
+              tabs: [
+                Tab(height: 46, text: strings.posts),
+                Tab(height: 46, text: strings.media),
+                Tab(height: 46, text: strings.likes),
+              ],
+            ),
           ),
-          dividerColor: Colors.transparent,
-          indicatorSize: TabBarIndicatorSize.tab,
-          indicator: UnderlineTabIndicator(
-            borderSide: const BorderSide(width: 3, color: Color(0xFF1D4ED8)),
-            insets: EdgeInsets.symmetric(horizontal: indicatorInset),
-          ),
-          labelColor: const Color(0xFF17263D),
-          unselectedLabelColor: const Color(0xFF728198),
-          labelStyle: const TextStyle(
-            fontWeight: FontWeight.w600,
-            fontSize: 15,
-          ),
-          unselectedLabelStyle: const TextStyle(
-            fontWeight: FontWeight.w500,
-            fontSize: 15,
-          ),
-          splashBorderRadius: BorderRadius.circular(14),
-          overlayColor: WidgetStateProperty.resolveWith((states) {
-            if (states.contains(WidgetState.pressed)) {
-              return const Color(0x141D4ED8);
-            }
-            if (states.contains(WidgetState.hovered)) {
-              return const Color(0x0F1D4ED8);
-            }
-            return Colors.transparent;
-          }),
-          tabs: const [
-            Tab(height: 46, text: 'Posts'),
-            Tab(height: 46, text: 'Media'),
-            Tab(height: 46, text: 'Likes'),
-          ],
         ),
       ),
     );
@@ -2489,6 +2417,7 @@ class _TopBarIconButton extends StatelessWidget {
       child: Material(
         color: Colors.white.withValues(alpha: 0.88),
         shape: const CircleBorder(),
+        clipBehavior: Clip.antiAlias,
         child: InkWell(
           customBorder: const CircleBorder(),
           onTap: onTap,
@@ -2520,6 +2449,7 @@ class _GlassPillButton extends StatelessWidget {
     return Material(
       color: Colors.white.withValues(alpha: 0.14),
       borderRadius: BorderRadius.circular(999),
+      clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(999),
@@ -2587,6 +2517,7 @@ class _PrimaryProfileButton extends StatelessWidget {
       ),
       child: Material(
         color: Colors.transparent,
+        clipBehavior: Clip.antiAlias,
         child: InkWell(
           onTap: onTap,
           borderRadius: BorderRadius.circular(18),
@@ -2645,6 +2576,7 @@ class _SecondaryProfileButton extends StatelessWidget {
       ),
       child: Material(
         color: Colors.transparent,
+        clipBehavior: Clip.antiAlias,
         child: InkWell(
           onTap: onTap,
           borderRadius: BorderRadius.circular(18),
@@ -2704,6 +2636,7 @@ class _PostActionButton extends StatelessWidget {
     return Material(
       color: background,
       borderRadius: BorderRadius.circular(18),
+      clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(18),
@@ -2854,27 +2787,6 @@ class _StatCard extends StatelessWidget {
   }
 }
 
-class _SheetActionButton extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final VoidCallback? onTap;
-
-  const _SheetActionButton({
-    required this.icon,
-    required this.label,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return FilledButton.tonalIcon(
-      onPressed: onTap,
-      icon: Icon(icon),
-      label: Text(label),
-    );
-  }
-}
-
 class _HeaderGhostButton extends StatelessWidget {
   final IconData icon;
   final String label;
@@ -2891,6 +2803,7 @@ class _HeaderGhostButton extends StatelessWidget {
     return Material(
       color: Colors.white.withValues(alpha: 0.14),
       borderRadius: BorderRadius.circular(999),
+      clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(999),

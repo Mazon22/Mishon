@@ -34,6 +34,30 @@ public class UsersController : ControllerBase
         return Ok(result.Data);
     }
 
+    [HttpGet("check-username")]
+    [ProducesResponseType(typeof(UsernameAvailabilityDto), StatusCodes.Status200OK)]
+    public async Task<ActionResult<UsernameAvailabilityDto>> CheckUsernameAvailability(
+        [FromQuery] string username,
+        CancellationToken cancellationToken = default)
+    {
+        var result = await _userDiscoveryService.CheckUsernameAvailabilityAsync(
+            GetUserId(),
+            username,
+            cancellationToken);
+
+        if (!result.IsSuccess)
+        {
+            if (result.ResultError == ResultError.NotFound)
+            {
+                return NotFound(new { error = result.Error });
+            }
+
+            return StatusCode(500, new { error = result.Error });
+        }
+
+        return Ok(result.Data);
+    }
+
     private int GetUserId() =>
         int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? throw new UnauthorizedAccessException("User ID not found"));
 }

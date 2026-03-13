@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:mishon_app/core/localization/app_strings.dart';
 
 /// Виджет пустого состояния с иконкой, заголовком и кнопкой
 class EmptyState extends StatelessWidget {
@@ -77,6 +78,7 @@ class ErrorState extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final strings = AppStrings.of(context);
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(32),
@@ -101,7 +103,7 @@ class ErrorState extends StatelessWidget {
               ElevatedButton.icon(
                 onPressed: onRetry,
                 icon: const Icon(Icons.refresh),
-                label: const Text('Повторить'),
+                label: Text(strings.retry),
               ),
             ],
           ],

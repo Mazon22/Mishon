@@ -1,4 +1,7 @@
 import 'package:equatable/equatable.dart';
+import 'package:intl/intl.dart';
+
+bool get _isRuLocale => Intl.getCurrentLocale().toLowerCase().startsWith('ru');
 
 class ApiError extends Equatable {
   final String error;
@@ -16,7 +19,11 @@ class ApiError extends Equatable {
   factory ApiError.fromJson(Map<String, dynamic> json) {
     return ApiError(
       error: json['error'] ?? 'Unknown Error',
-      message: json['message'] ?? 'Произошла неизвестная ошибка',
+      message:
+          json['message'] ??
+          (_isRuLocale
+              ? 'Произошла неизвестная ошибка'
+              : 'An unknown error occurred'),
       statusCode: json['statusCode'],
       timestamp: json['timestamp'] != null 
           ? DateTime.parse(json['timestamp']).toLocal() 
@@ -41,7 +48,17 @@ class ApiException implements Exception {
 class OfflineException implements Exception {
   final String message;
 
-  const OfflineException([this.message = 'Отсутствует подключение к интернету']);
+  OfflineException([String? message])
+    : message =
+          message ??
+          (_isRuLocale
+              ? 'Отсутствует подключение к интернету'
+              : 'No internet connection');
+
+  OfflineException.timeout([String? message])
+    : message =
+          message ??
+          (_isRuLocale ? 'Таймаут соединения' : 'Connection timed out');
 
   @override
   String toString() => 'OfflineException: $message';
@@ -55,7 +72,9 @@ class TokenExpiredException implements Exception {
 class UnauthorizedException implements Exception {
   final String message;
 
-  const UnauthorizedException([this.message = 'Неавторизованный доступ']);
+  UnauthorizedException([String? message])
+    : message =
+          message ?? (_isRuLocale ? 'Неавторизованный доступ' : 'Unauthorized access');
 
   @override
   String toString() => 'UnauthorizedException: $message';

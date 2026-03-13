@@ -82,6 +82,10 @@ public record UserProfileDto(
     bool? IsFollowing = null
 );
 
+public record UsernameAvailabilityDto(
+    bool Available
+);
+
 public record UpdateProfileDto(
     string? Username,
     string? AboutMe,
@@ -115,12 +119,14 @@ public class UpdateProfileDtoValidator : AbstractValidator<UpdateProfileDto>
     public UpdateProfileDtoValidator()
     {
         RuleFor(x => x.Username)
+            .MinimumLength(5).When(x => !string.IsNullOrWhiteSpace(x.Username))
+            .WithMessage("Minimum 5 characters")
             .MaximumLength(50).WithMessage("Maximum 50 characters")
-            .Matches(@"^[a-zA-Z0-9_]+$").When(x => x.Username != null)
-            .WithMessage("Only letters, numbers, and underscore are allowed");
+            .Matches(@"^[a-z0-9._]+$").When(x => x.Username != null)
+            .WithMessage("Only a-z, 0-9, . and _ are allowed");
 
         RuleFor(x => x.AboutMe)
-            .MaximumLength(280).WithMessage("Maximum 280 characters");
+            .MaximumLength(160).WithMessage("Maximum 160 characters");
 
         RuleFor(x => x.AvatarUrl)
             .MaximumLength(500).WithMessage("Maximum 500 characters")

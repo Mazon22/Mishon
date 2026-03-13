@@ -2,6 +2,7 @@ using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.RegularExpressions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.IdentityModel.Tokens;
@@ -14,6 +15,10 @@ namespace Mishon.Infrastructure.Services;
 
 public class AuthService : IAuthService
 {
+    private static readonly Regex UsernameRegex = new(
+        "^[a-z0-9._]{5,50}$",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant);
+
     private readonly IUserRepository _userRepository;
     private readonly IConfiguration _config;
     private readonly MishonDbContext _context;
@@ -169,12 +174,20 @@ public class AuthService : IAuthService
 
             if (!string.IsNullOrWhiteSpace(dto.Username) && dto.Username != user.Username)
             {
-                if (await _userRepository.ExistsByUsernameAsync(dto.Username))
+                var normalizedUsername = NormalizeUsername(dto.Username);
+                if (normalizedUsername == null)
+                {
+                    return Result<UserProfileDto>.Failure(
+                        "Username must contain only a-z, 0-9, . or _",
+                        ResultError.ValidationError);
+                }
+
+                if (await _userRepository.ExistsByUsernameAsync(normalizedUsername))
                 {
                     return Result<UserProfileDto>.Failure("Username already taken", ResultError.Conflict);
                 }
 
-                user.Username = dto.Username;
+                user.Username = normalizedUsername;
             }
 
             ApplyProfileUpdate(user, dto);
@@ -377,6 +390,17 @@ public class AuthService : IAuthService
                 user.BannerOffsetY = dto.BannerOffsetY.Value;
             }
         }
+    }
+
+    private static string? NormalizeUsername(string? username)
+    {
+        if (string.IsNullOrWhiteSpace(username))
+        {
+            return null;
+        }
+
+        var normalized = username.Trim().ToLowerInvariant();
+        return UsernameRegex.IsMatch(normalized) ? normalized : null;
     }
 
     private (string AccessToken, string RefreshToken, DateTime RefreshTokenExpiry) GenerateTokens(User user)

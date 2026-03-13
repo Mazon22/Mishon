@@ -69,7 +69,7 @@ class ApiClient {
               DioException(
                 requestOptions: options,
                 type: DioExceptionType.connectionError,
-                error: const OfflineException(),
+                error: OfflineException(),
               ),
             );
           }
@@ -166,7 +166,7 @@ class ApiClient {
             DioException(
               requestOptions: error.requestOptions,
               type: error.type,
-              error: const OfflineException('Таймаут соединения'),
+              error: OfflineException.timeout(),
             ),
           );
         }
@@ -176,7 +176,7 @@ class ApiClient {
             DioException(
               requestOptions: error.requestOptions,
               type: error.type,
-              error: const OfflineException(),
+              error: OfflineException(),
             ),
           );
         }

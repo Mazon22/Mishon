@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:signalr_netcore/signalr_client.dart';
 
@@ -161,7 +162,7 @@ class ChatRealtimeService {
     _lastTypingStartSentAt.clear();
     final connection = _connection;
     _connection = null;
-    if (connection != null) {
+    if (connection != null && !kIsWeb) {
       try {
         await connection.stop();
       } catch (_) {
@@ -198,6 +199,10 @@ class ChatRealtimeService {
           _buildHubUrl(),
           options: HttpConnectionOptions(
             accessTokenFactory: () async => await _storage.readToken() ?? '',
+            transport:
+                kIsWeb
+                    ? HttpTransportType.LongPolling
+                    : HttpTransportType.WebSockets,
           ),
         )
         .withAutomaticReconnect()
@@ -209,7 +214,7 @@ class ChatRealtimeService {
     connection.on('message_read', _handleMessageRead);
     connection.on('message_delivered', _handleMessageDelivered);
     connection.onclose(({
-      Exception? error,
+      Object? error,
     }) {
       if (_disposed) {
         return;
@@ -217,7 +222,7 @@ class ChatRealtimeService {
       _connectionStatesController.add(HubConnectionState.Disconnected);
     });
     connection.onreconnecting(({
-      Exception? error,
+      Object? error,
     }) {
       if (_disposed) {
         return;

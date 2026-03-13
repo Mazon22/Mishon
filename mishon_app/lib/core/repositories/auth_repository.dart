@@ -116,6 +116,25 @@ class AuthRepository {
     }
   }
 
+  Future<bool> checkUsernameAvailability(String username) async {
+    try {
+      return await _apiService.checkUsernameAvailability(username);
+    } on ApiException catch (e) {
+      _logger.e('Check username availability failed: ${e.apiError.message}');
+      rethrow;
+    } on OfflineException {
+      _logger.w('No connection checking username availability');
+      rethrow;
+    } catch (e, st) {
+      _logger.e(
+        'Unexpected username availability error',
+        error: e,
+        stackTrace: st,
+      );
+      rethrow;
+    }
+  }
+
   Future<UserProfile> updateProfile({String? username, String? aboutMe}) async {
     try {
       return await _apiService.updateProfile(username: username, aboutMe: aboutMe);

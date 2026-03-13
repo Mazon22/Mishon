@@ -12,6 +12,7 @@ abstract class ApiService {
   Future<AuthResponse> refreshToken(String refreshToken);
   Future<UserProfile> getProfile();
   Future<UserProfile> getUserProfile(int userId);
+  Future<bool> checkUsernameAvailability(String username);
   Future<UserProfile> updateProfile({String? username, String? aboutMe});
   Future<UserProfile> updateProfileMedia({
     Uint8List? avatarBytes,
@@ -28,6 +29,10 @@ abstract class ApiService {
   Future<void> logout();
 
   Future<PagedResponse<Post>> getFeed({int page = 1, int pageSize = 10});
+  Future<PagedResponse<Post>> getFollowingFeed({
+    int page = 1,
+    int pageSize = 10,
+  });
   Future<List<Post>> getUserPosts(
     int userId, {
     int page = 1,
@@ -158,6 +163,15 @@ class ApiServiceImpl implements ApiService {
   }
 
   @override
+  Future<bool> checkUsernameAvailability(String username) async {
+    final response = await _dio.get(
+      '/users/check-username',
+      queryParameters: {'username': username},
+    );
+    return (response.data as Map<String, dynamic>)['available'] as bool? ?? false;
+  }
+
+  @override
   Future<UserProfile> updateProfile({String? username, String? aboutMe}) async {
     final response = await _dio.put(
       '/auth/profile',
@@ -236,7 +250,22 @@ class ApiServiceImpl implements ApiService {
   @override
   Future<PagedResponse<Post>> getFeed({int page = 1, int pageSize = 10}) async {
     final response = await _dio.get(
-      '/posts',
+      '/feed',
+      queryParameters: {'page': page, 'pageSize': pageSize},
+    );
+    return PagedResponse<Post>.fromJson(
+      response.data,
+      (json) => (json as List).map((e) => Post.fromJson(e)).toList(),
+    );
+  }
+
+  @override
+  Future<PagedResponse<Post>> getFollowingFeed({
+    int page = 1,
+    int pageSize = 10,
+  }) async {
+    final response = await _dio.get(
+      '/feed/following',
       queryParameters: {'page': page, 'pageSize': pageSize},
     );
     return PagedResponse<Post>.fromJson(

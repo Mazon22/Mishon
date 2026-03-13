@@ -1,23 +1,26 @@
 import 'dart:async';
 import 'dart:math' as math;
-import 'dart:typed_data';
 import 'dart:ui';
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
+import 'package:mishon_app/core/localization/app_strings.dart';
 import 'package:mishon_app/core/models/auth_model.dart';
 import 'package:mishon_app/core/models/social_models.dart';
 import 'package:mishon_app/core/network/exceptions.dart';
 import 'package:mishon_app/core/repositories/auth_repository.dart';
 import 'package:mishon_app/core/repositories/social_repository.dart';
+import 'package:mishon_app/core/settings/app_settings_provider.dart';
 import 'package:mishon_app/core/utils/attachment_picker.dart';
 import 'package:mishon_app/core/utils/external_url.dart';
 import 'package:mishon_app/core/widgets/fullscreen_image_screen.dart';
 import 'package:mishon_app/core/widgets/profile_media.dart';
 import 'package:mishon_app/core/widgets/states.dart';
+import 'package:mishon_app/features/chats/providers/chat_conversation_preview_provider.dart';
 import 'package:mishon_app/features/chats/providers/chat_messages_provider.dart';
 import 'package:mishon_app/features/chats/providers/chat_realtime_service.dart';
 import 'package:mishon_app/features/notifications/providers/notification_summary_provider.dart';
@@ -30,6 +33,8 @@ class ChatScreenArgs {
   final double peerAvatarScale;
   final double peerAvatarOffsetX;
   final double peerAvatarOffsetY;
+  final bool? initialIsOnline;
+  final DateTime? initialLastSeenAt;
 
   const ChatScreenArgs({
     required this.conversationId,
@@ -39,6 +44,8 @@ class ChatScreenArgs {
     this.peerAvatarScale = 1,
     this.peerAvatarOffsetX = 0,
     this.peerAvatarOffsetY = 0,
+    this.initialIsOnline,
+    this.initialLastSeenAt,
   });
 }
 
@@ -57,6 +64,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
 
   final _messageController = TextEditingController();
   final _scrollController = ScrollController();
+  late final ChatRealtimeService _chatRealtimeService;
   Timer? _profilePoller;
   bool _isSending = false;
   ChatMessageModel? _replyingTo;
@@ -68,12 +76,13 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
   @override
   void initState() {
     super.initState();
+    _chatRealtimeService = ref.read(chatRealtimeServiceProvider);
     _messageController.addListener(_handleComposerChanged);
     _scrollController.addListener(_handleScrollChanged);
     ref
         .read(chatMessagesNotifierProvider(widget.args.conversationId).notifier)
         .ensureLoaded();
-    unawaited(ref.read(chatRealtimeServiceProvider).ensureConnected());
+    unawaited(_chatRealtimeService.ensureConnected());
     unawaited(_loadPeerProfile());
     _profilePoller = Timer.periodic(const Duration(seconds: 15), (_) {
       _loadPeerProfile(silent: true);
@@ -85,9 +94,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     _profilePoller?.cancel();
     _messageController.removeListener(_handleComposerChanged);
     _scrollController.removeListener(_handleScrollChanged);
-    unawaited(
-      ref.read(chatRealtimeServiceProvider).stopTyping(widget.args.conversationId),
-    );
+    unawaited(_chatRealtimeService.stopTyping(widget.args.conversationId));
     _messageController.dispose();
     _scrollController.dispose();
     super.dispose();
@@ -99,14 +106,12 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
   void _handleComposerChanged() {
     final isTyping = _messageController.text.trim().isNotEmpty;
     if (_editingMessage != null) {
-      unawaited(
-        ref.read(chatRealtimeServiceProvider).stopTyping(widget.args.conversationId),
-      );
+      unawaited(_chatRealtimeService.stopTyping(widget.args.conversationId));
       return;
     }
 
     unawaited(
-      ref.read(chatRealtimeServiceProvider).reportTypingActivity(
+      _chatRealtimeService.reportTypingActivity(
         widget.args.conversationId,
         isComposing: isTyping,
       ),
@@ -142,6 +147,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
   }
 
   Future<void> _loadPeerProfile({bool silent = false}) async {
+    final isRu = ref.read(appSettingsProvider).language == AppLanguage.ru;
     try {
       final profile = await ref
           .read(authRepositoryProvider)
@@ -155,23 +161,41 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
       });
     } on ApiException catch (_) {
       if (!silent && mounted) {
-        _showSnackBar('Не удалось загрузить статус собеседника', isError: true);
+        _showSnackBar(
+          isRu
+              ? 'Не удалось загрузить статус собеседника'
+              : 'Could not load the contact status',
+          isError: true,
+        );
       }
     } on OfflineException catch (_) {
       if (!silent && mounted) {
-        _showSnackBar('Нет соединения для загрузки статуса', isError: true);
+        _showSnackBar(
+          isRu
+              ? 'Нет соединения для загрузки статуса'
+              : 'No connection to load the status',
+          isError: true,
+        );
       }
     } catch (_) {
       if (!silent && mounted) {
-        _showSnackBar('Не удалось обновить статус собеседника', isError: true);
+        _showSnackBar(
+          isRu
+              ? 'Не удалось обновить статус собеседника'
+              : 'Could not refresh the contact status',
+          isError: true,
+        );
       }
     }
   }
 
   Future<void> _pickAttachments(AttachmentPickType type) async {
+    final strings = AppStrings.of(context);
     if (_editingMessage != null) {
       _showSnackBar(
-        'Во время редактирования вложения менять нельзя',
+        strings.isRu
+            ? 'Во время редактирования вложения менять нельзя'
+            : 'Attachments cannot be changed while editing',
         isError: true,
       );
       return;
@@ -201,7 +225,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
           selected.fold<int>(0, (sum, item) => sum + item.sizeBytes);
       if (totalBytes > _maxAttachmentBytes) {
         _showSnackBar(
-          'Общий размер вложений не должен превышать 15 МБ',
+          strings.isRu
+              ? 'Общий размер вложений не должен превышать 15 МБ'
+              : 'Attachments must stay under 15 MB in total',
           isError: true,
         );
         return;
@@ -211,23 +237,32 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
         _pendingAttachments = [..._pendingAttachments, ...selected];
       });
     } catch (error) {
-      _showSnackBar('Не удалось выбрать файлы: $error', isError: true);
+      _showSnackBar(
+        strings.isRu
+            ? 'Не удалось выбрать файлы: $error'
+            : 'Could not pick files: $error',
+        isError: true,
+      );
     }
   }
 
   Future<void> _submit() async {
+    final strings = AppStrings.of(context);
     final content = _messageController.text.trim();
     final hasAttachments = _pendingAttachments.isNotEmpty;
     final peerBlockedViewer = _peerProfile?.hasBlockedViewer ?? false;
     final viewerBlockedPeer = _peerProfile?.isBlockedByViewer ?? false;
+    final notificationSummaryNotifier = ref.read(
+      notificationSummaryProvider.notifier,
+    );
     if (_isSending) {
       return;
     }
     if (peerBlockedViewer || viewerBlockedPeer) {
       _showSnackBar(
         peerBlockedViewer
-            ? 'You cannot send messages to this user.'
-            : 'Unblock the user first.',
+            ? strings.youCannotSendMessagesToThisUser
+            : strings.unblockUserFirst,
         isError: true,
       );
       return;
@@ -254,7 +289,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
               content,
             );
         messagesNotifier.upsertMessage(updatedMessage);
-        _showSnackBar('Message updated');
+        _showSnackBar(strings.messageUpdated);
         _resetComposer();
         await realtimeService.stopTyping(widget.args.conversationId);
       } on ApiException catch (e) {
@@ -263,7 +298,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
         _showSnackBar(e.message, isError: true);
       } catch (_) {
         _showSnackBar(
-          'Failed to save the message.',
+          strings.failedToSaveMessage,
           isError: true,
         );
       } finally {
@@ -289,28 +324,33 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     }
     await _sendLocalOutgoingMessage(localMessage, scrollToLatest: wasNearLatest);
     unawaited(
-      ref.read(notificationSummaryProvider.notifier).refresh(silent: true),
+      notificationSummaryNotifier.refresh(silent: true),
     );
   }
 
   Future<void> _deleteMessageForMe(ChatMessageModel message) async {
+    final strings = AppStrings.of(context);
     final confirmed =
         await showDialog<bool>(
           context: context,
           builder:
               (context) => AlertDialog(
-                title: const Text('Удалить сообщение?'),
-                content: const Text(
-                  'После удаления вернуть его уже не получится.',
+                title: Text(
+                  strings.isRu ? 'Удалить сообщение?' : 'Delete message?',
+                ),
+                content: Text(
+                  strings.isRu
+                      ? 'После удаления вернуть его уже не получится.'
+                      : 'This action cannot be undone.',
                 ),
                 actions: [
                   TextButton(
                     onPressed: () => Navigator.of(context).pop(false),
-                    child: const Text('Отмена'),
+                    child: Text(strings.cancel),
                   ),
                   FilledButton(
                     onPressed: () => Navigator.of(context).pop(true),
-                    child: const Text('Удалить'),
+                    child: Text(strings.delete),
                   ),
                 ],
               ),
@@ -321,44 +361,56 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
       return;
     }
 
+    final socialRepository = ref.read(socialRepositoryProvider);
+    final messagesNotifier = ref.read(
+      chatMessagesNotifierProvider(widget.args.conversationId).notifier,
+    );
     try {
-      await ref
-          .read(socialRepositoryProvider)
-          .deleteMessage(widget.args.conversationId, message.id);
+      await socialRepository.deleteMessage(widget.args.conversationId, message.id);
       if (_editingMessage?.id == message.id || _replyingTo?.id == message.id) {
         _resetComposer();
       }
-      ref
-          .read(chatMessagesNotifierProvider(widget.args.conversationId).notifier)
-          .removeMessage(message.id);
-      _showSnackBar('Сообщение удалено');
+      messagesNotifier.removeMessage(message.id);
+      _showSnackBar(
+        strings.isRu ? 'Сообщение удалено' : 'Message deleted',
+      );
     } on ApiException catch (e) {
       _showSnackBar(e.apiError.message, isError: true);
     } on OfflineException catch (e) {
       _showSnackBar(e.message, isError: true);
     } catch (_) {
-      _showSnackBar('Не удалось удалить сообщение', isError: true);
+      _showSnackBar(
+        strings.isRu
+            ? 'Не удалось удалить сообщение'
+            : 'Could not delete the message',
+        isError: true,
+      );
     }
   }
 
   Future<void> _deleteMessageForEveryone(ChatMessageModel message) async {
+    final strings = AppStrings.of(context);
     final confirmed =
         await showDialog<bool>(
           context: context,
           builder:
               (context) => AlertDialog(
-                title: const Text('Удалить у всех?'),
-                content: const Text(
-                  'Сообщение исчезнет у вас и у собеседника.',
+                title: Text(
+                  strings.isRu ? 'Удалить у всех?' : 'Delete for everyone?',
+                ),
+                content: Text(
+                  strings.isRu
+                      ? 'Сообщение исчезнет у вас и у собеседника.'
+                      : 'The message will disappear for both users.',
                 ),
                 actions: [
                   TextButton(
                     onPressed: () => Navigator.of(context).pop(false),
-                    child: const Text('Отмена'),
+                    child: Text(strings.cancel),
                   ),
                   FilledButton(
                     onPressed: () => Navigator.of(context).pop(true),
-                    child: const Text('Удалить'),
+                    child: Text(strings.delete),
                   ),
                 ],
               ),
@@ -369,44 +421,63 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
       return;
     }
 
+    final socialRepository = ref.read(socialRepositoryProvider);
+    final messagesNotifier = ref.read(
+      chatMessagesNotifierProvider(widget.args.conversationId).notifier,
+    );
     try {
-      await ref
-          .read(socialRepositoryProvider)
-          .deleteMessageForAll(widget.args.conversationId, message.id);
+      await socialRepository.deleteMessageForAll(
+        widget.args.conversationId,
+        message.id,
+      );
       if (_editingMessage?.id == message.id || _replyingTo?.id == message.id) {
         _resetComposer();
       }
-      ref
-          .read(chatMessagesNotifierProvider(widget.args.conversationId).notifier)
-          .removeMessage(message.id);
-      _showSnackBar('Сообщение удалено у всех');
+      messagesNotifier.removeMessage(message.id);
+      _showSnackBar(
+        strings.isRu
+            ? 'Сообщение удалено у всех'
+            : 'Message deleted for everyone',
+      );
     } on ApiException catch (e) {
       _showSnackBar(e.apiError.message, isError: true);
     } on OfflineException catch (e) {
       _showSnackBar(e.message, isError: true);
     } catch (_) {
-      _showSnackBar('Не удалось удалить сообщение у всех', isError: true);
+      _showSnackBar(
+        strings.isRu
+            ? 'Не удалось удалить сообщение у всех'
+            : 'Could not delete the message for everyone',
+        isError: true,
+      );
     }
   }
 
   Future<void> _clearHistory() async {
+    final strings = AppStrings.of(context);
     final confirmed =
         await showDialog<bool>(
           context: context,
           builder:
               (context) => AlertDialog(
-                title: const Text('Очистить историю?'),
-                content: const Text(
-                  'Все сообщения исчезнут только у вас, сам чат останется.',
+                title: Text(
+                  strings.isRu ? 'Очистить историю?' : 'Clear history?',
+                ),
+                content: Text(
+                  strings.isRu
+                      ? 'Все сообщения исчезнут только у вас, сам чат останется.'
+                      : 'Messages will be cleared only for you, the chat will remain.',
                 ),
                 actions: [
                   TextButton(
                     onPressed: () => Navigator.of(context).pop(false),
-                    child: const Text('Отмена'),
+                    child: Text(strings.cancel),
                   ),
                   FilledButton(
                     onPressed: () => Navigator.of(context).pop(true),
-                    child: const Text('Очистить'),
+                    child: Text(
+                      strings.isRu ? 'Очистить' : 'Clear',
+                    ),
                   ),
                 ],
               ),
@@ -425,17 +496,23 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
       ref
           .read(chatMessagesNotifierProvider(widget.args.conversationId).notifier)
           .clearHistory();
-      _showSnackBar('История очищена');
+      _showSnackBar(strings.isRu ? 'История очищена' : 'History cleared');
     } on ApiException catch (e) {
       _showSnackBar(e.apiError.message, isError: true);
     } on OfflineException catch (e) {
       _showSnackBar(e.message, isError: true);
     } catch (_) {
-      _showSnackBar('Не удалось очистить историю', isError: true);
+      _showSnackBar(
+        strings.isRu
+            ? 'Не удалось очистить историю'
+            : 'Could not clear the history',
+        isError: true,
+      );
     }
   }
 
   Future<void> _toggleBlockUser({required bool unblock}) async {
+    final strings = AppStrings.of(context);
     final confirmed =
         await showDialog<bool>(
           context: context,
@@ -443,22 +520,34 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
               (context) => AlertDialog(
                 title: Text(
                   unblock
-                      ? 'Разблокировать пользователя?'
-                      : 'Заблокировать пользователя?',
+                      ? (strings.isRu
+                          ? 'Разблокировать пользователя?'
+                          : 'Unblock user?')
+                      : (strings.isRu
+                          ? 'Заблокировать пользователя?'
+                          : 'Block user?'),
                 ),
                 content: Text(
                   unblock
-                      ? 'После разблокировки вы снова сможете писать друг другу.'
-                      : 'После блокировки никто из вас не сможет писать сообщения.',
+                      ? (strings.isRu
+                          ? 'После разблокировки вы снова сможете писать друг другу.'
+                          : 'After unblocking, you will be able to message each other again.')
+                      : (strings.isRu
+                          ? 'После блокировки никто из вас не сможет писать сообщения.'
+                          : 'After blocking, neither of you will be able to send messages.'),
                 ),
                 actions: [
                   TextButton(
                     onPressed: () => Navigator.of(context).pop(false),
-                    child: const Text('Отмена'),
+                    child: Text(strings.cancel),
                   ),
                   FilledButton(
                     onPressed: () => Navigator.of(context).pop(true),
-                    child: Text(unblock ? 'Разблокировать' : 'Заблокировать'),
+                    child: Text(
+                      unblock
+                          ? (strings.isRu ? 'Разблокировать' : 'Unblock')
+                          : (strings.isRu ? 'Заблокировать' : 'Block'),
+                    ),
                   ),
                 ],
               ),
@@ -469,8 +558,11 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
       return;
     }
 
+    final repository = ref.read(socialRepositoryProvider);
+    final messagesNotifier = ref.read(
+      chatMessagesNotifierProvider(widget.args.conversationId).notifier,
+    );
     try {
-      final repository = ref.read(socialRepositoryProvider);
       if (unblock) {
         await repository.unblockUserFromChat(widget.args.peerId);
       } else {
@@ -478,11 +570,11 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
       }
       _resetComposer();
       await _loadPeerProfile(silent: true);
-      await ref
-          .read(chatMessagesNotifierProvider(widget.args.conversationId).notifier)
-          .refresh(silent: true, force: true);
+      await messagesNotifier.refresh(silent: true, force: true);
       _showSnackBar(
-        unblock ? 'Пользователь разблокирован' : 'Пользователь заблокирован',
+        unblock
+            ? (strings.isRu ? 'Пользователь разблокирован' : 'User unblocked')
+            : (strings.isRu ? 'Пользователь заблокирован' : 'User blocked'),
       );
     } on ApiException catch (e) {
       _showSnackBar(e.apiError.message, isError: true);
@@ -491,8 +583,12 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     } catch (_) {
       _showSnackBar(
         unblock
-            ? 'Не удалось разблокировать пользователя'
-            : 'Не удалось заблокировать пользователя',
+            ? (strings.isRu
+                ? 'Не удалось разблокировать пользователя'
+                : 'Could not unblock the user')
+            : (strings.isRu
+                ? 'Не удалось заблокировать пользователя'
+                : 'Could not block the user'),
         isError: true,
       );
     }
@@ -545,6 +641,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     );
   }
   String? _buildReplyPreview(ChatMessageModel? replyTo) {
+    final strings = AppStrings.of(context);
     if (replyTo == null) {
       return null;
     }
@@ -552,7 +649,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
       return replyTo.content;
     }
     if (replyTo.attachments.isNotEmpty) {
-      return 'Attachment';
+      return strings.attachment;
     }
     return null;
   }
@@ -560,6 +657,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     _LocalOutgoingMessage localMessage, {
     required bool scrollToLatest,
   }) async {
+    final strings = AppStrings.of(context);
     try {
       final sentMessage = await ref
           .read(socialRepositoryProvider)
@@ -593,6 +691,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
       }
       _removeLocalOutgoingMessage(localMessage.localId);
       ref
+          .read(chatConversationPreviewOverridesProvider.notifier)
+          .upsertFromMessage(sentMessage);
+      ref
           .read(chatMessagesNotifierProvider(widget.args.conversationId).notifier)
           .upsertMessage(sentMessage);
       if (scrollToLatest) {
@@ -619,10 +720,10 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
         localMessage.localId,
         status: _LocalOutgoingMessageStatus.failed,
         uploadProgress: null,
-        errorMessage: 'Failed to send the message.',
+        errorMessage: strings.failedToSendMessage,
       );
       _showSnackBar(
-        'Failed to send the message.',
+        strings.failedToSendMessage,
         isError: true,
       );
     } finally {
@@ -757,7 +858,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
   }
 
   void _showSnackBar(String message, {bool isError = false}) {
-    if (!mounted) {
+    if (!mounted || !isError) {
       return;
     }
 
@@ -770,6 +871,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
   }
 
   Future<void> _openAttachment(ChatAttachmentModel attachment) async {
+    final strings = AppStrings.of(context);
     if (attachment.isImage) {
       if (!mounted) {
         return;
@@ -785,13 +887,19 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
 
     final uri = Uri.tryParse(attachment.fileUrl);
     if (uri == null) {
-      _showSnackBar('Некорректная ссылка на файл', isError: true);
+      _showSnackBar(
+        strings.isRu ? 'Некорректная ссылка на файл' : 'Invalid file link',
+        isError: true,
+      );
       return;
     }
 
     final launched = await openExternalUrl(uri.toString());
     if (!launched && mounted) {
-      _showSnackBar('Не удалось открыть файл', isError: true);
+      _showSnackBar(
+        strings.isRu ? 'Не удалось открыть файл' : 'Could not open the file',
+        isError: true,
+      );
     }
   }
 
@@ -800,16 +908,24 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
   }
 
   String _formatPresenceLabel() {
+    final strings = AppStrings.of(context);
     final profile = _peerProfile;
-    if (profile == null) {
+    final isOnline = profile?.isOnline ?? widget.args.initialIsOnline;
+    final lastSeenAt = profile?.lastSeenAt ?? widget.args.initialLastSeenAt;
+
+    if (isOnline == null && lastSeenAt == null) {
       return '...';
     }
 
-    if (profile.isOnline) {
-      return 'онлайн';
+    if (isOnline == true) {
+      return strings.online;
     }
 
-    final localLastSeen = profile.lastSeenAt.toLocal();
+    if (lastSeenAt == null) {
+      return '...';
+    }
+
+    final localLastSeen = lastSeenAt.toLocal();
     final timeLabel = DateFormat('HH:mm').format(localLastSeen);
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
@@ -821,19 +937,20 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     final dayDifference = today.difference(seenDay).inDays;
 
     if (dayDifference <= 0) {
-      return 'был в сети $timeLabel';
+      return strings.lastSeenAt(timeLabel);
     }
 
     if (dayDifference == 1) {
-      return 'был в сети вчера в $timeLabel';
+      return strings.lastSeenYesterdayAt(timeLabel);
     }
 
-    return 'был в сети $dayDifference д. назад в $timeLabel';
+    return strings.lastSeenDaysAgoAt(dayDifference, timeLabel);
   }
 
   @override
   Widget build(BuildContext context) {
     super.build(context);
+    final strings = AppStrings.of(context);
     final messageState = ref.watch(
       chatMessagesNotifierProvider(widget.args.conversationId),
     );
@@ -846,11 +963,12 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
         !peerBlockedViewer &&
         !viewerBlockedPeer;
     final subtitleLabel =
-        showTypingIndicator ? 'Typing...' : _formatPresenceLabel();
+        showTypingIndicator ? strings.typing : _formatPresenceLabel();
+    final isPeerOnline = _peerProfile?.isOnline ?? widget.args.initialIsOnline;
     final subtitleColor =
         showTypingIndicator
             ? const Color(0xFF2F67FF)
-            : _peerProfile?.isOnline == true
+            : isPeerOnline == true
             ? const Color(0xFF229C5A)
             : const Color(0xFF728098);
 
@@ -883,7 +1001,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
                     avatarScale: widget.args.peerAvatarScale,
                     avatarOffsetX: widget.args.peerAvatarOffsetX,
                     avatarOffsetY: widget.args.peerAvatarOffsetY,
-                    isOnline: _peerProfile?.isOnline ?? false,
+                    isOnline: isPeerOnline ?? false,
                   ),
                   const SizedBox(width: 12),
                   Expanded(
@@ -928,7 +1046,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
         ),
         actions: [
           PopupMenuButton<String>(
-            tooltip: 'Chat settings',
+            tooltip: strings.chatSettings,
             onSelected: (value) {
               if (value == 'clear') {
                 _clearHistory();
@@ -940,16 +1058,22 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
             },
             itemBuilder:
                 (context) => [
-                  const PopupMenuItem(
+                  PopupMenuItem(
                     value: 'clear',
-                    child: Text('Очистить историю'),
+                    child: Text(
+                      strings.isRu ? 'Очистить историю' : 'Clear history',
+                    ),
                   ),
                   PopupMenuItem(
                     value: viewerBlockedPeer ? 'unblock' : 'block',
                     child: Text(
                       viewerBlockedPeer
-                          ? 'Разблокировать пользователя'
-                          : 'Заблокировать пользователя',
+                          ? (strings.isRu
+                              ? 'Разблокировать пользователя'
+                              : 'Unblock user')
+                          : (strings.isRu
+                              ? 'Заблокировать пользователя'
+                              : 'Block user'),
                     ),
                   ),
                 ],
@@ -995,7 +1119,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
                 Expanded(
                   child:
                       messageState.isInitialLoading
-                          ? const LoadingState()
+                          ? const _ConversationLoadingTimeline()
                           : messageState.errorMessage != null &&
                               timelineItems.isEmpty
                           ? ErrorState(
@@ -1024,12 +1148,17 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
                                 parent: BouncingScrollPhysics(),
                               ),
                               padding: const EdgeInsets.all(24),
-                              children: const [
+                              children: [
                                 EmptyState(
                                   icon: Icons.forum_outlined,
-                                  title: 'Пока нет сообщений',
+                                  title:
+                                      strings.isRu
+                                          ? 'Пока нет сообщений'
+                                          : 'No messages yet',
                                   subtitle:
-                                      'Напишите первое сообщение, чтобы начать диалог.',
+                                      strings.isRu
+                                          ? 'Напишите первое сообщение, чтобы начать диалог.'
+                                          : 'Send the first message to start the conversation.',
                                 ),
                               ],
                             ),
@@ -1147,15 +1276,18 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
                           ),
                 ),
                 if (peerBlockedViewer)
-                  const _BlockedComposerBanner(
-                    message: 'You cannot send messages to this user.',
+                  _BlockedComposerBanner(
+                    message: strings.youCannotSendMessagesToThisUser,
                     icon: Icons.block_rounded,
                   )
                 else if (viewerBlockedPeer)
                   _BlockedComposerBanner(
-                    message: 'Вы заблокировали этого пользователя',
+                    message:
+                        strings.isRu
+                            ? 'Вы заблокировали этого пользователя'
+                            : 'You blocked this user',
                     icon: Icons.lock_open_rounded,
-                    actionLabel: 'Unblock user',
+                    actionLabel: strings.unblockUser,
                     onAction: () => _toggleBlockUser(unblock: true),
                   )
                 else
@@ -1434,6 +1566,7 @@ class _MessageComposer extends StatelessWidget {
   });
 
   Future<void> _showAttachmentTypeSheet(BuildContext context) async {
+    final strings = AppStrings.of(context);
     await showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
@@ -1444,8 +1577,12 @@ class _MessageComposer extends StatelessWidget {
               children: [
                 ListTile(
                   leading: const Icon(Icons.image_rounded),
-                  title: const Text('Фото'),
-                  subtitle: const Text('Отправить как изображение'),
+                  title: Text(strings.isRu ? 'Фото' : 'Photo'),
+                  subtitle: Text(
+                    strings.isRu
+                        ? 'Отправить как изображение'
+                        : 'Send as image',
+                  ),
                   onTap: () {
                     Navigator.of(context).pop();
                     onPickImages();
@@ -1453,8 +1590,12 @@ class _MessageComposer extends StatelessWidget {
                 ),
                 ListTile(
                   leading: const Icon(Icons.insert_drive_file_rounded),
-                  title: const Text('Файл'),
-                  subtitle: const Text('Отправить как файл или документ'),
+                  title: Text(strings.isRu ? 'Файл' : 'File'),
+                  subtitle: Text(
+                    strings.isRu
+                        ? 'Отправить как файл или документ'
+                        : 'Send as file or document',
+                  ),
                   onTap: () {
                     Navigator.of(context).pop();
                     onPickFiles();
@@ -1468,6 +1609,7 @@ class _MessageComposer extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final strings = AppStrings.of(context);
     final hasContext = replyingTo != null || editingMessage != null;
     final canAttach = editingMessage == null;
 
@@ -1527,8 +1669,12 @@ class _MessageComposer extends StatelessWidget {
                         Expanded(
                           child: Text(
                             editingMessage != null
-                                ? 'Редактирование сообщения'
-                                : 'Ответ для ${replyingTo!.senderUsername}',
+                                ? (strings.isRu
+                                    ? 'Редактирование сообщения'
+                                    : 'Editing message')
+                                : (strings.isRu
+                                    ? 'Ответ для ${replyingTo!.senderUsername}'
+                                    : 'Reply to ${replyingTo!.senderUsername}'),
                             style: Theme.of(
                               context,
                             ).textTheme.bodyMedium?.copyWith(
@@ -1559,7 +1705,7 @@ class _MessageComposer extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'Вложения • ${_formatBytes(totalAttachmentBytes)} / 15 МБ',
+                          '${strings.isRu ? 'Вложения' : 'Attachments'} • ${_formatBytes(context, totalAttachmentBytes)} / 15 MB',
                           style: Theme.of(
                             context,
                           ).textTheme.bodySmall?.copyWith(
@@ -1647,10 +1793,16 @@ class _MessageComposer extends StatelessWidget {
                               decoration: InputDecoration(
                                 hintText:
                                     editingMessage != null
-                                        ? 'Измените сообщение...'
+                                        ? (strings.isRu
+                                            ? 'Измените сообщение...'
+                                            : 'Edit the message...')
                                         : replyingTo != null
-                                        ? 'Напишите ответ...'
-                                        : 'Напишите сообщение...',
+                                        ? (strings.isRu
+                                            ? 'Напишите ответ...'
+                                            : 'Write a reply...')
+                                        : (strings.isRu
+                                            ? 'Напишите сообщение...'
+                                            : 'Write a message...'),
                                 contentPadding: const EdgeInsets.symmetric(
                                   horizontal: 18,
                                   vertical: 14,
@@ -1731,14 +1883,15 @@ class _MessageComposer extends StatelessWidget {
     );
   }
 
-  static String _formatBytes(int bytes) {
+  static String _formatBytes(BuildContext context, int bytes) {
+    final strings = AppStrings.of(context);
     if (bytes < 1024) {
-      return '$bytes Б';
+      return strings.isRu ? '$bytes Б' : '$bytes B';
     }
     if (bytes < 1024 * 1024) {
-      return '${(bytes / 1024).toStringAsFixed(1)} КБ';
+      return '${(bytes / 1024).toStringAsFixed(1)} KB';
     }
-    return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} МБ';
+    return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
   }
 }
 
@@ -1777,13 +1930,14 @@ class _MessageBubble extends StatelessWidget {
     );
   }
 
-  String? _readReceiptTooltip() {
+  String? _readReceiptTooltip(BuildContext context) {
     if (!message.isMine ||
         !message.isReadByPeer ||
         message.readByPeerAt == null) {
       return null;
     }
 
+    final strings = AppStrings.of(context);
     final localReadAt = message.readByPeerAt!.toLocal();
     final timeLabel = DateFormat('HH:mm').format(localReadAt);
     final now = DateTime.now();
@@ -1796,19 +1950,26 @@ class _MessageBubble extends StatelessWidget {
     final dayDifference = today.difference(readDay).inDays;
 
     if (dayDifference <= 0) {
-      return 'Прочитано в $timeLabel';
+      return strings.isRu
+          ? 'Прочитано в $timeLabel'
+          : 'Read at $timeLabel';
     }
 
     if (dayDifference == 1) {
-      return 'Прочитано вчера в $timeLabel';
+      return strings.isRu
+          ? 'Прочитано вчера в $timeLabel'
+          : 'Read yesterday at $timeLabel';
     }
 
     final dateLabel = DateFormat('dd.MM.yyyy').format(localReadAt);
-    return 'Прочитано $dateLabel в $timeLabel';
+    return strings.isRu
+        ? 'Прочитано $dateLabel в $timeLabel'
+        : 'Read on $dateLabel at $timeLabel';
   }
 
   @override
   Widget build(BuildContext context) {
+    final strings = AppStrings.of(context);
     final alignment =
         message.isMine ? Alignment.centerRight : Alignment.centerLeft;
     final backgroundColor =
@@ -1820,7 +1981,7 @@ class _MessageBubble extends StatelessWidget {
     final fileAttachments = message.attachments
         .where((attachment) => !attachment.isImage)
         .toList(growable: false);
-    final readTooltip = _readReceiptTooltip();
+    final readTooltip = _readReceiptTooltip(context);
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -1828,48 +1989,76 @@ class _MessageBubble extends StatelessWidget {
 
         return Align(
           alignment: alignment,
-          child: TweenAnimationBuilder<double>(
-            key: ValueKey('message-${message.id}'),
-            duration: const Duration(milliseconds: 240),
-            curve: Curves.easeOutCubic,
-            tween: Tween(begin: 0.96, end: 1),
-            builder: (context, value, child) {
-              return Opacity(
-                opacity: value.clamp(0.0, 1.0),
-                child: Transform.scale(scale: value, child: child),
-              );
-            },
-            child: Container(
-              margin: const EdgeInsets.only(bottom: 12),
-              constraints: BoxConstraints(maxWidth: maxBubbleWidth),
-              decoration: BoxDecoration(
-                color: backgroundColor,
-                borderRadius: _bubbleRadius,
-                boxShadow: [
-                  BoxShadow(
-                    color:
-                        message.isMine
-                            ? const Color(0xFF2F67FF).withValues(alpha: 0.16)
-                            : const Color(0xFF132443).withValues(alpha: 0.06),
-                    blurRadius: 22,
-                    offset: const Offset(0, 10),
+            child: TweenAnimationBuilder<double>(
+              key: ValueKey('message-${message.id}'),
+              duration: const Duration(milliseconds: 240),
+              curve: Curves.easeOutCubic,
+              tween: Tween(begin: 0.96, end: 1),
+              builder: (context, value, child) {
+                return Opacity(
+                  opacity: value.clamp(0.0, 1.0),
+                  child: Transform.scale(scale: value, child: child),
+                );
+              },
+              child: Dismissible(
+                key: ValueKey('reply-swipe-${message.id}'),
+                direction: DismissDirection.startToEnd,
+                dismissThresholds: const {
+                  DismissDirection.startToEnd: 0.18,
+                },
+                movementDuration: const Duration(milliseconds: 180),
+                resizeDuration: null,
+                confirmDismiss: (_) async {
+                  HapticFeedback.selectionClick();
+                  onReply();
+                  return false;
+                },
+                background: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Container(
+                    margin: const EdgeInsets.only(bottom: 12),
+                    padding: const EdgeInsets.symmetric(horizontal: 14),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFE7EEFF),
+                      borderRadius: BorderRadius.circular(18),
+                    ),
+                    child: const Icon(
+                      Icons.reply_rounded,
+                      color: Color(0xFF2F67FF),
+                    ),
                   ),
-                ],
-              ),
-              child: Material(
-                color: Colors.transparent,
-                borderRadius: _bubbleRadius,
-                child: InkWell(
-                  onLongPress: onReply,
-                  borderRadius: _bubbleRadius,
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(14, 12, 14, 10),
-                    child: Column(
-                      crossAxisAlignment:
-                          message.isMine
-                              ? CrossAxisAlignment.end
-                              : CrossAxisAlignment.start,
-                      children: [
+                ),
+                child: Container(
+                  margin: const EdgeInsets.only(bottom: 12),
+                  constraints: BoxConstraints(maxWidth: maxBubbleWidth),
+                  decoration: BoxDecoration(
+                    color: backgroundColor,
+                    borderRadius: _bubbleRadius,
+                    boxShadow: [
+                      BoxShadow(
+                        color:
+                            message.isMine
+                                ? const Color(0xFF2F67FF).withValues(alpha: 0.16)
+                                : const Color(0xFF132443).withValues(alpha: 0.06),
+                        blurRadius: 22,
+                        offset: const Offset(0, 10),
+                      ),
+                    ],
+                  ),
+                  child: Material(
+                    color: Colors.transparent,
+                    borderRadius: _bubbleRadius,
+                    child: InkWell(
+                      onLongPress: onReply,
+                      borderRadius: _bubbleRadius,
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(14, 12, 14, 10),
+                        child: Column(
+                          crossAxisAlignment:
+                              message.isMine
+                                  ? CrossAxisAlignment.end
+                                  : CrossAxisAlignment.start,
+                          children: [
                         if (message.replyToContent != null)
                           Container(
                             width: double.infinity,
@@ -1886,7 +2075,8 @@ class _MessageBubble extends StatelessWidget {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(
-                                  message.replyToSenderUsername ?? 'Сообщение',
+                                  message.replyToSenderUsername ??
+                                      (strings.isRu ? 'Сообщение' : 'Message'),
                                   style: Theme.of(
                                     context,
                                   ).textTheme.bodySmall?.copyWith(
@@ -1986,7 +2176,7 @@ class _MessageBubble extends StatelessWidget {
                             if (message.editedAt != null) ...[
                               const SizedBox(width: 8),
                               Text(
-                                'изменено',
+                                strings.isRu ? 'изменено' : 'edited',
                                 style: Theme.of(
                                   context,
                                 ).textTheme.bodySmall?.copyWith(
@@ -2050,24 +2240,30 @@ class _MessageBubble extends StatelessWidget {
                               },
                               itemBuilder:
                                   (context) => [
-                                    const PopupMenuItem(
+                                    PopupMenuItem(
                                       value: 'reply',
-                                      child: Text('Ответить'),
+                                      child: Text(
+                                        strings.isRu ? 'Ответить' : 'Reply',
+                                      ),
                                     ),
                                     if (onEdit != null)
-                                      const PopupMenuItem(
+                                      PopupMenuItem(
                                         value: 'edit',
-                                        child: Text('Редактировать'),
+                                        child: Text(
+                                          strings.isRu
+                                              ? 'Редактировать'
+                                              : 'Edit',
+                                        ),
                                       ),
                                     if (onDeleteForMe != null)
-                                      const PopupMenuItem(
+                                      PopupMenuItem(
                                         value: 'delete_me',
-                                        child: Text('Delete for me'),
+                                        child: Text(strings.deleteForMe),
                                       ),
                                     if (onDeleteForEveryone != null)
-                                      const PopupMenuItem(
+                                      PopupMenuItem(
                                         value: 'delete_all',
-                                        child: Text('Delete for everyone'),
+                                        child: Text(strings.deleteForEveryone),
                                       ),
                                   ],
                             ),
@@ -2080,6 +2276,7 @@ class _MessageBubble extends StatelessWidget {
               ),
             ),
           ),
+        ),
         );
       },
     );
@@ -2100,6 +2297,7 @@ class _FailedMessageBubble extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final strings = AppStrings.of(context);
     final imageAttachments = message.attachments
         .where((attachment) => attachment.isImage)
         .toList(growable: false);
@@ -2161,7 +2359,8 @@ class _FailedMessageBubble extends StatelessWidget {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              message.replyToSenderUsername ?? 'Сообщение',
+                              message.replyToSenderUsername ??
+                                  (strings.isRu ? 'Сообщение' : 'Message'),
                               style: Theme.of(
                                 context,
                               ).textTheme.bodySmall?.copyWith(
@@ -2272,14 +2471,14 @@ class _FailedMessageBubble extends StatelessWidget {
                             }
                           },
                           itemBuilder:
-                              (context) => const [
+                              (context) => [
                                 PopupMenuItem(
                                   value: 'retry',
-                                  child: Text('Повторить'),
+                                  child: Text(strings.retry),
                                 ),
                                 PopupMenuItem(
                                   value: 'delete',
-                                  child: Text('Удалить'),
+                                  child: Text(strings.delete),
                                 ),
                               ],
                         ),
@@ -2309,6 +2508,7 @@ class _LocalOutgoingMessageBubble extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final strings = AppStrings.of(context);
     final imageAttachments = message.attachments
         .where((attachment) => attachment.isImage)
         .toList(growable: false);
@@ -2370,7 +2570,7 @@ class _LocalOutgoingMessageBubble extends StatelessWidget {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              message.replyToSenderUsername ?? 'Message',
+                              message.replyToSenderUsername ?? strings.message,
                               style: Theme.of(
                                 context,
                               ).textTheme.bodySmall?.copyWith(
@@ -2471,9 +2671,15 @@ class _LocalOutgoingMessageBubble extends StatelessWidget {
                         Text(
                           switch (message.status) {
                             _LocalOutgoingMessageStatus.uploading =>
-                              'Uploading${message.uploadProgress != null ? ' ${(message.uploadProgress! * 100).round()}%' : '...'}',
-                            _LocalOutgoingMessageStatus.sending => 'Sending...',
-                            _LocalOutgoingMessageStatus.failed => 'Failed',
+                              message.uploadProgress != null
+                                  ? strings.uploadingWithProgress(
+                                    (message.uploadProgress! * 100).round(),
+                                  )
+                                  : strings.uploading,
+                            _LocalOutgoingMessageStatus.sending =>
+                              strings.sendingMessage,
+                            _LocalOutgoingMessageStatus.failed =>
+                              strings.failedStatus,
                           },
                           style: Theme.of(
                             context,
@@ -2500,11 +2706,9 @@ class _LocalOutgoingMessageBubble extends StatelessWidget {
                             ),
                           )
                         else
-                          Icon(
-                            message.isUploading
-                                ? Icons.schedule_rounded
-                                : Icons.done_rounded,
-                            size: 18,
+                          const Icon(
+                            Icons.schedule_rounded,
+                            size: 17,
                             color: Colors.white70,
                           ),
                         PopupMenuButton<String>(
@@ -2524,13 +2728,13 @@ class _LocalOutgoingMessageBubble extends StatelessWidget {
                           itemBuilder:
                               (context) => [
                                 if (message.isFailed)
-                                  const PopupMenuItem(
+                                  PopupMenuItem(
                                     value: 'retry',
-                                    child: Text('Retry'),
+                                    child: Text(strings.retry),
                                   ),
-                                const PopupMenuItem(
+                                PopupMenuItem(
                                   value: 'delete',
-                                  child: Text('Delete'),
+                                  child: Text(strings.delete),
                                 ),
                               ],
                         ),
@@ -2608,6 +2812,90 @@ class _PendingAttachmentChip extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _ConversationLoadingTimeline extends StatelessWidget {
+  const _ConversationLoadingTimeline();
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView(
+      physics: const BouncingScrollPhysics(
+        parent: AlwaysScrollableScrollPhysics(),
+      ),
+      padding: const EdgeInsets.fromLTRB(16, 20, 16, 24),
+      children: const [
+        _LoadingMessagePlaceholder(
+          alignment: Alignment.centerRight,
+          widthFactor: 0.54,
+          height: 72,
+        ),
+        _LoadingMessagePlaceholder(
+          alignment: Alignment.centerLeft,
+          widthFactor: 0.42,
+          height: 52,
+        ),
+        _LoadingMessagePlaceholder(
+          alignment: Alignment.centerRight,
+          widthFactor: 0.68,
+          height: 60,
+        ),
+        _LoadingMessagePlaceholder(
+          alignment: Alignment.centerLeft,
+          widthFactor: 0.58,
+          height: 94,
+        ),
+        _LoadingMessagePlaceholder(
+          alignment: Alignment.centerRight,
+          widthFactor: 0.46,
+          height: 54,
+        ),
+      ],
+    );
+  }
+}
+
+class _LoadingMessagePlaceholder extends StatelessWidget {
+  final Alignment alignment;
+  final double widthFactor;
+  final double height;
+
+  const _LoadingMessagePlaceholder({
+    required this.alignment,
+    required this.widthFactor,
+    required this.height,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final isMine = alignment == Alignment.centerRight;
+
+    return Align(
+      alignment: alignment,
+      child: FractionallySizedBox(
+        widthFactor: widthFactor,
+        child: Container(
+          height: height,
+          margin: const EdgeInsets.only(bottom: 12),
+          decoration: BoxDecoration(
+            color:
+                isMine
+                    ? const Color(0xFF2F67FF).withValues(alpha: 0.18)
+                    : Colors.white.withValues(alpha: 0.82),
+            borderRadius: BorderRadius.only(
+              topLeft: const Radius.circular(22),
+              topRight: const Radius.circular(22),
+              bottomLeft: Radius.circular(isMine ? 22 : 10),
+              bottomRight: Radius.circular(isMine ? 10 : 22),
+            ),
+            border: Border.all(
+              color: const Color(0xFFDDE5F4).withValues(alpha: 0.8),
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -2729,7 +3017,7 @@ class _FileAttachmentTile extends StatelessWidget {
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      _formatBytes(attachment.sizeBytes),
+                      _formatBytes(context, attachment.sizeBytes),
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
                         color: secondaryColor,
                         fontWeight: FontWeight.w500,
@@ -2745,14 +3033,15 @@ class _FileAttachmentTile extends StatelessWidget {
     );
   }
 
-  static String _formatBytes(int bytes) {
+  static String _formatBytes(BuildContext context, int bytes) {
+    final strings = AppStrings.of(context);
     if (bytes < 1024) {
-      return '$bytes Б';
+      return strings.isRu ? '$bytes Б' : '$bytes B';
     }
     if (bytes < 1024 * 1024) {
-      return '${(bytes / 1024).toStringAsFixed(1)} КБ';
+      return '${(bytes / 1024).toStringAsFixed(1)} KB';
     }
-    return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} МБ';
+    return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
   }
 }
 
@@ -2842,7 +3131,10 @@ class _PendingFileAttachmentTile extends StatelessWidget {
                   ),
                   const SizedBox(height: 2),
                   Text(
-                    _FileAttachmentTile._formatBytes(attachment.sizeBytes),
+                    _FileAttachmentTile._formatBytes(
+                      context,
+                      attachment.sizeBytes,
+                    ),
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
                       color: Colors.white70,
                       fontWeight: FontWeight.w500,

@@ -630,9 +630,7 @@ class AppleBrandIcon extends StatelessWidget {
 }
 
 void showSocialAuthPlaceholder(BuildContext context, String provider) {
-  ScaffoldMessenger.of(context).showSnackBar(
-    SnackBar(content: Text('$provider sign-in is not connected yet.')),
-  );
+  // Intentionally silent: informational snackbars are disabled.
 }
 
 String formatAuthErrorMessage(Object error, {required String fallback}) {

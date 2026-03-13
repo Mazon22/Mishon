@@ -1,7 +1,7 @@
-import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:flutter/material.dart';
 
-/// Экран для просмотра изображения на весь экран с возможностью масштабирования
+/// Экран для просмотра изображения на весь экран с возможностью масштабирования.
 class FullscreenImageScreen extends StatelessWidget {
   final String imageUrl;
 
@@ -25,12 +25,7 @@ class FullscreenImageScreen extends StatelessWidget {
         actions: [
           IconButton(
             icon: const Icon(Icons.download),
-            onPressed: () {
-              // TODO: Реализовать скачивание изображения
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Скачивание изображений пока недоступно')),
-              );
-            },
+            onPressed: () {},
           ),
         ],
       ),

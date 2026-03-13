@@ -158,4 +158,44 @@ class SecureStorage {
       rethrow;
     }
   }
+
+  Future<void> writeAppLanguage(String languageCode) async {
+    try {
+      await _storage.write(key: 'app_language', value: languageCode);
+    } catch (e, st) {
+      _logger.e('Failed to write app language', error: e, stackTrace: st);
+      rethrow;
+    }
+  }
+
+  Future<String?> readAppLanguage() async {
+    try {
+      return await _storage.read(key: 'app_language');
+    } catch (e, st) {
+      _logger.e('Failed to read app language', error: e, stackTrace: st);
+      return null;
+    }
+  }
+
+  Future<void> writeBooleanSetting(String key, bool value) async {
+    try {
+      await _storage.write(key: key, value: value ? 'true' : 'false');
+    } catch (e, st) {
+      _logger.e('Failed to write boolean setting', error: e, stackTrace: st);
+      rethrow;
+    }
+  }
+
+  Future<bool?> readBooleanSetting(String key) async {
+    try {
+      final value = await _storage.read(key: key);
+      if (value == null) {
+        return null;
+      }
+      return value.toLowerCase() == 'true';
+    } catch (e, st) {
+      _logger.e('Failed to read boolean setting', error: e, stackTrace: st);
+      return null;
+    }
+  }
 }

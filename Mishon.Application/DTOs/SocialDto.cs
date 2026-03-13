@@ -55,6 +55,9 @@ public record ConversationDto(
     bool HasBlockedViewer,
     string? LastMessage,
     DateTime? LastMessageAt,
+    bool LastMessageIsMine,
+    bool LastMessageIsDeliveredToPeer,
+    bool LastMessageIsReadByPeer,
     int UnreadCount
 );
 
@@ -65,7 +68,9 @@ public record DirectConversationDto(
     string? AvatarUrl,
     double AvatarScale,
     double AvatarOffsetX,
-    double AvatarOffsetY
+    double AvatarOffsetY,
+    DateTime LastSeenAt,
+    bool IsOnline
 );
 
 public record MessageDto(

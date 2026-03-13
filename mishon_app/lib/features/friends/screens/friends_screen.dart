@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import 'package:mishon_app/core/localization/app_strings.dart';
 import 'package:mishon_app/core/models/social_models.dart';
 import 'package:mishon_app/core/network/exceptions.dart';
 import 'package:mishon_app/core/repositories/social_repository.dart';
@@ -13,7 +14,9 @@ import 'package:mishon_app/core/widgets/states.dart';
 import 'package:mishon_app/features/chats/screens/chat_screen.dart';
 
 class FriendsScreen extends ConsumerStatefulWidget {
-  const FriendsScreen({super.key});
+  final bool embeddedInNavigationShell;
+
+  const FriendsScreen({super.key, this.embeddedInNavigationShell = false});
 
   @override
   ConsumerState<FriendsScreen> createState() => _FriendsScreenState();
@@ -80,34 +83,45 @@ class _FriendsScreenState extends ConsumerState<FriendsScreen>
       });
     } catch (_) {
       if (!mounted) return;
+      final strings = AppStrings.of(context);
       setState(() {
-        _errorMessage = 'Не удалось загрузить друзей';
+        _errorMessage =
+            strings.isRu
+                ? 'Не удалось загрузить друзей'
+                : 'Could not load friends';
         _isLoading = false;
       });
     }
   }
 
   Future<void> _acceptRequest(FriendRequestModel request) async {
+    final strings = AppStrings.of(context);
     await _runAction(
       request.userId,
       () => ref.read(socialRepositoryProvider).acceptFriendRequest(request.id),
-      '${request.username} добавлен в друзья',
+      strings.isRu
+          ? '${request.username} добавлен в друзья'
+          : '${request.username} added to friends',
     );
   }
 
   Future<void> _deleteRequest(FriendRequestModel request) async {
+    final strings = AppStrings.of(context);
     await _runAction(
       request.userId,
       () => ref.read(socialRepositoryProvider).deleteFriendRequest(request.id),
-      'Заявка удалена',
+      strings.isRu ? 'Заявка удалена' : 'Request removed',
     );
   }
 
   Future<void> _removeFriend(FriendUser user) async {
+    final strings = AppStrings.of(context);
     await _runAction(
       user.id,
       () => ref.read(socialRepositoryProvider).removeFriend(user.id),
-      '${user.username} удален из друзей',
+      strings.isRu
+          ? '${user.username} удален из друзей'
+          : '${user.username} removed from friends',
     );
   }
 
@@ -126,6 +140,8 @@ class _FriendsScreenState extends ConsumerState<FriendsScreen>
           peerAvatarScale: conversation.avatarScale,
           peerAvatarOffsetX: conversation.avatarOffsetX,
           peerAvatarOffsetY: conversation.avatarOffsetY,
+          initialIsOnline: conversation.isOnline,
+          initialLastSeenAt: conversation.lastSeenAt,
         ),
       );
     } on ApiException catch (e) {
@@ -133,7 +149,11 @@ class _FriendsScreenState extends ConsumerState<FriendsScreen>
     } on OfflineException catch (e) {
       _showSnackBar(e.message, isError: true);
     } catch (_) {
-      _showSnackBar('Не удалось открыть диалог', isError: true);
+      final strings = AppStrings.of(context);
+      _showSnackBar(
+        strings.isRu ? 'Не удалось открыть диалог' : 'Could not open chat',
+        isError: true,
+      );
     } finally {
       if (mounted) {
         setState(() => _busyIds.remove(user.id));
@@ -142,6 +162,7 @@ class _FriendsScreenState extends ConsumerState<FriendsScreen>
   }
 
   Future<void> _runAction(int id, Future<void> Function() action, String successMessage) async {
+    final strings = AppStrings.of(context);
     setState(() => _busyIds.add(id));
     try {
       await action();
@@ -152,7 +173,12 @@ class _FriendsScreenState extends ConsumerState<FriendsScreen>
     } on OfflineException catch (e) {
       _showSnackBar(e.message, isError: true);
     } catch (_) {
-      _showSnackBar('Операция не выполнена', isError: true);
+      _showSnackBar(
+        strings.isRu
+            ? 'Операция не выполнена'
+            : 'Could not complete the action',
+        isError: true,
+      );
     } finally {
       if (mounted) {
         setState(() => _busyIds.remove(id));
@@ -161,7 +187,7 @@ class _FriendsScreenState extends ConsumerState<FriendsScreen>
   }
 
   void _showSnackBar(String message, {bool isError = false}) {
-    if (!mounted) return;
+    if (!mounted || !isError) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(message),
@@ -172,9 +198,11 @@ class _FriendsScreenState extends ConsumerState<FriendsScreen>
 
   @override
   Widget build(BuildContext context) {
+    final strings = AppStrings.of(context);
     return AppShell(
       currentSection: AppSection.friends,
-      title: 'Друзья',
+      title: strings.friends,
+      showSectionNavigation: !widget.embeddedInNavigationShell,
       actions: [
         IconButton(
           onPressed: _isLoading ? null : () => _loadData(),
@@ -193,9 +221,18 @@ class _FriendsScreenState extends ConsumerState<FriendsScreen>
               ),
               child: Row(
                 children: [
-                  _MetricTile(label: 'Друзья', value: _friends.length),
-                  _MetricTile(label: 'Входящие', value: _incoming.length),
-                  _MetricTile(label: 'Исходящие', value: _outgoing.length),
+                  _MetricTile(
+                    label: strings.isRu ? 'Друзья' : 'Friends',
+                    value: _friends.length,
+                  ),
+                  _MetricTile(
+                    label: strings.isRu ? 'Входящие' : 'Incoming',
+                    value: _incoming.length,
+                  ),
+                  _MetricTile(
+                    label: strings.isRu ? 'Исходящие' : 'Outgoing',
+                    value: _outgoing.length,
+                  ),
                 ],
               ),
             ),
@@ -208,10 +245,10 @@ class _FriendsScreenState extends ConsumerState<FriendsScreen>
                   children: [
                     TabBar(
                       controller: _tabController,
-                      tabs: const [
-                        Tab(text: 'Друзья'),
-                        Tab(text: 'Входящие'),
-                        Tab(text: 'Исходящие'),
+                      tabs: [
+                        Tab(text: strings.isRu ? 'Друзья' : 'Friends'),
+                        Tab(text: strings.isRu ? 'Входящие' : 'Incoming'),
+                        Tab(text: strings.isRu ? 'Исходящие' : 'Outgoing'),
                       ],
                     ),
                     const Divider(height: 1),
@@ -243,11 +280,15 @@ class _FriendsScreenState extends ConsumerState<FriendsScreen>
   }
 
   Widget _buildFriendsTab(BuildContext context) {
+    final strings = AppStrings.of(context);
     if (_friends.isEmpty) {
-      return const EmptyState(
+      return EmptyState(
         icon: Icons.favorite_border,
-        title: 'Друзей пока нет',
-        subtitle: 'Отправьте заявки на вкладке "Люди".',
+        title: strings.isRu ? 'Друзей пока нет' : 'No friends yet',
+        subtitle:
+            strings.isRu
+                ? 'Отправьте заявки на вкладке "Люди".'
+                : 'Send requests from the People tab.',
       );
     }
 
@@ -265,9 +306,9 @@ class _FriendsScreenState extends ConsumerState<FriendsScreen>
           isBusy: _busyIds.contains(user.id),
           onTap: () => context.go('/profile/${user.id}'),
           onPrimaryAction: () => _openChat(user),
-          onPrimaryLabel: 'Сообщение',
+          onPrimaryLabel: strings.message,
           onSecondaryAction: () => _removeFriend(user),
-          onSecondaryLabel: 'Удалить',
+          onSecondaryLabel: strings.delete,
         );
       },
       separatorBuilder: (_, __) => const SizedBox(height: 12),
@@ -275,10 +316,11 @@ class _FriendsScreenState extends ConsumerState<FriendsScreen>
   }
 
   Widget _buildIncomingTab(BuildContext context) {
+    final strings = AppStrings.of(context);
     if (_incoming.isEmpty) {
-      return const EmptyState(
+      return EmptyState(
         icon: Icons.inbox_outlined,
-        title: 'Нет входящих заявок',
+        title: strings.isRu ? 'Нет входящих заявок' : 'No incoming requests',
       );
     }
 
@@ -293,13 +335,16 @@ class _FriendsScreenState extends ConsumerState<FriendsScreen>
           avatarScale: request.avatarScale,
           avatarOffsetX: request.avatarOffsetX,
           avatarOffsetY: request.avatarOffsetY,
-          caption: 'Хочет добавить вас в друзья',
+          caption:
+              strings.isRu
+                  ? 'Хочет добавить вас в друзья'
+                  : 'Wants to add you as a friend',
           isBusy: _busyIds.contains(request.userId),
           onTap: () => context.go('/profile/${request.userId}'),
           onPrimaryAction: () => _acceptRequest(request),
-          onPrimaryLabel: 'Принять',
+          onPrimaryLabel: strings.isRu ? 'Принять' : 'Accept',
           onSecondaryAction: () => _deleteRequest(request),
-          onSecondaryLabel: 'Отклонить',
+          onSecondaryLabel: strings.isRu ? 'Отклонить' : 'Decline',
         );
       },
       separatorBuilder: (_, __) => const SizedBox(height: 12),
@@ -307,10 +352,11 @@ class _FriendsScreenState extends ConsumerState<FriendsScreen>
   }
 
   Widget _buildOutgoingTab(BuildContext context) {
+    final strings = AppStrings.of(context);
     if (_outgoing.isEmpty) {
-      return const EmptyState(
+      return EmptyState(
         icon: Icons.outbox_outlined,
-        title: 'Нет исходящих заявок',
+        title: strings.isRu ? 'Нет исходящих заявок' : 'No outgoing requests',
       );
     }
 
@@ -325,11 +371,12 @@ class _FriendsScreenState extends ConsumerState<FriendsScreen>
           avatarScale: request.avatarScale,
           avatarOffsetX: request.avatarOffsetX,
           avatarOffsetY: request.avatarOffsetY,
-          caption: 'Ожидает подтверждения',
+          caption:
+              strings.isRu ? 'Ожидает подтверждения' : 'Waiting for approval',
           isBusy: _busyIds.contains(request.userId),
           onTap: () => context.go('/profile/${request.userId}'),
           onPrimaryAction: () => _deleteRequest(request),
-          onPrimaryLabel: 'Отменить',
+          onPrimaryLabel: strings.cancel,
         );
       },
       separatorBuilder: (_, __) => const SizedBox(height: 12),

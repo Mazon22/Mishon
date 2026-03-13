@@ -24,6 +24,21 @@ public interface IPostService
     Task<Result> DeleteAsync(int userId, int postId, CancellationToken cancellationToken = default);
 }
 
+public interface IFeedService
+{
+    Task<Result<PagedResult<PostDto>>> GetForYouFeedAsync(
+        int userId,
+        int page,
+        int pageSize,
+        CancellationToken cancellationToken = default);
+    Task<Result<PagedResult<PostDto>>> GetFollowingFeedAsync(
+        int userId,
+        int page,
+        int pageSize,
+        CancellationToken cancellationToken = default);
+    Task WarmForYouFeedAsync(int userId, CancellationToken cancellationToken = default);
+}
+
 public interface IFollowService
 {
     Task<Result<ToggleFollowResponseDto>> ToggleFollowAsync(int followerId, int followingId);
@@ -47,6 +62,10 @@ public interface IUserDiscoveryService
         int currentUserId,
         string? query,
         int limit = 24,
+        CancellationToken cancellationToken = default);
+    Task<Result<UsernameAvailabilityDto>> CheckUsernameAvailabilityAsync(
+        int currentUserId,
+        string username,
         CancellationToken cancellationToken = default);
 }
 

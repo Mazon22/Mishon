@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using System.Text.RegularExpressions;
 using Mishon.Application.DTOs;
 using Mishon.Application.Interfaces;
 using Mishon.Infrastructure.Data;
@@ -7,6 +8,10 @@ namespace Mishon.Infrastructure.Services;
 
 public class UserDiscoveryService : IUserDiscoveryService
 {
+    private static readonly Regex UsernameRegex = new(
+        "^[a-z0-9._]{5,50}$",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant);
+
     private readonly MishonDbContext _context;
 
     public UserDiscoveryService(MishonDbContext context)
@@ -88,6 +93,51 @@ public class UserDiscoveryService : IUserDiscoveryService
         catch (Exception ex)
         {
             return Result<IEnumerable<DiscoverUserDto>>.Failure($"Ошибка получения пользователей: {ex.Message}", ResultError.InternalError);
+        }
+    }
+
+    public async Task<Result<UsernameAvailabilityDto>> CheckUsernameAvailabilityAsync(
+        int currentUserId,
+        string username,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var normalizedUsername = username.Trim().ToLowerInvariant();
+            if (!UsernameRegex.IsMatch(normalizedUsername))
+            {
+                return Result<UsernameAvailabilityDto>.Success(new UsernameAvailabilityDto(false));
+            }
+
+            var currentUsername = await _context.Users
+                .AsNoTracking()
+                .Where(u => u.Id == currentUserId)
+                .Select(u => u.Username)
+                .FirstOrDefaultAsync(cancellationToken);
+
+            if (currentUsername == null)
+            {
+                return Result<UsernameAvailabilityDto>.Failure("User not found", ResultError.NotFound);
+            }
+
+            if (string.Equals(currentUsername, normalizedUsername, StringComparison.OrdinalIgnoreCase))
+            {
+                return Result<UsernameAvailabilityDto>.Success(new UsernameAvailabilityDto(true));
+            }
+
+            var isTaken = await _context.Users
+                .AsNoTracking()
+                .AnyAsync(
+                    u => u.Id != currentUserId && EF.Functions.ILike(u.Username, normalizedUsername),
+                    cancellationToken);
+
+            return Result<UsernameAvailabilityDto>.Success(new UsernameAvailabilityDto(!isTaken));
+        }
+        catch (Exception ex)
+        {
+            return Result<UsernameAvailabilityDto>.Failure(
+                $"Username availability error: {ex.Message}",
+                ResultError.InternalError);
         }
     }
 }

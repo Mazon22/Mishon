@@ -5,10 +5,20 @@ import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 part 'feed_provider.g.dart';
 
+enum FeedTabType { forYou, following }
+
+extension FeedTabTypeX on FeedTabType {
+  FeedTabType get other =>
+      this == FeedTabType.forYou ? FeedTabType.following : FeedTabType.forYou;
+}
+
 @riverpod
 class FeedNotifier extends _$FeedNotifier {
+  late FeedTabType _feedType;
+
   @override
-  AsyncValue<List<Post>> build() {
+  AsyncValue<List<Post>> build(FeedTabType feedType) {
+    _feedType = feedType;
     Future<void>.microtask(_loadFeed);
     return const AsyncValue.loading();
   }
@@ -21,14 +31,17 @@ class FeedNotifier extends _$FeedNotifier {
 
     try {
       final repository = ref.read(postRepositoryProvider);
-      final pagedResponse = await repository.getFeed(page: 1, pageSize: 20);
+      final pagedResponse =
+          _feedType == FeedTabType.forYou
+              ? await repository.getFeed(page: 1, pageSize: 20)
+              : await repository.getFollowingFeed(page: 1, pageSize: 20);
       state = AsyncValue.data(pagedResponse.items);
     } on ApiException catch (e, st) {
       state = _withPreviousOnError(e.apiError.message, st);
     } on OfflineException catch (e, st) {
       state = _withPreviousOnError(e.message, st);
     } catch (_, st) {
-      state = _withPreviousOnError('Failed to load feed.', st);
+      state = _withPreviousOnError('feed_load_failed', st);
     }
   }
 
@@ -61,7 +74,16 @@ class FeedNotifier extends _$FeedNotifier {
 
     try {
       final repository = ref.read(postRepositoryProvider);
-      await repository.toggleLike(postId);
+      final serverPost = await repository.toggleLike(postId);
+      final latestPosts = state.value;
+      if (latestPosts != null) {
+        final normalizedPosts =
+            latestPosts
+                .map((post) => post.id == postId ? serverPost : post)
+                .toList();
+        state = AsyncValue.data(normalizedPosts);
+      }
+      ref.invalidate(feedNotifierProvider(_feedType.other));
     } catch (_) {
       state = AsyncValue.data(posts);
       rethrow;
@@ -90,7 +112,27 @@ class FeedNotifier extends _$FeedNotifier {
 
     try {
       final repository = ref.read(postRepositoryProvider);
-      await repository.toggleFollow(userId);
+      final response = await repository.toggleFollow(userId);
+
+      if (_feedType == FeedTabType.following && !response.isFollowing) {
+        await _loadFeed();
+      } else {
+        final latestPosts = state.value;
+        if (latestPosts != null) {
+          state = AsyncValue.data(
+            latestPosts
+                .map(
+                  (post) =>
+                      post.userId == userId
+                          ? post.copyWith(isFollowingAuthor: response.isFollowing)
+                          : post,
+                )
+                .toList(),
+          );
+        }
+      }
+
+      ref.invalidate(feedNotifierProvider(_feedType.other));
     } catch (_) {
       state = AsyncValue.data(posts);
       rethrow;

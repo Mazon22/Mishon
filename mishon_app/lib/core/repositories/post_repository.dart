@@ -46,6 +46,36 @@ class PostRepository {
     }
   }
 
+  Future<PagedResponse<Post>> getFollowingFeed({
+    int page = 1,
+    int pageSize = 20,
+  }) async {
+    try {
+      final response = await _apiService.getFollowingFeed(
+        page: page,
+        pageSize: pageSize,
+      );
+      return PagedResponse(
+        items: response.items,
+        page: response.page,
+        pageSize: response.pageSize,
+        totalCount: response.totalCount,
+        totalPages: response.totalPages,
+        hasPrevious: response.hasPrevious,
+        hasNext: response.hasNext,
+      );
+    } on ApiException catch (e) {
+      _logger.e('Get following feed failed: ${e.apiError.message}');
+      rethrow;
+    } on OfflineException {
+      _logger.w('No connection getting following feed');
+      rethrow;
+    } catch (e, st) {
+      _logger.e('Unexpected get following feed error', error: e, stackTrace: st);
+      rethrow;
+    }
+  }
+
   Future<List<Post>> getUserPosts(int userId, {int page = 1, int pageSize = 20}) async {
     try {
       return await _apiService.getUserPosts(userId, page: page, pageSize: pageSize);

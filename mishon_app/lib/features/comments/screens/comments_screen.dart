@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
+import 'package:mishon_app/core/localization/app_strings.dart';
 import 'package:mishon_app/core/models/post_model.dart';
 import 'package:mishon_app/core/network/exceptions.dart';
 import 'package:mishon_app/core/repositories/post_repository.dart';
@@ -60,6 +61,7 @@ class _CommentsScreenState extends ConsumerState<CommentsScreen> {
   }
 
   Future<void> _submit() async {
+    final strings = AppStrings.of(context);
     final content = _commentController.text.trim();
     if (content.isEmpty || _isSubmitting) {
       return;
@@ -93,7 +95,12 @@ class _CommentsScreenState extends ConsumerState<CommentsScreen> {
     } on OfflineException catch (e) {
       _showSnackBar(e.message, isError: true);
     } catch (_) {
-      _showSnackBar('Не удалось сохранить комментарий', isError: true);
+      _showSnackBar(
+        strings.isRu
+            ? 'Не удалось сохранить комментарий'
+            : 'Could not save the comment',
+        isError: true,
+      );
     } finally {
       if (mounted) {
         setState(() => _isSubmitting = false);
@@ -102,19 +109,26 @@ class _CommentsScreenState extends ConsumerState<CommentsScreen> {
   }
 
   Future<void> _deleteComment(Comment comment) async {
+    final strings = AppStrings.of(context);
     final confirmed = await showDialog<bool>(
           context: context,
           builder: (context) => AlertDialog(
-            title: const Text('Удалить комментарий?'),
-            content: const Text('Это действие нельзя отменить.'),
+            title: Text(
+              strings.isRu ? 'Удалить комментарий?' : 'Delete comment?',
+            ),
+            content: Text(
+              strings.isRu
+                  ? 'Это действие нельзя отменить.'
+                  : 'This action cannot be undone.',
+            ),
             actions: [
               TextButton(
                 onPressed: () => Navigator.of(context).pop(false),
-                child: const Text('Отмена'),
+                child: Text(strings.cancel),
               ),
               FilledButton(
                 onPressed: () => Navigator.of(context).pop(true),
-                child: const Text('Удалить'),
+                child: Text(strings.delete),
               ),
             ],
           ),
@@ -137,7 +151,12 @@ class _CommentsScreenState extends ConsumerState<CommentsScreen> {
     } on OfflineException catch (e) {
       _showSnackBar(e.message, isError: true);
     } catch (_) {
-      _showSnackBar('Не удалось удалить комментарий', isError: true);
+      _showSnackBar(
+        strings.isRu
+            ? 'Не удалось удалить комментарий'
+            : 'Could not delete the comment',
+        isError: true,
+      );
     }
   }
 
@@ -168,7 +187,7 @@ class _CommentsScreenState extends ConsumerState<CommentsScreen> {
   }
 
   void _showSnackBar(String message, {bool isError = false}) {
-    if (!mounted) {
+    if (!mounted || !isError) {
       return;
     }
 
@@ -182,6 +201,7 @@ class _CommentsScreenState extends ConsumerState<CommentsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final strings = AppStrings.of(context);
     final commentsAsync = ref.watch(commentsProvider(widget.args.postId));
     final currentUserId = ref.watch(userIdProvider).value;
     final currentProfile = ref.watch(profileNotifierProvider).valueOrNull;
@@ -192,7 +212,7 @@ class _CommentsScreenState extends ConsumerState<CommentsScreen> {
           icon: const Icon(Icons.arrow_back_rounded),
           onPressed: () => context.pop(),
         ),
-        title: const Text('Комментарии'),
+        title: Text(strings.isRu ? 'Комментарии' : 'Comments'),
       ),
       body: DecoratedBox(
         decoration: const BoxDecoration(
@@ -211,10 +231,16 @@ class _CommentsScreenState extends ConsumerState<CommentsScreen> {
               child: commentsAsync.when(
                 data: (comments) {
                   if (comments.isEmpty) {
-                    return const EmptyState(
+                    return EmptyState(
                       icon: Icons.chat_bubble_outline_rounded,
-                      title: 'Пока нет комментариев',
-                      subtitle: 'Будьте первым, кто начнёт обсуждение.',
+                      title:
+                          strings.isRu
+                              ? 'Пока нет комментариев'
+                              : 'No comments yet',
+                      subtitle:
+                          strings.isRu
+                              ? 'Будьте первым, кто начнёт обсуждение.'
+                              : 'Be the first to start the discussion.',
                     );
                   }
 
@@ -258,7 +284,9 @@ class _CommentsScreenState extends ConsumerState<CommentsScreen> {
               focusNode: _focusNode,
               isSubmitting: _isSubmitting,
               onSubmit: _submit,
-              currentUsername: currentProfile?.username ?? 'You',
+              currentUsername:
+                  currentProfile?.username ??
+                  (strings.isRu ? 'Вы' : 'You'),
               currentAvatarUrl: currentProfile?.avatarUrl,
               currentAvatarScale: currentProfile?.avatarScale ?? 1,
               currentAvatarOffsetX: currentProfile?.avatarOffsetX ?? 0,
@@ -284,13 +312,18 @@ class _CommentsScreenState extends ConsumerState<CommentsScreen> {
   }
 
   String _getErrorMessage(Object error) {
+    final strings = AppStrings.of(context);
     if (error is OfflineException) {
-      return 'Нет подключения к интернету';
+      return strings.isRu
+          ? 'Нет подключения к интернету'
+          : 'No internet connection';
     }
     if (error is String) {
       return error;
     }
-    return 'Ошибка загрузки комментариев';
+    return strings.isRu
+        ? 'Ошибка загрузки комментариев'
+        : 'Could not load comments';
   }
 }
 
@@ -325,6 +358,7 @@ class _ComposerPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final strings = AppStrings.of(context);
     final hasContext = replyingTo != null || editingComment != null;
 
     return Container(
@@ -363,8 +397,12 @@ class _ComposerPanel extends StatelessWidget {
                     Expanded(
                       child: Text(
                         editingComment != null
-                            ? 'Редактирование комментария'
-                            : 'Ответ для ${replyingTo!.username}',
+                            ? (strings.isRu
+                                ? 'Редактирование комментария'
+                                : 'Editing comment')
+                            : (strings.isRu
+                                ? 'Ответ для ${replyingTo!.username}'
+                                : 'Reply to ${replyingTo!.username}'),
                         style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                               fontWeight: FontWeight.w700,
                             ),
@@ -400,10 +438,16 @@ class _ComposerPanel extends StatelessWidget {
                     textCapitalization: TextCapitalization.sentences,
                     decoration: InputDecoration(
                       hintText: editingComment != null
-                          ? 'Измените комментарий...'
+                          ? (strings.isRu
+                              ? 'Измените комментарий...'
+                              : 'Edit the comment...')
                           : replyingTo != null
-                              ? 'Напишите ответ...'
-                              : 'Напишите комментарий...',
+                              ? (strings.isRu
+                                  ? 'Напишите ответ...'
+                                  : 'Write a reply...')
+                              : (strings.isRu
+                                  ? 'Напишите комментарий...'
+                                  : 'Write a comment...'),
                       filled: true,
                       fillColor: const Color(0xFFF8F9FD),
                       border: OutlineInputBorder(
@@ -464,6 +508,7 @@ class _CommentTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final strings = AppStrings.of(context);
     final dateFormat = DateFormat('dd MMM, HH:mm');
     final horizontalInset = 12.0 * depth;
 
@@ -528,14 +573,16 @@ class _CommentTile extends StatelessWidget {
                                 onDelete();
                               }
                             },
-                            itemBuilder: (context) => const [
+                            itemBuilder: (context) => [
                               PopupMenuItem(
                                 value: 'edit',
-                                child: Text('Редактировать'),
+                                child: Text(
+                                  strings.isRu ? 'Редактировать' : 'Edit',
+                                ),
                               ),
                               PopupMenuItem(
                                 value: 'delete',
-                                child: Text('Удалить'),
+                                child: Text(strings.delete),
                               ),
                             ],
                           ),
@@ -550,7 +597,9 @@ class _CommentTile extends StatelessWidget {
                           borderRadius: BorderRadius.circular(999),
                         ),
                         child: Text(
-                          'Ответ для ${comment.replyToUsername}',
+                          strings.isRu
+                              ? 'Ответ для ${comment.replyToUsername}'
+                              : 'Reply to ${comment.replyToUsername}',
                           style: Theme.of(context).textTheme.bodySmall?.copyWith(
                                 color: const Color(0xFF3557A8),
                                 fontWeight: FontWeight.w700,
@@ -569,13 +618,13 @@ class _CommentTile extends StatelessWidget {
                         TextButton.icon(
                           onPressed: onReply,
                           icon: const Icon(Icons.reply_rounded, size: 18),
-                          label: const Text('Ответить'),
+                          label: Text(strings.isRu ? 'Ответить' : 'Reply'),
                         ),
                         if (comment.editedAt != null)
                           Padding(
                             padding: const EdgeInsets.only(left: 4),
                             child: Text(
-                              'изменено',
+                              strings.isRu ? 'изменено' : 'edited',
                               style: Theme.of(context).textTheme.bodySmall?.copyWith(
                                     fontStyle: FontStyle.italic,
                                   ),

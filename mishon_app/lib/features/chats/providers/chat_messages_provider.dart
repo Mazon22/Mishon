@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:mishon_app/core/models/social_models.dart';
 import 'package:mishon_app/core/network/exceptions.dart';
 import 'package:mishon_app/core/repositories/social_repository.dart';
+import 'package:mishon_app/features/chats/providers/chat_conversation_preview_provider.dart';
 import 'package:mishon_app/features/chats/providers/chat_realtime_service.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
@@ -85,21 +86,44 @@ class ChatMessagesNotifier extends _$ChatMessagesNotifier {
   StreamSubscription<ChatRealtimeEvent>? _realtimeSubscription;
   Timer? _typingExpiryTimer;
   bool _liveUpdatesEnabled = true;
+  bool _isDisposed = false;
 
   @override
   ChatMessagesState build(int conversationId) {
+    ref.keepAlive();
     ref.onDispose(() {
+      _isDisposed = true;
       _realtimeSubscription?.cancel();
       _typingExpiryTimer?.cancel();
     });
 
     _subscribeToRealtime();
     Future<void>.microtask(() async {
-      await ref.read(chatRealtimeServiceProvider).ensureConnected();
+      unawaited(ref.read(chatRealtimeServiceProvider).ensureConnected());
       await _loadInitialPage();
     });
 
     return const ChatMessagesState.initial();
+  }
+
+  bool get _canUpdateState => !_isDisposed;
+
+  void _setStateSafely(ChatMessagesState nextState) {
+    if (!_canUpdateState) {
+      return;
+    }
+
+    state = nextState;
+  }
+
+  void _updateStateSafely(
+    ChatMessagesState Function(ChatMessagesState currentState) transform,
+  ) {
+    if (!_canUpdateState) {
+      return;
+    }
+
+    state = transform(state);
   }
 
   Future<void> ensureLoaded() async {
@@ -125,27 +149,32 @@ class ChatMessagesNotifier extends _$ChatMessagesNotifier {
     }
 
     if (!silent) {
-      state = state.copyWith(isRefreshing: true, errorMessage: null);
+      _updateStateSafely(
+        (currentState) =>
+            currentState.copyWith(isRefreshing: true, errorMessage: null),
+      );
     }
 
     try {
       final page = await ref
           .read(socialRepositoryProvider)
           .getMessages(conversationId, limit: _pageSize);
-      final mergedMessages = _mergeLatestPage(page.items, state.messages);
-      state = state.copyWith(
-        messages: mergedMessages,
-        isInitialLoading: false,
-        isRefreshing: false,
-        hasLoadedOnce: true,
-        hasMoreOlder:
-            state.messages.length > page.items.length
-                ? state.hasMoreOlder
-                : page.hasMore,
-        nextBeforeMessageId:
-            mergedMessages.isNotEmpty ? mergedMessages.last.id : null,
-        errorMessage: null,
-      );
+      _updateStateSafely((currentState) {
+        final mergedMessages = _mergeLatestPage(page.items, currentState.messages);
+        return currentState.copyWith(
+          messages: mergedMessages,
+          isInitialLoading: false,
+          isRefreshing: false,
+          hasLoadedOnce: true,
+          hasMoreOlder:
+              currentState.messages.length > page.items.length
+                  ? currentState.hasMoreOlder
+                  : page.hasMore,
+          nextBeforeMessageId:
+              mergedMessages.isNotEmpty ? mergedMessages.last.id : null,
+          errorMessage: null,
+        );
+      });
     } on ApiException catch (e) {
       _handleRefreshError(e.apiError.message, silent: silent);
     } on OfflineException catch (e) {
@@ -163,7 +192,10 @@ class ChatMessagesNotifier extends _$ChatMessagesNotifier {
       return;
     }
 
-    state = state.copyWith(isLoadingOlder: true, errorMessage: null);
+    _updateStateSafely(
+      (currentState) =>
+          currentState.copyWith(isLoadingOlder: true, errorMessage: null),
+    );
 
     try {
       final page = await ref
@@ -173,20 +205,24 @@ class ChatMessagesNotifier extends _$ChatMessagesNotifier {
             limit: _pageSize,
             beforeMessageId: state.nextBeforeMessageId ?? state.messages.last.id,
           );
-      final existingIds = state.messages.map((message) => message.id).toSet();
-      final olderMessages = page.items
-          .where((message) => !existingIds.contains(message.id))
-          .toList(growable: false);
-      final mergedMessages = [...state.messages, ...olderMessages];
-      state = state.copyWith(
-        messages: mergedMessages,
-        isLoadingOlder: false,
-        hasLoadedOnce: true,
-        hasMoreOlder: page.hasMore,
-        nextBeforeMessageId:
-            mergedMessages.isNotEmpty ? mergedMessages.last.id : null,
-        errorMessage: null,
-      );
+      _updateStateSafely((currentState) {
+        final existingIds = currentState.messages
+            .map((message) => message.id)
+            .toSet();
+        final olderMessages = page.items
+            .where((message) => !existingIds.contains(message.id))
+            .toList(growable: false);
+        final mergedMessages = [...currentState.messages, ...olderMessages];
+        return currentState.copyWith(
+          messages: mergedMessages,
+          isLoadingOlder: false,
+          hasLoadedOnce: true,
+          hasMoreOlder: page.hasMore,
+          nextBeforeMessageId:
+              mergedMessages.isNotEmpty ? mergedMessages.last.id : null,
+          errorMessage: null,
+        );
+      });
     } on ApiException catch (e) {
       _handleLoadOlderError(e.apiError.message);
     } on OfflineException catch (e) {
@@ -208,73 +244,93 @@ class ChatMessagesNotifier extends _$ChatMessagesNotifier {
   }
 
   void upsertMessage(ChatMessageModel message) {
-    final mergedMessages = _mergeLatestPage([message], state.messages);
-    state = state.copyWith(
-      messages: mergedMessages,
-      isInitialLoading: false,
-      isRefreshing: false,
-      hasLoadedOnce: true,
-      isPeerTyping: message.isMine ? state.isPeerTyping : false,
-      errorMessage: null,
-      nextBeforeMessageId:
-          mergedMessages.isNotEmpty ? mergedMessages.last.id : null,
-    );
+    ref
+        .read(chatConversationPreviewOverridesProvider.notifier)
+        .upsertFromMessage(message);
+    _updateStateSafely((currentState) {
+      final mergedMessages = _mergeLatestPage([message], currentState.messages);
+      return currentState.copyWith(
+        messages: mergedMessages,
+        isInitialLoading: false,
+        isRefreshing: false,
+        hasLoadedOnce: true,
+        isPeerTyping: message.isMine ? currentState.isPeerTyping : false,
+        errorMessage: null,
+        nextBeforeMessageId:
+            mergedMessages.isNotEmpty ? mergedMessages.last.id : null,
+      );
+    });
   }
 
   void removeMessage(int messageId) {
-    final filteredMessages = state.messages
-        .where((message) => message.id != messageId)
-        .toList(growable: false);
-    state = state.copyWith(
-      messages: filteredMessages,
-      nextBeforeMessageId:
-          filteredMessages.isNotEmpty ? filteredMessages.last.id : null,
-    );
+    _updateStateSafely((currentState) {
+      final filteredMessages = currentState.messages
+          .where((message) => message.id != messageId)
+          .toList(growable: false);
+      return currentState.copyWith(
+        messages: filteredMessages,
+        nextBeforeMessageId:
+            filteredMessages.isNotEmpty ? filteredMessages.last.id : null,
+      );
+    });
   }
 
   void clearHistory() {
-    state = state.copyWith(
-      messages: const [],
-      isInitialLoading: false,
-      isRefreshing: false,
-      isLoadingOlder: false,
-      hasLoadedOnce: true,
-      hasMoreOlder: false,
-      isPeerTyping: false,
-      nextBeforeMessageId: null,
-      errorMessage: null,
+    _updateStateSafely(
+      (currentState) => currentState.copyWith(
+        messages: const [],
+        isInitialLoading: false,
+        isRefreshing: false,
+        isLoadingOlder: false,
+        hasLoadedOnce: true,
+        hasMoreOlder: false,
+        isPeerTyping: false,
+        nextBeforeMessageId: null,
+        errorMessage: null,
+      ),
     );
   }
 
   void markMessageDelivered(int messageId, DateTime deliveredAt) {
-    final updatedMessages = state.messages
-        .map(
-          (message) => message.id == messageId
-              ? message.copyWith(
-                  isDeliveredToPeer: true,
-                  deliveredToPeerAt: deliveredAt,
-                )
-              : message,
-        )
-        .toList(growable: false);
-    state = state.copyWith(messages: updatedMessages);
+    ref
+        .read(chatConversationPreviewOverridesProvider.notifier)
+        .markDelivered(conversationId, messageId, deliveredAt);
+    _updateStateSafely((currentState) {
+      final updatedMessages = currentState.messages
+          .map(
+            (message) => message.id == messageId
+                ? message.copyWith(
+                    isDeliveredToPeer: true,
+                    deliveredToPeerAt: deliveredAt,
+                  )
+                : message,
+          )
+          .toList(growable: false);
+      return currentState.copyWith(messages: updatedMessages);
+    });
   }
 
   void markConversationRead(DateTime readAt) {
-    final updatedMessages = state.messages
-        .map(
-          (message) =>
-              message.isMine && !message.isReadByPeer && !message.createdAt.isAfter(readAt)
-              ? message.copyWith(
-                  isDeliveredToPeer: true,
-                  deliveredToPeerAt: readAt,
-                  isReadByPeer: true,
-                  readByPeerAt: readAt,
-                )
-              : message,
-        )
-        .toList(growable: false);
-    state = state.copyWith(messages: updatedMessages);
+    ref
+        .read(chatConversationPreviewOverridesProvider.notifier)
+        .markRead(conversationId, readAt);
+    _updateStateSafely((currentState) {
+      final updatedMessages = currentState.messages
+          .map(
+            (message) => message.isMine &&
+                    !message.isReadByPeer &&
+                    !message.createdAt.isAfter(readAt)
+                ? message.copyWith(
+                    isDeliveredToPeer: true,
+                    deliveredToPeerAt: readAt,
+                    isReadByPeer: true,
+                    readByPeerAt: readAt,
+                  )
+                : message,
+          )
+          .toList(growable: false);
+      return currentState.copyWith(messages: updatedMessages);
+    });
   }
 
   Future<void> _loadInitialPage() async {
@@ -286,16 +342,18 @@ class ChatMessagesNotifier extends _$ChatMessagesNotifier {
       final page = await ref
           .read(socialRepositoryProvider)
           .getMessages(conversationId, limit: _pageSize);
-      state = state.copyWith(
-        messages: page.items,
-        isInitialLoading: false,
-        isRefreshing: false,
-        isLoadingOlder: false,
-        hasMoreOlder: page.hasMore,
-        hasLoadedOnce: true,
-        nextBeforeMessageId:
-            page.items.isNotEmpty ? page.items.last.id : null,
-        errorMessage: null,
+      _setStateSafely(
+        state.copyWith(
+          messages: page.items,
+          isInitialLoading: false,
+          isRefreshing: false,
+          isLoadingOlder: false,
+          hasMoreOlder: page.hasMore,
+          hasLoadedOnce: true,
+          nextBeforeMessageId:
+              page.items.isNotEmpty ? page.items.last.id : null,
+          errorMessage: null,
+        ),
       );
     } on ApiException catch (e) {
       _handleInitialLoadError(e.apiError.message);
@@ -315,7 +373,7 @@ class ChatMessagesNotifier extends _$ChatMessagesNotifier {
   }
 
   void _handleRealtimeEvent(ChatRealtimeEvent event) {
-    if (event.conversationId != conversationId) {
+    if (!_canUpdateState || event.conversationId != conversationId) {
       return;
     }
 
@@ -352,8 +410,8 @@ class ChatMessagesNotifier extends _$ChatMessagesNotifier {
   void _clearPeerTyping() {
     _typingExpiryTimer?.cancel();
     _typingExpiryTimer = null;
-    if (state.isPeerTyping) {
-      state = state.copyWith(isPeerTyping: false);
+    if (_canUpdateState && state.isPeerTyping) {
+      _setStateSafely(state.copyWith(isPeerTyping: false));
     }
   }
 
@@ -375,34 +433,40 @@ class ChatMessagesNotifier extends _$ChatMessagesNotifier {
   }
 
   void _handleInitialLoadError(Object error) {
-    state = state.copyWith(
-      isInitialLoading: false,
-      isRefreshing: false,
-      isLoadingOlder: false,
-      hasLoadedOnce: false,
-      errorMessage: error.toString(),
-      nextBeforeMessageId: null,
+    _setStateSafely(
+      state.copyWith(
+        isInitialLoading: false,
+        isRefreshing: false,
+        isLoadingOlder: false,
+        hasLoadedOnce: false,
+        errorMessage: error.toString(),
+        nextBeforeMessageId: null,
+      ),
     );
   }
 
   void _handleRefreshError(Object error, {required bool silent}) {
     if (silent) {
-      state = state.copyWith(isRefreshing: false);
+      _setStateSafely(state.copyWith(isRefreshing: false));
       return;
     }
 
-    state = state.copyWith(
-      isInitialLoading: false,
-      isRefreshing: false,
-      errorMessage: error.toString(),
+    _setStateSafely(
+      state.copyWith(
+        isInitialLoading: false,
+        isRefreshing: false,
+        errorMessage: error.toString(),
+      ),
     );
   }
 
   void _handleLoadOlderError(Object error) {
-    state = state.copyWith(
-      isLoadingOlder: false,
-      errorMessage:
-          state.messages.isEmpty ? error.toString() : state.errorMessage,
+    _setStateSafely(
+      state.copyWith(
+        isLoadingOlder: false,
+        errorMessage:
+            state.messages.isEmpty ? error.toString() : state.errorMessage,
+      ),
     );
   }
 }

@@ -127,6 +127,9 @@ class ConversationModel {
   final bool hasBlockedViewer;
   final String? lastMessage;
   final DateTime? lastMessageAt;
+  final bool lastMessageIsMine;
+  final bool lastMessageIsDeliveredToPeer;
+  final bool lastMessageIsReadByPeer;
   final int unreadCount;
 
   const ConversationModel({
@@ -148,6 +151,9 @@ class ConversationModel {
     required this.hasBlockedViewer,
     required this.lastMessage,
     required this.lastMessageAt,
+    required this.lastMessageIsMine,
+    required this.lastMessageIsDeliveredToPeer,
+    required this.lastMessageIsReadByPeer,
     required this.unreadCount,
   });
 
@@ -161,6 +167,9 @@ class ConversationModel {
     bool? hasBlockedViewer,
     String? lastMessage,
     DateTime? lastMessageAt,
+    bool? lastMessageIsMine,
+    bool? lastMessageIsDeliveredToPeer,
+    bool? lastMessageIsReadByPeer,
     int? unreadCount,
   }) {
     return ConversationModel(
@@ -182,6 +191,11 @@ class ConversationModel {
       hasBlockedViewer: hasBlockedViewer ?? this.hasBlockedViewer,
       lastMessage: lastMessage ?? this.lastMessage,
       lastMessageAt: lastMessageAt ?? this.lastMessageAt,
+      lastMessageIsMine: lastMessageIsMine ?? this.lastMessageIsMine,
+      lastMessageIsDeliveredToPeer:
+          lastMessageIsDeliveredToPeer ?? this.lastMessageIsDeliveredToPeer,
+      lastMessageIsReadByPeer:
+          lastMessageIsReadByPeer ?? this.lastMessageIsReadByPeer,
       unreadCount: unreadCount ?? this.unreadCount,
     );
   }
@@ -209,6 +223,11 @@ class ConversationModel {
           json['lastMessageAt'] != null
               ? DateTime.parse(json['lastMessageAt'] as String)
               : null,
+      lastMessageIsMine: json['lastMessageIsMine'] as bool? ?? false,
+      lastMessageIsDeliveredToPeer:
+          json['lastMessageIsDeliveredToPeer'] as bool? ?? false,
+      lastMessageIsReadByPeer:
+          json['lastMessageIsReadByPeer'] as bool? ?? false,
       unreadCount: json['unreadCount'] as int? ?? 0,
     );
   }
@@ -222,6 +241,8 @@ class DirectConversationModel {
   final double avatarScale;
   final double avatarOffsetX;
   final double avatarOffsetY;
+  final DateTime lastSeenAt;
+  final bool isOnline;
 
   const DirectConversationModel({
     required this.id,
@@ -231,6 +252,8 @@ class DirectConversationModel {
     this.avatarScale = 1,
     this.avatarOffsetX = 0,
     this.avatarOffsetY = 0,
+    required this.lastSeenAt,
+    required this.isOnline,
   });
 
   factory DirectConversationModel.fromJson(Map<String, dynamic> json) {
@@ -242,6 +265,8 @@ class DirectConversationModel {
       avatarScale: (json['avatarScale'] as num?)?.toDouble() ?? 1,
       avatarOffsetX: (json['avatarOffsetX'] as num?)?.toDouble() ?? 0,
       avatarOffsetY: (json['avatarOffsetY'] as num?)?.toDouble() ?? 0,
+      lastSeenAt: DateTime.parse(json['lastSeenAt'] as String),
+      isOnline: json['isOnline'] as bool? ?? false,
     );
   }
 }

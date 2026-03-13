@@ -1,7 +1,7 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
 import 'package:mishon_app/core/constants/api_constants.dart';
+import 'package:mishon_app/core/localization/app_strings.dart';
 import 'package:mishon_app/core/models/post_model.dart';
 import 'package:mishon_app/core/widgets/fullscreen_image_screen.dart';
 import 'package:mishon_app/core/widgets/profile_media.dart';
@@ -32,9 +32,10 @@ class PostCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final strings = AppStrings.of(context);
     final mediaUrls = _extractImageUrls(post.imageUrl);
     final handle = _buildHandle(post.username);
-    final dateLabel = _formatRelativeDate(post.createdAt.toLocal());
+    final dateLabel = _formatRelativeDate(context, post.createdAt.toLocal());
     final resolvedAvatarUrl = _resolveOptionalMediaUrl(post.userAvatarUrl);
     final hasMenu =
         (isOwnPost && onDelete != null) || onFollow != null || onShare != null;
@@ -185,7 +186,7 @@ class PostCard extends StatelessWidget {
                   Expanded(
                     child: _PostActionButton(
                       icon: Icons.share_outlined,
-                      label: 'Share',
+                      label: strings.share,
                       color: const Color(0xFF526075),
                       onTap: onShare,
                     ),
@@ -217,18 +218,19 @@ class _PostMenuButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final strings = AppStrings.of(context);
     final items = <PopupMenuEntry<String>>[
       if (!isOwnPost && onFollow != null)
         PopupMenuItem<String>(
           value: 'follow',
-          child: Text(isFollowingAuthor ? 'Unfollow' : 'Follow'),
+          child: Text(isFollowingAuthor ? strings.unfollow : strings.follow),
         ),
       if (onShare != null)
-        const PopupMenuItem<String>(value: 'share', child: Text('Share')),
+        PopupMenuItem<String>(value: 'share', child: Text(strings.share)),
       if (isOwnPost && onDelete != null)
-        const PopupMenuItem<String>(
+        PopupMenuItem<String>(
           value: 'delete',
-          child: Text('Delete post'),
+          child: Text(strings.deletePost),
         ),
     ];
 
@@ -557,23 +559,24 @@ class _PostActionButtonState extends State<_PostActionButton>
   }
 }
 
-String _formatRelativeDate(DateTime date) {
+String _formatRelativeDate(BuildContext context, DateTime date) {
+  final strings = AppStrings.of(context);
   final now = DateTime.now();
   final difference = now.difference(date);
 
   if (difference.inMinutes < 1) {
-    return 'now';
+    return strings.nowShort;
   }
   if (difference.inHours < 1) {
-    return '${difference.inMinutes}m';
+    return strings.minutesShort(difference.inMinutes);
   }
   if (difference.inDays < 1) {
-    return '${difference.inHours}h';
+    return strings.hoursShort(difference.inHours);
   }
   if (difference.inDays < 7) {
-    return '${difference.inDays}d';
+    return strings.daysShort(difference.inDays);
   }
-  return DateFormat('MMM d').format(date);
+  return strings.formatMonthDay(date);
 }
 
 String _formatCount(int count) {
