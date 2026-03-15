@@ -35,10 +35,13 @@ public class FriendService : IFriendService
                 .Select(user => new FriendDto(
                     user.Id,
                     user.Username,
+                    user.AboutMe,
                     user.AvatarUrl,
                     user.AvatarScale,
                     user.AvatarOffsetX,
-                    user.AvatarOffsetY));
+                    user.AvatarOffsetY,
+                    user.LastSeenAt,
+                    user.LastSeenAt >= DateTime.UtcNow.AddMinutes(-5)));
 
             return Result<IEnumerable<FriendDto>>.Success(friends);
         }
@@ -64,10 +67,13 @@ public class FriendService : IFriendService
                     r.Id,
                     r.SenderId,
                     r.Sender.Username,
+                    r.Sender.AboutMe,
                     r.Sender.AvatarUrl,
                     r.Sender.AvatarScale,
                     r.Sender.AvatarOffsetX,
                     r.Sender.AvatarOffsetY,
+                    r.Sender.LastSeenAt,
+                    r.Sender.LastSeenAt >= DateTime.UtcNow.AddMinutes(-5),
                     true,
                     r.CreatedAt)));
         }
@@ -93,10 +99,13 @@ public class FriendService : IFriendService
                     r.Id,
                     r.ReceiverId,
                     r.Receiver.Username,
+                    r.Receiver.AboutMe,
                     r.Receiver.AvatarUrl,
                     r.Receiver.AvatarScale,
                     r.Receiver.AvatarOffsetX,
                     r.Receiver.AvatarOffsetY,
+                    r.Receiver.LastSeenAt,
+                    r.Receiver.LastSeenAt >= DateTime.UtcNow.AddMinutes(-5),
                     false,
                     r.CreatedAt)));
         }

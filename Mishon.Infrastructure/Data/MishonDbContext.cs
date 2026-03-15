@@ -157,6 +157,8 @@ public class MishonDbContext : DbContext
             entity.Property(e => e.Content).IsRequired().HasMaxLength(1000);
             entity.HasIndex(e => new { e.ConversationId, e.CreatedAt });
             entity.HasIndex(e => e.ReplyToMessageId);
+            entity.HasIndex(e => e.ForwardedFromMessageId);
+            entity.HasIndex(e => e.ForwardedFromUserId);
             entity.HasOne(e => e.Conversation)
                   .WithMany(c => c.Messages)
                   .HasForeignKey(e => e.ConversationId)
@@ -168,6 +170,14 @@ public class MishonDbContext : DbContext
             entity.HasOne(e => e.ReplyToMessage)
                   .WithMany(m => m.Replies)
                   .HasForeignKey(e => e.ReplyToMessageId)
+                  .OnDelete(DeleteBehavior.SetNull);
+            entity.HasOne(e => e.ForwardedFromMessage)
+                  .WithMany()
+                  .HasForeignKey(e => e.ForwardedFromMessageId)
+                  .OnDelete(DeleteBehavior.SetNull);
+            entity.HasOne(e => e.ForwardedFromUser)
+                  .WithMany()
+                  .HasForeignKey(e => e.ForwardedFromUserId)
                   .OnDelete(DeleteBehavior.SetNull);
         });
 

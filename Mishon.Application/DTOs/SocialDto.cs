@@ -5,10 +5,17 @@ namespace Mishon.Application.DTOs;
 public record DiscoverUserDto(
     int Id,
     string Username,
+    string? AboutMe,
     string? AvatarUrl,
     double AvatarScale,
     double AvatarOffsetX,
     double AvatarOffsetY,
+    DateTime LastSeenAt,
+    bool IsOnline,
+    int FollowersCount,
+    int PostsCount,
+    int MutualFriendsCount,
+    int EngagementScore,
     bool IsFollowing,
     bool IsFriend,
     int? IncomingFriendRequestId,
@@ -18,20 +25,26 @@ public record DiscoverUserDto(
 public record FriendDto(
     int Id,
     string Username,
+    string? AboutMe,
     string? AvatarUrl,
     double AvatarScale,
     double AvatarOffsetX,
-    double AvatarOffsetY
+    double AvatarOffsetY,
+    DateTime LastSeenAt,
+    bool IsOnline
 );
 
 public record FriendRequestDto(
     int Id,
     int UserId,
     string Username,
+    string? AboutMe,
     string? AvatarUrl,
     double AvatarScale,
     double AvatarOffsetX,
     double AvatarOffsetY,
+    DateTime LastSeenAt,
+    bool IsOnline,
     bool IsIncoming,
     DateTime CreatedAt
 );
@@ -89,6 +102,9 @@ public record MessageDto(
     int? ReplyToMessageId,
     string? ReplyToSenderUsername,
     string? ReplyToContent,
+    int? ForwardedFromMessageId,
+    int? ForwardedFromUserId,
+    string? ForwardedFromSenderUsername,
     IReadOnlyCollection<MessageAttachmentDto> Attachments
 );
 
@@ -155,6 +171,10 @@ public record CreateMessageDto(
     string? Content,
     int? ReplyToMessageId,
     IReadOnlyCollection<CreateMessageAttachmentDto>? Attachments
+);
+
+public record ForwardMessageDto(
+    int MessageId
 );
 
 public record UpdateMessageDto(

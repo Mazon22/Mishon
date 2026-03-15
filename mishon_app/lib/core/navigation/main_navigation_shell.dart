@@ -1,13 +1,24 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import 'package:mishon_app/core/localization/app_strings.dart';
 import 'package:mishon_app/core/models/social_models.dart';
+import 'package:mishon_app/core/providers/app_bootstrap_provider.dart';
+import 'package:mishon_app/core/providers/app_connection_status_provider.dart';
 import 'package:mishon_app/core/widgets/app_shell.dart';
-import 'package:mishon_app/features/auth/providers/auth_provider.dart';
 import 'package:mishon_app/features/notifications/providers/notification_summary_provider.dart';
 import 'package:mishon_app/features/profile/screens/profile_screen.dart';
+
+const _rootShellTransitionDuration = Duration(milliseconds: 180);
+const _rootShellTransitionCurve = Curves.easeInOut;
+const _rootShellWideBreakpoint = 1040.0;
+
+void _dismissPrimaryFocus() {
+  FocusManager.instance.primaryFocus?.unfocus();
+}
 
 class MainNavigationShell extends ConsumerStatefulWidget {
   final StatefulNavigationShell navigationShell;
@@ -15,16 +26,56 @@ class MainNavigationShell extends ConsumerStatefulWidget {
   const MainNavigationShell({super.key, required this.navigationShell});
 
   @override
-  ConsumerState<MainNavigationShell> createState() => _MainNavigationShellState();
+  ConsumerState<MainNavigationShell> createState() =>
+      _MainNavigationShellState();
 }
 
 class _MainNavigationShellState extends ConsumerState<MainNavigationShell> {
-  final _viewportController = _RootShellViewportController();
+  late final _navigationCoordinator = _RootShellNavigationCoordinator(
+    initialIndex: widget.navigationShell.currentIndex,
+  );
+  var _didRedirectToFeedOnEntry = false;
+  int? _pendingBranchIndex;
+
+  @override
+  void initState() {
+    super.initState();
+    _redirectToFeedOnEntry();
+  }
+
+  @override
+  void didUpdateWidget(covariant MainNavigationShell oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+
+      final externalIndex = widget.navigationShell.currentIndex;
+      final pendingBranchIndex = _pendingBranchIndex;
+      if (pendingBranchIndex != null && pendingBranchIndex != externalIndex) {
+        return;
+      }
+
+      if (pendingBranchIndex == externalIndex) {
+        _pendingBranchIndex = null;
+      }
+
+      _navigationCoordinator.syncToExternalIndex(externalIndex);
+    });
+  }
+
+  @override
+  void dispose() {
+    _navigationCoordinator.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
+    ref.watch(appConnectionStatusProvider);
     final strings = AppStrings.of(context);
-    final currentUserId = ref.watch(userIdProvider).value;
+    final currentUserId = ref.watch(currentUserIdProvider);
     final summary = ref
         .watch(notificationSummaryProvider)
         .maybeWhen(
@@ -74,14 +125,23 @@ class _MainNavigationShellState extends ConsumerState<MainNavigationShell> {
       ),
     ];
 
-    return _RootShellViewportScope(
-      controller: _viewportController,
+    void handleDestinationSelected(int index) {
+      final destination = destinations[index];
+      if (!destination.enabled) {
+        return;
+      }
+
+      _requestBranchSelection(index);
+    }
+
+    return _RootShellNavigationScope(
+      coordinator: _navigationCoordinator,
       child: Scaffold(
         extendBody: true,
         backgroundColor: Colors.transparent,
         body: LayoutBuilder(
           builder: (context, constraints) {
-            final isWide = constraints.maxWidth >= 1040;
+            final isWide = constraints.maxWidth >= _rootShellWideBreakpoint;
             if (!isWide) {
               return widget.navigationShell;
             }
@@ -92,8 +152,7 @@ class _MainNavigationShellState extends ConsumerState<MainNavigationShell> {
                   padding: const EdgeInsets.fromLTRB(20, 20, 12, 20),
                   child: _RootShellRail(
                     destinations: destinations,
-                    currentIndex: widget.navigationShell.currentIndex,
-                    onSelect: _goToBranch,
+                    onSelect: handleDestinationSelected,
                   ),
                 ),
                 Expanded(child: widget.navigationShell),
@@ -102,24 +161,32 @@ class _MainNavigationShellState extends ConsumerState<MainNavigationShell> {
           },
         ),
         bottomNavigationBar:
-            MediaQuery.sizeOf(context).width < 1040
+            MediaQuery.sizeOf(context).width < _rootShellWideBreakpoint
                 ? _RootShellBottomNavigation(
-                  controller: _viewportController,
                   destinations: destinations,
-                  currentIndex: widget.navigationShell.currentIndex,
-                  onSelect: _goToBranch,
+                  routeIndex: widget.navigationShell.currentIndex,
+                  onSelect: handleDestinationSelected,
                 )
                 : null,
       ),
     );
   }
 
-  void _goToBranch(int index) {
-    _viewportController.updatePage(index.toDouble());
-    widget.navigationShell.goBranch(
-      index,
-      initialLocation: index == widget.navigationShell.currentIndex,
-    );
+  void _redirectToFeedOnEntry() {
+    if (_didRedirectToFeedOnEntry) {
+      return;
+    }
+
+    _didRedirectToFeedOnEntry = true;
+  }
+
+  void _requestBranchSelection(int index) {
+    final isCurrentBranch = index == widget.navigationShell.currentIndex;
+    _pendingBranchIndex = isCurrentBranch ? null : index;
+
+    _dismissPrimaryFocus();
+    unawaited(_navigationCoordinator.animateToIndex(index));
+    widget.navigationShell.goBranch(index, initialLocation: isCurrentBranch);
   }
 }
 
@@ -133,7 +200,7 @@ class CurrentUserProfileBranchScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final userId = ref.watch(userIdProvider).value;
+    final userId = ref.watch(currentUserIdProvider);
     if (userId == null) {
       return const Scaffold(
         backgroundColor: Colors.transparent,
@@ -166,45 +233,156 @@ class _RootShellDestination {
   });
 }
 
-class _RootShellViewportController extends ChangeNotifier {
-  double _page = 0;
-  bool _hasActivePage = false;
-
-  double get page => _page;
-
-  void attachInitialPage(int pageIndex) {
-    if (_hasActivePage) {
-      return;
-    }
-
-    _hasActivePage = true;
-    _page = pageIndex.toDouble();
+class _RootShellNavigationCoordinator {
+  _RootShellNavigationCoordinator({required int initialIndex})
+    : pageController = PageController(initialPage: initialIndex),
+      currentIndex = ValueNotifier<int>(initialIndex),
+      _targetIndex = initialIndex {
+    pageController.addListener(_handlePageTick);
   }
 
-  void updatePage(double pageValue) {
-    _hasActivePage = true;
-    if ((_page - pageValue).abs() < 0.0001) {
+  final PageController pageController;
+  final ValueNotifier<int> currentIndex;
+
+  int _targetIndex;
+  int _activityVersion = 0;
+  int? _programmaticTargetIndex;
+  bool _disposed = false;
+
+  double get page {
+    if (pageController.hasClients) {
+      return pageController.page ?? currentIndex.value.toDouble();
+    }
+
+    return currentIndex.value.toDouble();
+  }
+
+  bool shouldSyncBranchForPageChange(int index) {
+    final programmaticTargetIndex = _programmaticTargetIndex;
+    if (programmaticTargetIndex == null) {
+      return true;
+    }
+
+    if (index != programmaticTargetIndex) {
+      return false;
+    }
+
+    _programmaticTargetIndex = null;
+    return true;
+  }
+
+  void syncToExternalIndex(int index) {
+    if (_disposed) {
       return;
     }
 
-    _page = pageValue;
-    notifyListeners();
+    final currentPage = page;
+    if ((currentPage - index).abs() < 0.0001) {
+      _targetIndex = index;
+      if (currentIndex.value != index) {
+        currentIndex.value = index;
+      }
+      return;
+    }
+
+    if (_targetIndex == index && pageController.hasClients) {
+      return;
+    }
+
+    unawaited(animateToIndex(index));
+  }
+
+  Future<void> animateToIndex(int index) async {
+    if (_disposed) {
+      return;
+    }
+
+    _targetIndex = index;
+    _programmaticTargetIndex = index;
+    if (currentIndex.value != index) {
+      currentIndex.value = index;
+    }
+
+    final currentPage = page;
+    if ((currentPage - index).abs() < 0.0001) {
+      _programmaticTargetIndex = null;
+      return;
+    }
+
+    final activityVersion = ++_activityVersion;
+    if (!pageController.hasClients) {
+      if (_programmaticTargetIndex == index) {
+        _programmaticTargetIndex = null;
+      }
+      return;
+    }
+
+    try {
+      await pageController.animateToPage(
+        index,
+        duration: _rootShellTransitionDuration,
+        curve: _rootShellTransitionCurve,
+      );
+    } catch (_) {
+      if (!_disposed &&
+          activityVersion == _activityVersion &&
+          _programmaticTargetIndex == index) {
+        _programmaticTargetIndex = null;
+      }
+      return;
+    }
+
+    if (_disposed || activityVersion != _activityVersion) {
+      return;
+    }
+
+    if (_programmaticTargetIndex == index) {
+      _programmaticTargetIndex = null;
+    }
+
+    if (currentIndex.value != index) {
+      currentIndex.value = index;
+    }
+  }
+
+  void _handlePageTick() {
+    if (_programmaticTargetIndex != null) {
+      return;
+    }
+
+    final nextIndex = page.round();
+    if (nextIndex != currentIndex.value) {
+      currentIndex.value = nextIndex;
+    }
+  }
+
+  void dispose() {
+    _disposed = true;
+    pageController
+      ..removeListener(_handlePageTick)
+      ..dispose();
+    currentIndex.dispose();
   }
 }
 
-class _RootShellViewportScope
-    extends InheritedNotifier<_RootShellViewportController> {
-  const _RootShellViewportScope({
-    required _RootShellViewportController controller,
-    required super.child,
-  }) : super(notifier: controller);
+class _RootShellNavigationScope extends InheritedWidget {
+  final _RootShellNavigationCoordinator coordinator;
 
-  static _RootShellViewportController of(BuildContext context) {
-    final scope = context.dependOnInheritedWidgetOfExactType<
-      _RootShellViewportScope
-    >();
-    assert(scope != null, 'Root shell viewport scope is missing.');
-    return scope!.notifier!;
+  const _RootShellNavigationScope({
+    required this.coordinator,
+    required super.child,
+  });
+
+  static _RootShellNavigationCoordinator of(BuildContext context) {
+    final scope =
+        context.dependOnInheritedWidgetOfExactType<_RootShellNavigationScope>();
+    assert(scope != null, 'Root shell navigation scope is missing.');
+    return scope!.coordinator;
+  }
+
+  @override
+  bool updateShouldNotify(covariant _RootShellNavigationScope oldWidget) {
+    return oldWidget.coordinator != coordinator;
   }
 }
 
@@ -213,118 +391,55 @@ Widget mainShellContainerBuilder(
   StatefulNavigationShell navigationShell,
   List<Widget> children,
 ) {
-  return _RootShellBranchViewport(
+  return _RootShellPageViewport(
     navigationShell: navigationShell,
     children: children,
   );
 }
 
-class _RootShellBranchViewport extends StatefulWidget {
+class _RootShellPageViewport extends StatelessWidget {
   final StatefulNavigationShell navigationShell;
   final List<Widget> children;
 
-  const _RootShellBranchViewport({
+  const _RootShellPageViewport({
     required this.navigationShell,
     required this.children,
   });
 
   @override
-  State<_RootShellBranchViewport> createState() => _RootShellBranchViewportState();
-}
-
-class _RootShellBranchViewportState extends State<_RootShellBranchViewport> {
-  late final PageController _pageController = PageController(
-    initialPage: widget.navigationShell.currentIndex,
-  );
-
-  _RootShellViewportController? _viewportController;
-  int? _programmaticTargetIndex;
-  late int _lastSyncedIndex = widget.navigationShell.currentIndex;
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    _viewportController = _RootShellViewportScope.of(context);
-    _viewportController?.attachInitialPage(widget.navigationShell.currentIndex);
-  }
-
-  @override
-  void initState() {
-    super.initState();
-    _pageController.addListener(_handlePageOffsetChanged);
-  }
-
-  @override
-  void didUpdateWidget(covariant _RootShellBranchViewport oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    final nextIndex = widget.navigationShell.currentIndex;
-    if (_lastSyncedIndex != nextIndex) {
-      _lastSyncedIndex = nextIndex;
-      _animateToBranch(nextIndex);
-    }
-  }
-
-  @override
-  void dispose() {
-    _pageController
-      ..removeListener(_handlePageOffsetChanged)
-      ..dispose();
-    super.dispose();
-  }
-
-  void _handlePageOffsetChanged() {
-    _viewportController?.updatePage(
-      _pageController.hasClients
-          ? (_pageController.page ?? widget.navigationShell.currentIndex.toDouble())
-          : widget.navigationShell.currentIndex.toDouble(),
-    );
-  }
-
-  void _animateToBranch(int index) {
-    if (!_pageController.hasClients) {
-      return;
-    }
-
-    _programmaticTargetIndex = index;
-    _pageController.jumpToPage(index);
-    _viewportController?.updatePage(index.toDouble());
-    _programmaticTargetIndex = null;
-  }
-
-  @override
   Widget build(BuildContext context) {
+    final coordinator = _RootShellNavigationScope.of(context);
     return PageView(
-      controller: _pageController,
-      physics: const BouncingScrollPhysics(parent: PageScrollPhysics()),
+      controller: coordinator.pageController,
+      allowImplicitScrolling: true,
+      physics: const BouncingScrollPhysics(),
       onPageChanged: (index) {
-        if (_programmaticTargetIndex != null) {
-          if (index == _programmaticTargetIndex) {
-            _lastSyncedIndex = index;
-            _programmaticTargetIndex = null;
-          }
+        if (!coordinator.shouldSyncBranchForPageChange(index)) {
           return;
         }
 
-        if (index != widget.navigationShell.currentIndex) {
-          _lastSyncedIndex = index;
-          widget.navigationShell.goBranch(index);
+        if (index == navigationShell.currentIndex) {
+          return;
         }
+
+        _dismissPrimaryFocus();
+        navigationShell.goBranch(index);
       },
-      children: widget.children,
+      children: children
+          .map((child) => _RootShellKeptAlivePage(child: child))
+          .toList(growable: false),
     );
   }
 }
 
 class _RootShellBottomNavigation extends StatefulWidget {
-  final _RootShellViewportController controller;
   final List<_RootShellDestination> destinations;
-  final int currentIndex;
+  final int routeIndex;
   final ValueChanged<int> onSelect;
 
   const _RootShellBottomNavigation({
-    required this.controller,
     required this.destinations,
-    required this.currentIndex,
+    required this.routeIndex,
     required this.onSelect,
   });
 
@@ -333,251 +448,456 @@ class _RootShellBottomNavigation extends StatefulWidget {
       _RootShellBottomNavigationState();
 }
 
-class _RootShellBottomNavigationState extends State<_RootShellBottomNavigation> {
+class _RootShellBottomNavigationState extends State<_RootShellBottomNavigation>
+    with SingleTickerProviderStateMixin {
   static const double _indicatorInset = 4;
   static const double _indicatorHeight = 68;
 
+  final GlobalKey _barKey = GlobalKey();
+
+  late final AnimationController _indicatorSettleController;
+
   bool _isDraggingIndicator = false;
-  double? _dragPage;
-  double? _settlingPage;
-  int? _lockedVisualIndex;
-  int? _hoveredIndex;
-  double _itemWidth = 0;
-  double _indicatorTouchOffset = 0;
+  Animation<double>? _indicatorSettleAnimation;
+  double? _dragPreviewPage;
+  double? _lastDragLocalX;
+  double _dragTouchOffset = 0;
+  double _tabWidth = 0;
 
-  double _resolvedProgress(double rawProgress) {
-    if (_isDraggingIndicator && _dragPage != null) {
-      return _dragPage!;
-    }
+  @override
+  void initState() {
+    super.initState();
+    _indicatorSettleController =
+        AnimationController(vsync: this, duration: _rootShellTransitionDuration)
+          ..addListener(() {
+            if (!mounted || _indicatorSettleAnimation == null) {
+              return;
+            }
 
-    if (_settlingPage != null) {
-      return _settlingPage!;
-    }
+            setState(() {});
+          })
+          ..addStatusListener((status) {
+            if (!mounted || status != AnimationStatus.completed) {
+              return;
+            }
 
-    if ((rawProgress - widget.currentIndex).abs() > 1.0) {
-      return widget.currentIndex.toDouble();
-    }
-
-    return rawProgress;
+            setState(() {
+              _indicatorSettleAnimation = null;
+            });
+          });
   }
 
   @override
-  void didUpdateWidget(covariant _RootShellBottomNavigation oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (_settlingPage != null &&
-        widget.currentIndex == _settlingPage!.round()) {
-      setState(() {
-        _settlingPage = null;
-      });
-    }
-    if (_lockedVisualIndex != null && widget.currentIndex == _lockedVisualIndex) {
-      setState(() {
-        _lockedVisualIndex = null;
-      });
-    }
+  void dispose() {
+    _indicatorSettleController.dispose();
+    super.dispose();
   }
 
-  int _resolveIndexFromIndicatorLeft(double indicatorLeft) {
-    if (_itemWidth <= 0) {
-      return widget.currentIndex;
+  double _pageForIndicator(_RootShellNavigationCoordinator coordinator) {
+    final previewPage = _dragPreviewPage;
+    if (_isDraggingIndicator && previewPage != null) {
+      return previewPage
+          .clamp(0.0, (widget.destinations.length - 1).toDouble())
+          .toDouble();
     }
 
-    final indicatorCenter =
-        indicatorLeft + (_itemWidth - (_indicatorInset * 2)) / 2;
-    final rawIndex = (indicatorCenter / _itemWidth).floor();
-    return rawIndex.clamp(0, widget.destinations.length - 1);
+    final settleAnimation = _indicatorSettleAnimation;
+    if (settleAnimation != null) {
+      return settleAnimation.value
+          .clamp(0.0, (widget.destinations.length - 1).toDouble())
+          .toDouble();
+    }
+
+    return coordinator.page
+        .clamp(0.0, (widget.destinations.length - 1).toDouble())
+        .toDouble();
   }
 
-  void _handleDragStart(DragStartDetails details, double progress) {
-    if (_itemWidth <= 0) {
+  double _indicatorLeft(double page) {
+    return _indicatorInset + (page * _tabWidth);
+  }
+
+  double _globalToBarLocalX(Offset globalPosition) {
+    final renderObject = _barKey.currentContext?.findRenderObject();
+    if (renderObject is! RenderBox) {
+      return 0;
+    }
+
+    return renderObject.globalToLocal(globalPosition).dx;
+  }
+
+  double _clampDragLocalX(double localX) {
+    if (_tabWidth <= 0) {
+      return 0;
+    }
+
+    final maxX = (_tabWidth * widget.destinations.length) - 0.001;
+    return localX.clamp(0.0, maxX).toDouble();
+  }
+
+  double _previewPageForLocalX(double localX) {
+    if (_tabWidth <= 0) {
+      return widget.routeIndex.toDouble();
+    }
+
+    final clampedX = _clampDragLocalX(localX - _dragTouchOffset);
+    final centeredPage = (clampedX / _tabWidth) - 0.5;
+    return centeredPage
+        .clamp(0.0, (widget.destinations.length - 1).toDouble())
+        .toDouble();
+  }
+
+  void _updateDragPreviewFromLocalX(double localX) {
+    if (!_isDraggingIndicator || _tabWidth <= 0) {
       return;
     }
 
-    final indicatorWidth = _itemWidth - (_indicatorInset * 2);
-    final indicatorLeft = progress * _itemWidth + _indicatorInset;
-    final localX = details.localPosition.dx;
-    final localY = details.localPosition.dy;
-    final withinIndicatorX =
-        localX >= indicatorLeft && localX <= indicatorLeft + indicatorWidth;
-    final withinIndicatorY =
-        localY >= _indicatorInset &&
-        localY <= _indicatorInset + _indicatorHeight;
-    if (!withinIndicatorX || !withinIndicatorY) {
+    final nextPage = _previewPageForLocalX(localX);
+
+    final previousPage = _dragPreviewPage;
+    final previousLocalX = _lastDragLocalX;
+    final pageChanged =
+        previousPage == null || (previousPage - nextPage).abs() > 0.0001;
+    final pointerChanged =
+        previousLocalX == null || (previousLocalX - localX).abs() > 0.5;
+    if (!pageChanged && !pointerChanged) {
       return;
     }
 
     setState(() {
-      _isDraggingIndicator = true;
-      _indicatorTouchOffset = localX - indicatorLeft;
-      _dragPage = progress;
-      _hoveredIndex = _resolveIndexFromIndicatorLeft(indicatorLeft);
+      _dragPreviewPage = nextPage;
+      _lastDragLocalX = localX;
     });
   }
 
-  void _handleDragUpdate(DragUpdateDetails details) {
-    if (!_isDraggingIndicator || _itemWidth <= 0) {
-      return;
-    }
-
-    final indicatorWidth = _itemWidth - (_indicatorInset * 2);
-    final maxLeft =
-        _itemWidth * widget.destinations.length -
-        indicatorWidth -
-        _indicatorInset;
-    final nextLeft = (details.localPosition.dx - _indicatorTouchOffset).clamp(
-      _indicatorInset,
-      maxLeft,
-    );
-    final nextPage = (nextLeft - _indicatorInset) / _itemWidth;
-    final nextIndex = _resolveIndexFromIndicatorLeft(nextLeft);
-
-    setState(() {
-      _dragPage = nextPage;
-      _hoveredIndex = nextIndex;
-    });
-  }
-
-  void _handleDragEnd(DragEndDetails details) {
+  void _handleBarPointerMove(PointerMoveEvent event) {
     if (!_isDraggingIndicator) {
       return;
     }
 
-    final targetIndex =
-        (_hoveredIndex ?? _dragPage?.round() ?? widget.currentIndex).clamp(
-          0,
-          widget.destinations.length - 1,
-        );
-    final targetPage = targetIndex.toDouble();
+    _updateDragPreviewFromLocalX(
+      _clampDragLocalX(_globalToBarLocalX(event.position)),
+    );
+  }
+
+  void _handleBarPointerUp(PointerUpEvent event) {
+    if (!_isDraggingIndicator) {
+      return;
+    }
+
+    _updateDragPreviewFromLocalX(
+      _clampDragLocalX(_globalToBarLocalX(event.position)),
+    );
+  }
+
+  void _handleBarPointerCancel(PointerCancelEvent event) {
+    if (!_isDraggingIndicator) {
+      return;
+    }
+
+    setState(() {
+      _lastDragLocalX = null;
+    });
+  }
+
+  void _clearIndicatorSettle() {
+    if (!_indicatorSettleController.isAnimating &&
+        _indicatorSettleAnimation == null) {
+      return;
+    }
+
+    _indicatorSettleController.stop();
+    _indicatorSettleAnimation = null;
+  }
+
+  void _startIndicatorSettle({
+    required double fromPage,
+    required double toPage,
+  }) {
+    _indicatorSettleController
+      ..stop()
+      ..reset();
+
+    _indicatorSettleAnimation = Tween<double>(
+      begin: fromPage,
+      end: toPage,
+    ).animate(
+      CurvedAnimation(
+        parent: _indicatorSettleController,
+        curve: _rootShellTransitionCurve,
+      ),
+    );
+
+    setState(() {});
+    unawaited(
+      _indicatorSettleController.forward().orCancel.catchError((_) {
+        if (!mounted) {
+          return;
+        }
+
+        setState(() {
+          _indicatorSettleAnimation = null;
+        });
+      }),
+    );
+  }
+
+  void _activateIndex(_RootShellNavigationCoordinator coordinator, int index) {
+    final destination = widget.destinations[index];
+    if (!destination.enabled) {
+      return;
+    }
+
+    _clearIndicatorSettle();
+    widget.onSelect(index);
+  }
+
+  void _handleIndicatorDragStart(
+    DragStartDetails details,
+    _RootShellNavigationCoordinator coordinator,
+  ) {
+    if (_tabWidth <= 0) {
+      return;
+    }
+
+    _dismissPrimaryFocus();
+    final visualPage = _pageForIndicator(coordinator);
+    _clearIndicatorSettle();
+    final localX = _clampDragLocalX(_globalToBarLocalX(details.globalPosition));
+
+    setState(() {
+      _isDraggingIndicator = true;
+      _dragPreviewPage = visualPage;
+      _lastDragLocalX = localX;
+      _dragTouchOffset = 0;
+    });
+  }
+
+  void _handleIndicatorDragUpdate(
+    DragUpdateDetails details,
+    _RootShellNavigationCoordinator coordinator,
+  ) {
+    if (!_isDraggingIndicator || _tabWidth <= 0) {
+      return;
+    }
+
+    _updateDragPreviewFromLocalX(
+      _clampDragLocalX(_globalToBarLocalX(details.globalPosition)),
+    );
+  }
+
+  void _handleIndicatorDragEnd(
+    DragEndDetails details,
+    _RootShellNavigationCoordinator coordinator,
+  ) {
+    if (!_isDraggingIndicator) {
+      return;
+    }
+
+    final releasedPage =
+        (_dragPreviewPage ?? _pageForIndicator(coordinator))
+            .clamp(0.0, (widget.destinations.length - 1).toDouble())
+            .toDouble();
+    final targetIndex = releasedPage.round().clamp(
+      0,
+      widget.destinations.length - 1,
+    );
 
     setState(() {
       _isDraggingIndicator = false;
-      _dragPage = null;
-      _settlingPage = targetPage;
-      _lockedVisualIndex = targetIndex;
-      _hoveredIndex = null;
-      _indicatorTouchOffset = 0;
+      _dragPreviewPage = null;
+      _lastDragLocalX = null;
+      _dragTouchOffset = 0;
     });
 
-    if (widget.destinations[targetIndex].enabled) {
-      widget.controller.updatePage(targetPage);
+    if (!widget.destinations[targetIndex].enabled) {
+      _startIndicatorSettle(
+        fromPage: releasedPage,
+        toPage: widget.routeIndex.toDouble(),
+      );
+      return;
+    }
+
+    _startIndicatorSettle(
+      fromPage: releasedPage,
+      toPage: targetIndex.toDouble(),
+    );
+    if (targetIndex != widget.routeIndex) {
       widget.onSelect(targetIndex);
-    } else {
-      setState(() {
-        _settlingPage = widget.currentIndex.toDouble();
-        _lockedVisualIndex = widget.currentIndex;
-      });
-      widget.controller.updatePage(widget.currentIndex.toDouble());
+      return;
+    }
+
+    unawaited(coordinator.animateToIndex(targetIndex));
+  }
+
+  void _handleIndicatorDragCancel() {
+    if (!_isDraggingIndicator) {
+      return;
+    }
+
+    final fromPage = _dragPreviewPage;
+    setState(() {
+      _isDraggingIndicator = false;
+      _dragPreviewPage = null;
+      _lastDragLocalX = null;
+      _dragTouchOffset = 0;
+    });
+
+    if (fromPage != null) {
+      _startIndicatorSettle(
+        fromPage: fromPage,
+        toPage: widget.routeIndex.toDouble(),
+      );
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final coordinator = _RootShellNavigationScope.of(context);
+
     return SafeArea(
       minimum: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-      child: AnimatedBuilder(
-        animation: widget.controller,
-        builder: (context, _) {
-          final rawProgress = widget.controller.page;
-          final progress = _resolvedProgress(rawProgress);
-          final visualIndex =
-              _lockedVisualIndex ??
-              progress.round().clamp(0, widget.destinations.length - 1);
-          return DecoratedBox(
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.92),
-              borderRadius: BorderRadius.circular(28),
-              border: Border.all(color: Colors.white.withValues(alpha: 0.85)),
-              boxShadow: [
-                BoxShadow(
-                  color: const Color(0xFF0F172A).withValues(alpha: 0.10),
-                  blurRadius: 24,
-                  offset: const Offset(0, 12),
+      child: RepaintBoundary(
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            _tabWidth = constraints.maxWidth / widget.destinations.length;
+            final indicatorWidth = _tabWidth - (_indicatorInset * 2);
+
+            return Listener(
+              onPointerMove: _handleBarPointerMove,
+              onPointerUp: _handleBarPointerUp,
+              onPointerCancel: _handleBarPointerCancel,
+              child: Container(
+                key: _barKey,
+                height: 76,
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.92),
+                  borderRadius: BorderRadius.circular(28),
+                  border: Border.all(
+                    color: Colors.white.withValues(alpha: 0.85),
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: const Color(0xFF0F172A).withValues(alpha: 0.10),
+                      blurRadius: 24,
+                      offset: const Offset(0, 12),
+                    ),
+                  ],
                 ),
-              ],
-            ),
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                _itemWidth = constraints.maxWidth / widget.destinations.length;
-                final indicatorWidth = _itemWidth - (_indicatorInset * 2);
-                final indicatorLeft = progress * _itemWidth + _indicatorInset;
-                return SizedBox(
-                  height: 76,
-                  child: GestureDetector(
-                    behavior: HitTestBehavior.translucent,
-                    onHorizontalDragStart:
-                        (details) => _handleDragStart(details, progress),
-                    onHorizontalDragUpdate: _handleDragUpdate,
-                    onHorizontalDragEnd: _handleDragEnd,
-                    child: Stack(
-                      children: [
-                        AnimatedPositioned(
-                          duration:
-                              _isDraggingIndicator
-                                  ? Duration.zero
-                                  : const Duration(milliseconds: 200),
-                          curve: Curves.easeOutCubic,
-                          left: indicatorLeft,
+                child: Stack(
+                  children: [
+                    AnimatedBuilder(
+                      animation: coordinator.pageController,
+                      builder: (context, child) {
+                        final left = _indicatorLeft(
+                          _pageForIndicator(coordinator),
+                        );
+                        return Positioned(
+                          left: left,
                           top: _indicatorInset,
-                          child: AnimatedScale(
-                            duration: const Duration(milliseconds: 160),
-                            curve: Curves.easeOutCubic,
-                            scale: _isDraggingIndicator ? 1.01 : 1,
-                            child: AnimatedOpacity(
-                              duration: const Duration(milliseconds: 160),
-                              opacity: 1,
-                              child: Container(
-                                width: indicatorWidth,
-                                height: _indicatorHeight,
-                                decoration: BoxDecoration(
-                                  borderRadius: BorderRadius.circular(18),
-                                  gradient: const LinearGradient(
-                                    colors: [
-                                      Color(0xFF4A8DFF),
-                                      Color(0xFF7468FF),
-                                    ],
-                                    begin: Alignment.topLeft,
-                                    end: Alignment.bottomRight,
-                                  ),
-                                  boxShadow: const [
-                                    BoxShadow(
-                                      color: Color(0x1F4A67FF),
-                                      blurRadius: 12,
-                                      offset: Offset(0, 8),
-                                    ),
-                                  ],
-                                ),
-                              ),
+                          child: IgnorePointer(
+                            child: AnimatedScale(
+                              duration: const Duration(milliseconds: 120),
+                              curve: Curves.easeOut,
+                              scale: _isDraggingIndicator ? 1.02 : 1,
+                              child: child,
                             ),
                           ),
-                        ),
-                        Row(
-                          children: [
-                            for (var index = 0;
-                                index < widget.destinations.length;
-                                index++)
-                              Expanded(
-                                child: _RootShellNavItem(
-                                  destination: widget.destinations[index],
-                                  selected: index == visualIndex,
-                                  highlighted:
-                                      _isDraggingIndicator &&
-                                      index == _hoveredIndex,
-                                  onTap:
-                                      widget.destinations[index].enabled
-                                          ? () => widget.onSelect(index)
-                                          : null,
-                                ),
-                              ),
+                        );
+                      },
+                      child: Container(
+                        width: indicatorWidth,
+                        height: _indicatorHeight,
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(18),
+                          gradient: const LinearGradient(
+                            colors: [Color(0xFF4A8DFF), Color(0xFF7468FF)],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                          ),
+                          boxShadow: const [
+                            BoxShadow(
+                              color: Color(0x1F4A67FF),
+                              blurRadius: 12,
+                              offset: Offset(0, 8),
+                            ),
                           ],
                         ),
-                      ],
+                      ),
                     ),
-                  ),
-                );
-              },
-            ),
-          );
-        },
+                    Positioned.fill(
+                      child: ValueListenableBuilder<int>(
+                        valueListenable: coordinator.currentIndex,
+                        builder: (context, currentIndex, _) {
+                          return Row(
+                            children: [
+                              for (
+                                var index = 0;
+                                index < widget.destinations.length;
+                                index++
+                              )
+                                Expanded(
+                                  child: _RootShellNavItem(
+                                    destination: widget.destinations[index],
+                                    selected: currentIndex == index,
+                                    useTapDown: false,
+                                    onTap:
+                                        widget.destinations[index].enabled
+                                            ? () => _activateIndex(
+                                              coordinator,
+                                              index,
+                                            )
+                                            : null,
+                                    onHorizontalDragStart:
+                                        currentIndex == index &&
+                                                widget
+                                                    .destinations[index]
+                                                    .enabled
+                                            ? (details) =>
+                                                _handleIndicatorDragStart(
+                                                  details,
+                                                  coordinator,
+                                                )
+                                            : null,
+                                    onHorizontalDragUpdate:
+                                        currentIndex == index &&
+                                                widget
+                                                    .destinations[index]
+                                                    .enabled
+                                            ? (details) =>
+                                                _handleIndicatorDragUpdate(
+                                                  details,
+                                                  coordinator,
+                                                )
+                                            : null,
+                                    onHorizontalDragEnd:
+                                        currentIndex == index &&
+                                                widget
+                                                    .destinations[index]
+                                                    .enabled
+                                            ? (details) =>
+                                                _handleIndicatorDragEnd(
+                                                  details,
+                                                  coordinator,
+                                                )
+                                            : null,
+                                    onHorizontalDragCancel:
+                                        currentIndex == index
+                                            ? _handleIndicatorDragCancel
+                                            : null,
+                                  ),
+                                ),
+                            ],
+                          );
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        ),
       ),
     );
   }
@@ -585,17 +905,14 @@ class _RootShellBottomNavigationState extends State<_RootShellBottomNavigation> 
 
 class _RootShellRail extends StatelessWidget {
   final List<_RootShellDestination> destinations;
-  final int currentIndex;
   final ValueChanged<int> onSelect;
 
-  const _RootShellRail({
-    required this.destinations,
-    required this.currentIndex,
-    required this.onSelect,
-  });
+  const _RootShellRail({required this.destinations, required this.onSelect});
 
   @override
   Widget build(BuildContext context) {
+    final coordinator = _RootShellNavigationScope.of(context);
+
     return ClipRRect(
       borderRadius: BorderRadius.circular(34),
       child: DecoratedBox(
@@ -610,16 +927,23 @@ class _RootShellRail extends StatelessWidget {
             ),
           ],
         ),
-        child: NavigationRail(
-          selectedIndex: currentIndex,
-          onDestinationSelected: onSelect,
-          labelType: NavigationRailLabelType.all,
-          minWidth: 96,
-          groupAlignment: -0.4,
-          backgroundColor: Colors.transparent,
-          indicatorColor: const Color(0xFFE8EEFF),
-          destinations:
-              destinations
+        child: ValueListenableBuilder<int>(
+          valueListenable: coordinator.currentIndex,
+          builder: (context, currentIndex, _) {
+            return NavigationRail(
+              selectedIndex: currentIndex,
+              onDestinationSelected: (index) {
+                if (!destinations[index].enabled) {
+                  return;
+                }
+                onSelect(index);
+              },
+              labelType: NavigationRailLabelType.all,
+              minWidth: 96,
+              groupAlignment: -0.4,
+              backgroundColor: Colors.transparent,
+              indicatorColor: const Color(0xFFE8EEFF),
+              destinations: destinations
                   .map(
                     (item) => NavigationRailDestination(
                       icon: _RootShellBadgeIcon(
@@ -635,7 +959,9 @@ class _RootShellRail extends StatelessWidget {
                       label: Text(item.label),
                     ),
                   )
-                  .toList(),
+                  .toList(growable: false),
+            );
+          },
         ),
       ),
     );
@@ -645,68 +971,74 @@ class _RootShellRail extends StatelessWidget {
 class _RootShellNavItem extends StatelessWidget {
   final _RootShellDestination destination;
   final bool selected;
-  final bool highlighted;
+  final bool useTapDown;
   final VoidCallback? onTap;
+  final GestureDragStartCallback? onHorizontalDragStart;
+  final GestureDragUpdateCallback? onHorizontalDragUpdate;
+  final GestureDragEndCallback? onHorizontalDragEnd;
+  final VoidCallback? onHorizontalDragCancel;
 
   const _RootShellNavItem({
     required this.destination,
     required this.selected,
-    this.highlighted = false,
+    required this.useTapDown,
     required this.onTap,
+    this.onHorizontalDragStart,
+    this.onHorizontalDragUpdate,
+    this.onHorizontalDragEnd,
+    this.onHorizontalDragCancel,
   });
 
   @override
   Widget build(BuildContext context) {
-    final isActiveVisual = selected || highlighted;
-    final foregroundColor =
-        isActiveVisual ? Colors.white : const Color(0xFF5B687D);
+    final foregroundColor = selected ? Colors.white : const Color(0xFF5B687D);
 
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        borderRadius: BorderRadius.circular(24),
-        onTap: onTap,
-        child: AnimatedScale(
-          duration: const Duration(milliseconds: 140),
-          curve: Curves.easeOutCubic,
-          scale: highlighted && !selected ? 1.04 : 1,
-          child: AnimatedOpacity(
-            duration: const Duration(milliseconds: 140),
-            opacity: highlighted && !selected ? 0.92 : 1,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 8),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  SizedBox.square(
-                    dimension: 24,
-                    child: Center(
-                      child: _RootShellBadgeIcon(
-                        icon:
-                            isActiveVisual
-                                ? destination.selectedIcon
-                                : destination.icon,
-                        badgeCount: destination.badgeCount,
-                        selected: isActiveVisual,
-                      ),
+    return Semantics(
+      button: true,
+      enabled: onTap != null,
+      selected: selected,
+      child: Material(
+        color: Colors.transparent,
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: onTap,
+          onHorizontalDragStart: onHorizontalDragStart,
+          onHorizontalDragUpdate: onHorizontalDragUpdate,
+          onHorizontalDragEnd: onHorizontalDragEnd,
+          onHorizontalDragCancel: onHorizontalDragCancel,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                SizedBox.square(
+                  dimension: 24,
+                  child: Center(
+                    child: _RootShellBadgeIcon(
+                      icon:
+                          selected
+                              ? destination.selectedIcon
+                              : destination.icon,
+                      badgeCount: destination.badgeCount,
+                      selected: selected,
                     ),
                   ),
-                  const SizedBox(height: 4),
-                  SizedBox(
-                    height: 16,
-                    child: Text(
-                      destination.label,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
-                        color: foregroundColor,
-                      ),
+                ),
+                const SizedBox(height: 4),
+                SizedBox(
+                  height: 16,
+                  child: Text(
+                    destination.label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: foregroundColor,
                     ),
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
         ),
@@ -759,5 +1091,27 @@ class _RootShellBadgeIcon extends StatelessWidget {
           ),
       ],
     );
+  }
+}
+
+class _RootShellKeptAlivePage extends StatefulWidget {
+  final Widget child;
+
+  const _RootShellKeptAlivePage({required this.child});
+
+  @override
+  State<_RootShellKeptAlivePage> createState() =>
+      _RootShellKeptAlivePageState();
+}
+
+class _RootShellKeptAlivePageState extends State<_RootShellKeptAlivePage>
+    with AutomaticKeepAliveClientMixin<_RootShellKeptAlivePage> {
+  @override
+  bool get wantKeepAlive => true;
+
+  @override
+  Widget build(BuildContext context) {
+    super.build(context);
+    return RepaintBoundary(child: widget.child);
   }
 }

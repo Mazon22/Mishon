@@ -3,16 +3,16 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:mishon_app/core/localization/app_strings.dart';
 import 'package:mishon_app/core/navigation/main_navigation_shell.dart';
-import 'package:mishon_app/core/repositories/auth_repository.dart';
+import 'package:mishon_app/core/providers/app_bootstrap_provider.dart';
 import 'package:mishon_app/features/auth/screens/login_screen.dart';
 import 'package:mishon_app/features/auth/screens/register_screen.dart';
 import 'package:mishon_app/features/chats/screens/chat_screen.dart';
-import 'package:mishon_app/features/chats/screens/chats_screen.dart';
+import 'package:mishon_app/features/chats/screens/chats_overview_screen.dart';
 import 'package:mishon_app/features/comments/screens/comments_screen.dart';
 import 'package:mishon_app/features/feed/screens/feed_screen.dart';
-import 'package:mishon_app/features/friends/screens/friends_screen.dart';
+import 'package:mishon_app/features/friends/screens/friends_overview_screen.dart';
 import 'package:mishon_app/features/notifications/screens/notifications_screen.dart';
-import 'package:mishon_app/features/people/screens/people_screen.dart';
+import 'package:mishon_app/features/people/screens/people_overview_screen.dart';
 import 'package:mishon_app/features/post/screens/create_post_screen.dart';
 import 'package:mishon_app/features/profile/screens/profile_screen.dart';
 
@@ -30,13 +30,12 @@ final _profileNavigatorKey = GlobalKey<NavigatorState>(
 );
 
 final goRouterProvider = Provider<GoRouter>((ref) {
-  final authRepository = ref.watch(authRepositoryProvider);
+  final isAuthenticated = ref.watch(isAuthenticatedProvider);
 
   return GoRouter(
     navigatorKey: _rootNavigatorKey,
     initialLocation: '/feed',
-    redirect: (context, state) async {
-      final isAuthenticated = await authRepository.isAuthenticated();
+    redirect: (context, state) {
       final isAuthRoute =
           state.matchedLocation == '/login' ||
           state.matchedLocation == '/register';
@@ -50,7 +49,7 @@ final goRouterProvider = Provider<GoRouter>((ref) {
       }
 
       if (state.matchedLocation == '/') {
-        return '/feed';
+        return isAuthenticated ? '/feed' : '/login';
       }
 
       return null;
@@ -104,7 +103,7 @@ final goRouterProvider = Provider<GoRouter>((ref) {
                 pageBuilder:
                     (context, state) => NoTransitionPage(
                       key: state.pageKey,
-                      child: const PeopleScreen(
+                      child: const PeopleOverviewScreen(
                         embeddedInNavigationShell: true,
                       ),
                     ),
@@ -120,7 +119,7 @@ final goRouterProvider = Provider<GoRouter>((ref) {
                 pageBuilder:
                     (context, state) => NoTransitionPage(
                       key: state.pageKey,
-                      child: const FriendsScreen(
+                      child: const FriendsOverviewScreen(
                         embeddedInNavigationShell: true,
                       ),
                     ),
@@ -136,7 +135,9 @@ final goRouterProvider = Provider<GoRouter>((ref) {
                 pageBuilder:
                     (context, state) => NoTransitionPage(
                       key: state.pageKey,
-                      child: const ChatsScreen(embeddedInNavigationShell: true),
+                      child: const ChatsOverviewScreen(
+                        embeddedInNavigationShell: true,
+                      ),
                     ),
               ),
             ],

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:mishon_app/core/models/post_model.dart';
 import 'package:mishon_app/core/network/exceptions.dart';
 import 'package:mishon_app/core/repositories/post_repository.dart';
@@ -14,16 +16,42 @@ extension FeedTabTypeX on FeedTabType {
 
 @riverpod
 class FeedNotifier extends _$FeedNotifier {
+  static const _pageSize = 20;
+
   late FeedTabType _feedType;
+  var _currentPage = 0;
+  var _hasNextPage = true;
+  var _isLoadingMore = false;
 
   @override
   AsyncValue<List<Post>> build(FeedTabType feedType) {
+    ref.keepAlive();
     _feedType = feedType;
-    Future<void>.microtask(_loadFeed);
+    final repository = ref.read(postRepositoryProvider);
+    final cachedPage =
+        feedType == FeedTabType.forYou
+            ? repository.peekFeed(pageSize: _pageSize)
+            : repository.peekFollowingFeed(pageSize: _pageSize);
+
+    if (cachedPage != null) {
+      _currentPage = cachedPage.page;
+      _hasNextPage = cachedPage.hasNext;
+      return AsyncValue.data(cachedPage.items);
+    }
+
+    Future<void>.microtask(() => _loadFeed(forceRefresh: true));
     return const AsyncValue.loading();
   }
 
-  Future<void> _loadFeed() async {
+  Future<void> ensureLoaded() async {
+    if (state.hasValue || state.isLoading) {
+      return;
+    }
+
+    await _loadFeed(forceRefresh: true);
+  }
+
+  Future<void> _loadFeed({required bool forceRefresh}) async {
     state =
         state.hasValue
             ? const AsyncLoading<List<Post>>().copyWithPrevious(state)
@@ -33,8 +61,18 @@ class FeedNotifier extends _$FeedNotifier {
       final repository = ref.read(postRepositoryProvider);
       final pagedResponse =
           _feedType == FeedTabType.forYou
-              ? await repository.getFeed(page: 1, pageSize: 20)
-              : await repository.getFollowingFeed(page: 1, pageSize: 20);
+              ? await repository.getFeed(
+                page: 1,
+                pageSize: _pageSize,
+                forceRefresh: forceRefresh,
+              )
+              : await repository.getFollowingFeed(
+                page: 1,
+                pageSize: _pageSize,
+                forceRefresh: forceRefresh,
+              );
+      _currentPage = pagedResponse.page;
+      _hasNextPage = pagedResponse.hasNext;
       state = AsyncValue.data(pagedResponse.items);
     } on ApiException catch (e, st) {
       state = _withPreviousOnError(e.apiError.message, st);
@@ -46,7 +84,55 @@ class FeedNotifier extends _$FeedNotifier {
   }
 
   Future<void> refresh() async {
-    await _loadFeed();
+    await _loadFeed(forceRefresh: true);
+  }
+
+  void maybePrefetchNextPage(int visibleIndex, int totalCount) {
+    if (_isLoadingMore || !_hasNextPage) {
+      return;
+    }
+
+    if (totalCount == 0 || visibleIndex < totalCount - 4) {
+      return;
+    }
+
+    unawaited(loadMore());
+  }
+
+  Future<void> loadMore() async {
+    final currentPosts = state.valueOrNull;
+    if (_isLoadingMore ||
+        !_hasNextPage ||
+        currentPosts == null ||
+        currentPosts.isEmpty) {
+      return;
+    }
+
+    _isLoadingMore = true;
+    try {
+      final nextPage = _currentPage + 1;
+      final repository = ref.read(postRepositoryProvider);
+      final pagedResponse =
+          _feedType == FeedTabType.forYou
+              ? await repository.getFeed(
+                page: nextPage,
+                pageSize: _pageSize,
+                forceRefresh: true,
+              )
+              : await repository.getFollowingFeed(
+                page: nextPage,
+                pageSize: _pageSize,
+                forceRefresh: true,
+              );
+
+      _currentPage = pagedResponse.page;
+      _hasNextPage = pagedResponse.hasNext;
+      state = AsyncValue.data(<Post>[...currentPosts, ...pagedResponse.items]);
+    } catch (_) {
+      // Keep already-rendered posts intact on background prefetch errors.
+    } finally {
+      _isLoadingMore = false;
+    }
   }
 
   Future<void> toggleLike(int postId) async {
@@ -115,7 +201,7 @@ class FeedNotifier extends _$FeedNotifier {
       final response = await repository.toggleFollow(userId);
 
       if (_feedType == FeedTabType.following && !response.isFollowing) {
-        await _loadFeed();
+        await _loadFeed(forceRefresh: true);
       } else {
         final latestPosts = state.value;
         if (latestPosts != null) {
@@ -124,7 +210,9 @@ class FeedNotifier extends _$FeedNotifier {
                 .map(
                   (post) =>
                       post.userId == userId
-                          ? post.copyWith(isFollowingAuthor: response.isFollowing)
+                          ? post.copyWith(
+                            isFollowingAuthor: response.isFollowing,
+                          )
                           : post,
                 )
                 .toList(),

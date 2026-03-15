@@ -3,10 +3,17 @@ import 'dart:typed_data';
 class DiscoverUser {
   final int id;
   final String username;
+  final String? aboutMe;
   final String? avatarUrl;
   final double avatarScale;
   final double avatarOffsetX;
   final double avatarOffsetY;
+  final DateTime lastSeenAt;
+  final bool isOnline;
+  final int followersCount;
+  final int postsCount;
+  final int mutualFriendsCount;
+  final int engagementScore;
   final bool isFollowing;
   final bool isFriend;
   final int? incomingFriendRequestId;
@@ -15,24 +22,87 @@ class DiscoverUser {
   const DiscoverUser({
     required this.id,
     required this.username,
+    required this.aboutMe,
     required this.avatarUrl,
     this.avatarScale = 1,
     this.avatarOffsetX = 0,
     this.avatarOffsetY = 0,
+    required this.lastSeenAt,
+    required this.isOnline,
+    required this.followersCount,
+    required this.postsCount,
+    required this.mutualFriendsCount,
+    required this.engagementScore,
     required this.isFollowing,
     required this.isFriend,
     required this.incomingFriendRequestId,
     required this.outgoingFriendRequestId,
   });
 
+  DiscoverUser copyWith({
+    String? aboutMe,
+    String? avatarUrl,
+    double? avatarScale,
+    double? avatarOffsetX,
+    double? avatarOffsetY,
+    DateTime? lastSeenAt,
+    bool? isOnline,
+    int? followersCount,
+    int? postsCount,
+    int? mutualFriendsCount,
+    int? engagementScore,
+    bool? isFollowing,
+    bool? isFriend,
+    int? incomingFriendRequestId,
+    int? outgoingFriendRequestId,
+    bool clearIncomingFriendRequestId = false,
+    bool clearOutgoingFriendRequestId = false,
+  }) {
+    return DiscoverUser(
+      id: id,
+      username: username,
+      aboutMe: aboutMe ?? this.aboutMe,
+      avatarUrl: avatarUrl ?? this.avatarUrl,
+      avatarScale: avatarScale ?? this.avatarScale,
+      avatarOffsetX: avatarOffsetX ?? this.avatarOffsetX,
+      avatarOffsetY: avatarOffsetY ?? this.avatarOffsetY,
+      lastSeenAt: lastSeenAt ?? this.lastSeenAt,
+      isOnline: isOnline ?? this.isOnline,
+      followersCount: followersCount ?? this.followersCount,
+      postsCount: postsCount ?? this.postsCount,
+      mutualFriendsCount: mutualFriendsCount ?? this.mutualFriendsCount,
+      engagementScore: engagementScore ?? this.engagementScore,
+      isFollowing: isFollowing ?? this.isFollowing,
+      isFriend: isFriend ?? this.isFriend,
+      incomingFriendRequestId:
+          clearIncomingFriendRequestId
+              ? null
+              : incomingFriendRequestId ?? this.incomingFriendRequestId,
+      outgoingFriendRequestId:
+          clearOutgoingFriendRequestId
+              ? null
+              : outgoingFriendRequestId ?? this.outgoingFriendRequestId,
+    );
+  }
+
   factory DiscoverUser.fromJson(Map<String, dynamic> json) {
     return DiscoverUser(
       id: json['id'] as int,
       username: json['username'] as String,
+      aboutMe: json['aboutMe'] as String?,
       avatarUrl: json['avatarUrl'] as String?,
       avatarScale: (json['avatarScale'] as num?)?.toDouble() ?? 1,
       avatarOffsetX: (json['avatarOffsetX'] as num?)?.toDouble() ?? 0,
       avatarOffsetY: (json['avatarOffsetY'] as num?)?.toDouble() ?? 0,
+      lastSeenAt:
+          json['lastSeenAt'] != null
+              ? DateTime.parse(json['lastSeenAt'] as String)
+              : DateTime.fromMillisecondsSinceEpoch(0),
+      isOnline: json['isOnline'] as bool? ?? false,
+      followersCount: json['followersCount'] as int? ?? 0,
+      postsCount: json['postsCount'] as int? ?? 0,
+      mutualFriendsCount: json['mutualFriendsCount'] as int? ?? 0,
+      engagementScore: json['engagementScore'] as int? ?? 0,
       isFollowing: json['isFollowing'] as bool? ?? false,
       isFriend: json['isFriend'] as bool? ?? false,
       incomingFriendRequestId: json['incomingFriendRequestId'] as int?,
@@ -44,28 +114,62 @@ class DiscoverUser {
 class FriendUser {
   final int id;
   final String username;
+  final String? aboutMe;
   final String? avatarUrl;
   final double avatarScale;
   final double avatarOffsetX;
   final double avatarOffsetY;
+  final DateTime lastSeenAt;
+  final bool isOnline;
 
   const FriendUser({
     required this.id,
     required this.username,
+    required this.aboutMe,
     required this.avatarUrl,
     this.avatarScale = 1,
     this.avatarOffsetX = 0,
     this.avatarOffsetY = 0,
+    required this.lastSeenAt,
+    required this.isOnline,
   });
+
+  FriendUser copyWith({
+    String? aboutMe,
+    String? avatarUrl,
+    double? avatarScale,
+    double? avatarOffsetX,
+    double? avatarOffsetY,
+    DateTime? lastSeenAt,
+    bool? isOnline,
+  }) {
+    return FriendUser(
+      id: id,
+      username: username,
+      aboutMe: aboutMe ?? this.aboutMe,
+      avatarUrl: avatarUrl ?? this.avatarUrl,
+      avatarScale: avatarScale ?? this.avatarScale,
+      avatarOffsetX: avatarOffsetX ?? this.avatarOffsetX,
+      avatarOffsetY: avatarOffsetY ?? this.avatarOffsetY,
+      lastSeenAt: lastSeenAt ?? this.lastSeenAt,
+      isOnline: isOnline ?? this.isOnline,
+    );
+  }
 
   factory FriendUser.fromJson(Map<String, dynamic> json) {
     return FriendUser(
       id: json['id'] as int,
       username: json['username'] as String,
+      aboutMe: json['aboutMe'] as String?,
       avatarUrl: json['avatarUrl'] as String?,
       avatarScale: (json['avatarScale'] as num?)?.toDouble() ?? 1,
       avatarOffsetX: (json['avatarOffsetX'] as num?)?.toDouble() ?? 0,
       avatarOffsetY: (json['avatarOffsetY'] as num?)?.toDouble() ?? 0,
+      lastSeenAt:
+          json['lastSeenAt'] != null
+              ? DateTime.parse(json['lastSeenAt'] as String)
+              : DateTime.fromMillisecondsSinceEpoch(0),
+      isOnline: json['isOnline'] as bool? ?? false,
     );
   }
 }
@@ -74,10 +178,13 @@ class FriendRequestModel {
   final int id;
   final int userId;
   final String username;
+  final String? aboutMe;
   final String? avatarUrl;
   final double avatarScale;
   final double avatarOffsetX;
   final double avatarOffsetY;
+  final DateTime lastSeenAt;
+  final bool isOnline;
   final bool isIncoming;
   final DateTime createdAt;
 
@@ -85,23 +192,59 @@ class FriendRequestModel {
     required this.id,
     required this.userId,
     required this.username,
+    required this.aboutMe,
     required this.avatarUrl,
     this.avatarScale = 1,
     this.avatarOffsetX = 0,
     this.avatarOffsetY = 0,
+    required this.lastSeenAt,
+    required this.isOnline,
     required this.isIncoming,
     required this.createdAt,
   });
+
+  FriendRequestModel copyWith({
+    String? aboutMe,
+    String? avatarUrl,
+    double? avatarScale,
+    double? avatarOffsetX,
+    double? avatarOffsetY,
+    DateTime? lastSeenAt,
+    bool? isOnline,
+    bool? isIncoming,
+    DateTime? createdAt,
+  }) {
+    return FriendRequestModel(
+      id: id,
+      userId: userId,
+      username: username,
+      aboutMe: aboutMe ?? this.aboutMe,
+      avatarUrl: avatarUrl ?? this.avatarUrl,
+      avatarScale: avatarScale ?? this.avatarScale,
+      avatarOffsetX: avatarOffsetX ?? this.avatarOffsetX,
+      avatarOffsetY: avatarOffsetY ?? this.avatarOffsetY,
+      lastSeenAt: lastSeenAt ?? this.lastSeenAt,
+      isOnline: isOnline ?? this.isOnline,
+      isIncoming: isIncoming ?? this.isIncoming,
+      createdAt: createdAt ?? this.createdAt,
+    );
+  }
 
   factory FriendRequestModel.fromJson(Map<String, dynamic> json) {
     return FriendRequestModel(
       id: json['id'] as int,
       userId: json['userId'] as int,
       username: json['username'] as String,
+      aboutMe: json['aboutMe'] as String?,
       avatarUrl: json['avatarUrl'] as String?,
       avatarScale: (json['avatarScale'] as num?)?.toDouble() ?? 1,
       avatarOffsetX: (json['avatarOffsetX'] as num?)?.toDouble() ?? 0,
       avatarOffsetY: (json['avatarOffsetY'] as num?)?.toDouble() ?? 0,
+      lastSeenAt:
+          json['lastSeenAt'] != null
+              ? DateTime.parse(json['lastSeenAt'] as String)
+              : DateTime.fromMillisecondsSinceEpoch(0),
+      isOnline: json['isOnline'] as bool? ?? false,
       isIncoming: json['isIncoming'] as bool? ?? false,
       createdAt: DateTime.parse(json['createdAt'] as String),
     );
@@ -287,6 +430,9 @@ class ChatMessageModel {
   final int? replyToMessageId;
   final String? replyToSenderUsername;
   final String? replyToContent;
+  final int? forwardedFromMessageId;
+  final int? forwardedFromUserId;
+  final String? forwardedFromSenderUsername;
   final List<ChatAttachmentModel> attachments;
 
   const ChatMessageModel({
@@ -305,6 +451,9 @@ class ChatMessageModel {
     required this.replyToMessageId,
     required this.replyToSenderUsername,
     required this.replyToContent,
+    required this.forwardedFromMessageId,
+    required this.forwardedFromUserId,
+    required this.forwardedFromSenderUsername,
     required this.attachments,
   });
 
@@ -324,6 +473,9 @@ class ChatMessageModel {
     int? replyToMessageId,
     String? replyToSenderUsername,
     String? replyToContent,
+    int? forwardedFromMessageId,
+    int? forwardedFromUserId,
+    String? forwardedFromSenderUsername,
     List<ChatAttachmentModel>? attachments,
   }) {
     return ChatMessageModel(
@@ -343,6 +495,11 @@ class ChatMessageModel {
       replyToSenderUsername:
           replyToSenderUsername ?? this.replyToSenderUsername,
       replyToContent: replyToContent ?? this.replyToContent,
+      forwardedFromMessageId:
+          forwardedFromMessageId ?? this.forwardedFromMessageId,
+      forwardedFromUserId: forwardedFromUserId ?? this.forwardedFromUserId,
+      forwardedFromSenderUsername:
+          forwardedFromSenderUsername ?? this.forwardedFromSenderUsername,
       attachments: attachments ?? this.attachments,
     );
   }
@@ -373,6 +530,10 @@ class ChatMessageModel {
       replyToMessageId: json['replyToMessageId'] as int?,
       replyToSenderUsername: json['replyToSenderUsername'] as String?,
       replyToContent: json['replyToContent'] as String?,
+      forwardedFromMessageId: json['forwardedFromMessageId'] as int?,
+      forwardedFromUserId: json['forwardedFromUserId'] as int?,
+      forwardedFromSenderUsername:
+          json['forwardedFromSenderUsername'] as String?,
       attachments: (json['attachments'] as List<dynamic>? ?? const [])
           .map((e) => ChatAttachmentModel.fromJson(e as Map<String, dynamic>))
           .toList(growable: false),

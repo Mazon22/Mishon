@@ -87,6 +87,7 @@ abstract class ApiService {
     List<ChatUploadAttachment> attachments = const [],
     void Function(int sent, int total)? onSendProgress,
   });
+  Future<ChatMessageModel> forwardMessage(int conversationId, int messageId);
   Future<ChatMessageModel> updateMessage(
     int conversationId,
     int messageId,
@@ -168,7 +169,8 @@ class ApiServiceImpl implements ApiService {
       '/users/check-username',
       queryParameters: {'username': username},
     );
-    return (response.data as Map<String, dynamic>)['available'] as bool? ?? false;
+    return (response.data as Map<String, dynamic>)['available'] as bool? ??
+        false;
   }
 
   @override
@@ -416,10 +418,15 @@ class ApiServiceImpl implements ApiService {
 
   @override
   Future<List<DiscoverUser>> getUsers({String? query, int limit = 24}) async {
+    final normalizedQuery = query?.trim();
+    final hasQuery = normalizedQuery != null && normalizedQuery.isNotEmpty;
     final response = await _dio.get(
-      '/users',
+      hasQuery ? '/users/search' : '/users',
       queryParameters: {
-        if (query != null && query.trim().isNotEmpty) 'query': query.trim(),
+        if (hasQuery)
+          'q': normalizedQuery
+        else if (normalizedQuery != null)
+          'query': normalizedQuery,
         'limit': limit,
       },
     );
@@ -551,6 +558,18 @@ class ApiServiceImpl implements ApiService {
   }
 
   @override
+  Future<ChatMessageModel> forwardMessage(
+    int conversationId,
+    int messageId,
+  ) async {
+    final response = await _dio.post(
+      '/conversations/$conversationId/messages/forward',
+      data: {'messageId': messageId},
+    );
+    return ChatMessageModel.fromJson(response.data);
+  }
+
+  @override
   Future<void> deleteMessage(int conversationId, int messageId) async {
     await _dio.delete('/conversations/$conversationId/messages/$messageId');
   }
@@ -626,12 +645,18 @@ class ApiServiceImpl implements ApiService {
 
   @override
   Future<void> sendTypingStart(int conversationId) async {
-    await _dio.post('/chat/typing-start', data: {'conversationId': conversationId});
+    await _dio.post(
+      '/chat/typing-start',
+      data: {'conversationId': conversationId},
+    );
   }
 
   @override
   Future<void> sendTypingStop(int conversationId) async {
-    await _dio.post('/chat/typing-stop', data: {'conversationId': conversationId});
+    await _dio.post(
+      '/chat/typing-stop',
+      data: {'conversationId': conversationId},
+    );
   }
 
   @override

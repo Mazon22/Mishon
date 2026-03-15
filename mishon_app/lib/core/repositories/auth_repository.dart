@@ -7,9 +7,22 @@ import 'package:mishon_app/core/network/api_service.dart';
 import 'package:mishon_app/core/storage/secure_storage.dart';
 import 'package:mishon_app/core/network/api_client.dart';
 import 'package:mishon_app/core/network/exceptions.dart';
+import 'package:mishon_app/core/repositories/memory_cache.dart';
 import 'package:logger/logger.dart';
 
 part 'auth_repository.g.dart';
+
+class AuthSessionSnapshot {
+  final bool isAuthenticated;
+  final int? userId;
+  final bool hasConnection;
+
+  const AuthSessionSnapshot({
+    required this.isAuthenticated,
+    required this.userId,
+    this.hasConnection = true,
+  });
+}
 
 @riverpod
 AuthRepository authRepository(Ref ref) {
@@ -32,6 +45,11 @@ ApiService apiService(Ref ref) {
 ApiClient apiClient(Ref ref) => ApiClient(storage: ref.watch(storageProvider));
 
 class AuthRepository {
+  static const _profileCacheTtl = Duration(minutes: 5);
+  static MemoryCacheEntry<UserProfile>? _profileCache;
+  static final Map<int, MemoryCacheEntry<UserProfile>> _userProfileCache =
+      <int, MemoryCacheEntry<UserProfile>>{};
+
   final ApiService _apiService;
   final SecureStorage _storage;
   final _logger = Logger();
@@ -39,10 +57,14 @@ class AuthRepository {
   AuthRepository({
     required ApiService apiService,
     required SecureStorage storage,
-  })  : _apiService = apiService,
-        _storage = storage;
+  }) : _apiService = apiService,
+       _storage = storage;
 
-  Future<AuthResponse> register(String username, String email, String password) async {
+  Future<AuthResponse> register(
+    String username,
+    String email,
+    String password,
+  ) async {
     try {
       final response = await _apiService.register(username, email, password);
       await _saveAuthResponse(response);
@@ -82,13 +104,44 @@ class AuthRepository {
     } catch (e, st) {
       _logger.w('Logout API call failed', error: e, stackTrace: st);
     } finally {
+      _profileCache = null;
+      _userProfileCache.clear();
       await _storage.clear();
     }
   }
 
-  Future<UserProfile> getProfile() async {
+  UserProfile? peekProfile() {
+    final cache = _profileCache;
+    if (cache == null || !cache.isFresh(_profileCacheTtl)) {
+      return null;
+    }
+
+    return cache.value;
+  }
+
+  UserProfile? peekUserProfile(int userId) {
+    final cache = _userProfileCache[userId];
+    if (cache == null || !cache.isFresh(_profileCacheTtl)) {
+      return null;
+    }
+
+    return cache.value;
+  }
+
+  Future<UserProfile> prefetchProfile() {
+    return getProfile(forceRefresh: true);
+  }
+
+  Future<UserProfile> getProfile({bool forceRefresh = false}) async {
+    final cachedProfile = !forceRefresh ? peekProfile() : null;
+    if (cachedProfile != null) {
+      return cachedProfile;
+    }
+
     try {
-      return await _apiService.getProfile();
+      final profile = await _apiService.getProfile();
+      _cacheProfile(profile);
+      return profile;
     } on ApiException catch (e) {
       _logger.e('Get profile failed: ${e.apiError.message}');
       rethrow;
@@ -101,9 +154,19 @@ class AuthRepository {
     }
   }
 
-  Future<UserProfile> getUserProfile(int userId) async {
+  Future<UserProfile> getUserProfile(
+    int userId, {
+    bool forceRefresh = false,
+  }) async {
+    final cachedProfile = !forceRefresh ? peekUserProfile(userId) : null;
+    if (cachedProfile != null) {
+      return cachedProfile;
+    }
+
     try {
-      return await _apiService.getUserProfile(userId);
+      final profile = await _apiService.getUserProfile(userId);
+      _userProfileCache[userId] = MemoryCacheEntry<UserProfile>.now(profile);
+      return profile;
     } on ApiException catch (e) {
       _logger.e('Get user profile failed: ${e.apiError.message}');
       rethrow;
@@ -137,7 +200,12 @@ class AuthRepository {
 
   Future<UserProfile> updateProfile({String? username, String? aboutMe}) async {
     try {
-      return await _apiService.updateProfile(username: username, aboutMe: aboutMe);
+      final profile = await _apiService.updateProfile(
+        username: username,
+        aboutMe: aboutMe,
+      );
+      _cacheProfile(profile);
+      return profile;
     } on ApiException catch (e) {
       _logger.e('Update profile failed: ${e.apiError.message}');
       rethrow;
@@ -163,7 +231,7 @@ class AuthRepository {
     bool removeBanner = false,
   }) async {
     try {
-      return await _apiService.updateProfileMedia(
+      final profile = await _apiService.updateProfileMedia(
         avatarBytes: avatarBytes,
         bannerBytes: bannerBytes,
         avatarScale: avatarScale,
@@ -175,6 +243,8 @@ class AuthRepository {
         removeAvatar: removeAvatar,
         removeBanner: removeBanner,
       );
+      _cacheProfile(profile);
+      return profile;
     } on ApiException catch (e) {
       _logger.e('Update profile media failed: ${e.apiError.message}');
       rethrow;
@@ -182,19 +252,49 @@ class AuthRepository {
       _logger.w('No connection updating profile media');
       rethrow;
     } catch (e, st) {
-      _logger.e('Unexpected update profile media error', error: e, stackTrace: st);
+      _logger.e(
+        'Unexpected update profile media error',
+        error: e,
+        stackTrace: st,
+      );
       rethrow;
     }
   }
 
   Future<int?> getUserId() async {
-    return await _storage.readUserId();
+    if (_storage.isCacheHydrated) {
+      return _storage.cachedUserId;
+    }
+
+    return _storage.readUserId();
   }
 
   Future<bool> isAuthenticated() async {
+    if (_storage.isCacheHydrated) {
+      final token = _storage.cachedToken;
+      final isExpired = _storage.isAccessTokenExpiredSync();
+      return token != null && token.isNotEmpty && !isExpired;
+    }
+
     final token = await _storage.readToken();
     final isExpired = await _storage.isAccessTokenExpired();
     return token != null && token.isNotEmpty && !isExpired;
+  }
+
+  Future<AuthSessionSnapshot> restoreSession() async {
+    await _storage.warmup();
+
+    final token = _storage.cachedToken;
+    final userId = _storage.cachedUserId;
+    final isAuthenticated =
+        token != null &&
+        token.isNotEmpty &&
+        !_storage.isAccessTokenExpiredSync();
+
+    return AuthSessionSnapshot(
+      isAuthenticated: isAuthenticated,
+      userId: isAuthenticated ? userId : null,
+    );
   }
 
   Future<bool> _saveAuthResponse(AuthResponse response) async {
@@ -210,12 +310,19 @@ class AuthRepository {
       }
 
       // Access token expires через 15 минут
-      await _storage.writeAccessTokenExpiry(DateTime.now().add(const Duration(minutes: 15)));
+      await _storage.writeAccessTokenExpiry(
+        DateTime.now().add(const Duration(minutes: 15)),
+      );
 
       return true;
     } catch (e, st) {
       _logger.e('Failed to save auth response', error: e, stackTrace: st);
       return false;
     }
+  }
+
+  void _cacheProfile(UserProfile profile) {
+    _profileCache = MemoryCacheEntry<UserProfile>.now(profile);
+    _userProfileCache[profile.id] = MemoryCacheEntry<UserProfile>.now(profile);
   }
 }

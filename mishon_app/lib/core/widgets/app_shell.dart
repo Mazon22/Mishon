@@ -2,8 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:mishon_app/core/localization/app_strings.dart';
+import 'package:mishon_app/core/providers/app_bootstrap_provider.dart';
+import 'package:mishon_app/core/providers/app_connection_status_provider.dart';
 
-import '../../features/auth/providers/auth_provider.dart';
 import '../../features/notifications/providers/notification_summary_provider.dart';
 import '../models/social_models.dart';
 
@@ -39,7 +40,8 @@ class AppShell extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final currentUserId = ref.watch(userIdProvider).value;
+    final currentUserId = ref.watch(currentUserIdProvider);
+    final connectionStatus = ref.watch(appConnectionStatusProvider);
     final summary = ref
         .watch(notificationSummaryProvider)
         .maybeWhen(
@@ -51,11 +53,7 @@ class AppShell extends ConsumerWidget {
                 incomingFriendRequests: 0,
               ),
         );
-    final destinations = _buildDestinations(
-      context,
-      currentUserId,
-      summary,
-    );
+    final destinations = _buildDestinations(context, currentUserId, summary);
     final shellActions = <Widget>[
       if (showNotificationsAction)
         Padding(
@@ -74,9 +72,13 @@ class AppShell extends ConsumerWidget {
       appBar:
           showAppBar
               ? AppBar(
+                toolbarHeight: connectionStatus.isVisible ? 74 : kToolbarHeight,
                 titleSpacing: 18,
                 backgroundColor: Colors.white.withValues(alpha: 0.88),
-                title: Text(title),
+                title: _AppShellTitleBlock(
+                  title: title,
+                  connectionStatus: connectionStatus,
+                ),
                 actions: shellActions,
               )
               : null,
@@ -288,6 +290,69 @@ class AppShell extends ConsumerWidget {
 
   void _goTo(BuildContext context, String route) {
     context.go(route);
+  }
+}
+
+class _AppShellTitleBlock extends StatelessWidget {
+  final String title;
+  final AppConnectionStatus connectionStatus;
+
+  const _AppShellTitleBlock({
+    required this.title,
+    required this.connectionStatus,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final strings = AppStrings.of(context);
+    final label = connectionStatus.label(strings);
+    final indicatorColor = switch (connectionStatus.phase) {
+      AppConnectionPhase.connecting => const Color(0xFFF08A24),
+      AppConnectionPhase.updating => const Color(0xFF2A6BFF),
+      AppConnectionPhase.connected => const Color(0xFF1F8F52),
+    };
+
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(title),
+        AnimatedSwitcher(
+          duration: const Duration(milliseconds: 180),
+          switchInCurve: Curves.easeOut,
+          switchOutCurve: Curves.easeIn,
+          child:
+              connectionStatus.isVisible
+                  ? Padding(
+                    key: ValueKey<AppConnectionPhase>(connectionStatus.phase),
+                    padding: const EdgeInsets.only(top: 2),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(
+                          width: 7,
+                          height: 7,
+                          decoration: BoxDecoration(
+                            color: indicatorColor,
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          label,
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: indicatorColor,
+                          ),
+                        ),
+                      ],
+                    ),
+                  )
+                  : const SizedBox.shrink(),
+        ),
+      ],
+    );
   }
 }
 

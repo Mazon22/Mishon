@@ -1,37 +1,34 @@
-import 'dart:async';
-
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:mishon_app/core/models/social_models.dart';
 import 'package:mishon_app/core/repositories/social_repository.dart';
 
-final notificationSummaryProvider =
-    AsyncNotifierProvider<NotificationSummaryNotifier, NotificationSummaryModel>(
-  NotificationSummaryNotifier.new,
-);
+final notificationSummaryProvider = AsyncNotifierProvider<
+  NotificationSummaryNotifier,
+  NotificationSummaryModel
+>(NotificationSummaryNotifier.new);
 
-class NotificationSummaryNotifier extends AsyncNotifier<NotificationSummaryModel> {
-  Timer? _poller;
-  var _isDisposed = false;
-
+class NotificationSummaryNotifier
+    extends AsyncNotifier<NotificationSummaryModel> {
   @override
   Future<NotificationSummaryModel> build() async {
-    ref.onDispose(() {
-      _isDisposed = true;
-      _poller?.cancel();
-    });
-    _poller ??= Timer.periodic(const Duration(seconds: 8), (_) => refresh(silent: true));
-    return _fetch();
+    final cachedSummary =
+        ref.read(socialRepositoryProvider).peekNotificationSummary();
+
+    if (cachedSummary != null) {
+      Future<void>.microtask(() => refresh(silent: true));
+      return cachedSummary;
+    }
+
+    return _fetch(forceRefresh: true);
   }
 
   Future<void> refresh({bool silent = false}) async {
     try {
-      final summary = await _fetch();
-      if (!_isDisposed) {
-        state = AsyncValue.data(summary);
-      }
+      final summary = await _fetch(forceRefresh: true);
+      state = AsyncValue.data(summary);
     } catch (error, stackTrace) {
-      if (!silent && !_isDisposed) {
+      if (!silent) {
         state = AsyncValue.error(error, stackTrace);
       }
     }
@@ -42,7 +39,9 @@ class NotificationSummaryNotifier extends AsyncNotifier<NotificationSummaryModel
     await refresh();
   }
 
-  Future<NotificationSummaryModel> _fetch() async {
-    return ref.read(socialRepositoryProvider).getNotificationSummary();
+  Future<NotificationSummaryModel> _fetch({bool forceRefresh = false}) async {
+    return ref
+        .read(socialRepositoryProvider)
+        .getNotificationSummary(forceRefresh: forceRefresh);
   }
 }

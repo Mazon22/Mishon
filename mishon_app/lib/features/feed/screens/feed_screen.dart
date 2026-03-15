@@ -8,13 +8,12 @@ import 'package:mishon_app/core/localization/app_strings.dart';
 import 'package:mishon_app/core/models/post_model.dart';
 import 'package:mishon_app/core/models/social_models.dart';
 import 'package:mishon_app/core/network/exceptions.dart';
+import 'package:mishon_app/core/providers/app_bootstrap_provider.dart';
 import 'package:mishon_app/core/widgets/app_shell.dart';
 import 'package:mishon_app/core/widgets/post_card.dart';
 import 'package:mishon_app/features/comments/screens/comments_screen.dart';
 import 'package:mishon_app/features/feed/providers/feed_provider.dart';
 import 'package:mishon_app/features/notifications/providers/notification_summary_provider.dart';
-
-import '../../auth/providers/auth_provider.dart';
 
 class FeedScreen extends ConsumerStatefulWidget {
   final bool embeddedInNavigationShell;
@@ -26,9 +25,8 @@ class FeedScreen extends ConsumerStatefulWidget {
 }
 
 class _FeedScreenState extends ConsumerState<FeedScreen>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, AutomaticKeepAliveClientMixin {
   late final TabController _tabController;
-  Timer? _poller;
 
   FeedTabType get _currentFeedType =>
       _tabController.index == 0 ? FeedTabType.forYou : FeedTabType.following;
@@ -36,24 +34,44 @@ class _FeedScreenState extends ConsumerState<FeedScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: FeedTabType.values.length, vsync: this);
-    _poller = Timer.periodic(const Duration(seconds: 12), (_) {
-      ref.read(feedNotifierProvider(_currentFeedType).notifier).refresh();
+    _tabController = TabController(
+      length: FeedTabType.values.length,
+      vsync: this,
+    )..addListener(() {
+      if (_tabController.indexIsChanging) {
+        return;
+      }
+
+      unawaited(
+        ref
+            .read(feedNotifierProvider(_currentFeedType).notifier)
+            .ensureLoaded(),
+      );
     });
+    Future<void>.microtask(
+      () =>
+          ref
+              .read(feedNotifierProvider(_currentFeedType).notifier)
+              .ensureLoaded(),
+    );
   }
 
   @override
   void dispose() {
-    _poller?.cancel();
     _tabController.dispose();
     super.dispose();
   }
 
   @override
+  bool get wantKeepAlive => true;
+
+  @override
   Widget build(BuildContext context) {
+    super.build(context);
     final strings = AppStrings.of(context);
     final shellBottomInset =
-        widget.embeddedInNavigationShell && MediaQuery.sizeOf(context).width < 1040
+        widget.embeddedInNavigationShell &&
+                MediaQuery.sizeOf(context).width < 1040
             ? 92.0
             : 0.0;
     final notificationSummary = ref
@@ -116,7 +134,9 @@ class _FeedScreenState extends ConsumerState<FeedScreen>
           backgroundColor: Colors.white.withValues(alpha: 0.96),
           foregroundColor: const Color(0xFF18243C),
           extendedPadding: const EdgeInsets.symmetric(horizontal: 18),
-          shape: const StadiumBorder(side: BorderSide(color: Color(0xFFDCE5F5))),
+          shape: const StadiumBorder(
+            side: BorderSide(color: Color(0xFFDCE5F5)),
+          ),
           label: Text(
             strings.postShort,
             style: Theme.of(context).textTheme.labelLarge?.copyWith(
@@ -289,13 +309,14 @@ class _FeedGlassHeader extends StatelessWidget {
                   unselectedLabelStyle: theme.textTheme.labelLarge?.copyWith(
                     fontWeight: FontWeight.w700,
                   ),
-                  tabs: FeedTabType.values.map((feedType) {
-                    final label =
-                        feedType == FeedTabType.forYou
-                            ? strings.forYou
-                            : strings.following;
-                    return Tab(text: label);
-                  }).toList(),
+                  tabs:
+                      FeedTabType.values.map((feedType) {
+                        final label =
+                            feedType == FeedTabType.forYou
+                                ? strings.forYou
+                                : strings.following;
+                        return Tab(text: label);
+                      }).toList(),
                 ),
               ),
             ],
@@ -315,7 +336,7 @@ class _FeedTimeline extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final strings = AppStrings.of(context);
     final feedState = ref.watch(feedNotifierProvider(feedType));
-    final userIdAsync = ref.watch(userIdProvider);
+    final currentUserId = ref.watch(currentUserIdProvider);
 
     final posts = feedState.valueOrNull ?? const <Post>[];
     final isInitialLoading = feedState.isLoading && posts.isEmpty;
@@ -339,7 +360,8 @@ class _FeedTimeline extends ConsumerWidget {
             : strings.feedFollowingEmptySubtitle;
 
     return RefreshIndicator(
-      onRefresh: () => ref.read(feedNotifierProvider(feedType).notifier).refresh(),
+      onRefresh:
+          () => ref.read(feedNotifierProvider(feedType).notifier).refresh(),
       edgeOffset: 16,
       color: const Color(0xFF4A8DFF),
       child: CustomScrollView(
@@ -354,9 +376,7 @@ class _FeedTimeline extends ConsumerWidget {
               child: _FeedSectionHeader(
                 title: title,
                 subtitle:
-                    inlineError
-                        ? strings.feedShowingCachedPosts
-                        : subtitle,
+                    inlineError ? strings.feedShowingCachedPosts : subtitle,
                 isError: inlineError,
               ),
             ),
@@ -374,7 +394,10 @@ class _FeedTimeline extends ConsumerWidget {
                 ),
                 actionLabel: strings.retry,
                 onAction:
-                    () => ref.read(feedNotifierProvider(feedType).notifier).refresh(),
+                    () =>
+                        ref
+                            .read(feedNotifierProvider(feedType).notifier)
+                            .refresh(),
               ),
             ),
           if (!isInitialLoading && !blockingError && posts.isEmpty)
@@ -402,7 +425,10 @@ class _FeedTimeline extends ConsumerWidget {
                       feedState.error,
                     ),
                     onRetry:
-                        () => ref.read(feedNotifierProvider(feedType).notifier).refresh(),
+                        () =>
+                            ref
+                                .read(feedNotifierProvider(feedType).notifier)
+                                .refresh(),
                   ),
                 ),
               ),
@@ -411,9 +437,12 @@ class _FeedTimeline extends ConsumerWidget {
               sliver: SliverList(
                 delegate: SliverChildBuilderDelegate((context, index) {
                   final post = posts[index];
-                  final currentUserId = userIdAsync.value;
                   final isOwnPost =
                       currentUserId != null && currentUserId == post.userId;
+
+                  ref
+                      .read(feedNotifierProvider(feedType).notifier)
+                      .maybePrefetchNextPage(index, posts.length);
 
                   return Padding(
                     padding: EdgeInsets.only(

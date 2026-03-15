@@ -1,5 +1,8 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
+import 'package:mishon_app/core/providers/app_bootstrap_provider.dart';
 import 'package:mishon_app/core/repositories/auth_repository.dart';
 import 'package:mishon_app/core/models/auth_model.dart';
 import 'package:mishon_app/core/network/exceptions.dart';
@@ -18,6 +21,9 @@ class AuthNotifier extends _$AuthNotifier {
     try {
       final repository = ref.read(authRepositoryProvider);
       final response = await repository.login(email, password);
+      unawaited(
+        ref.read(appBootstrapProvider.notifier).handleAuthenticatedSession(),
+      );
       state = AsyncValue.data(response);
       return true;
     } on ApiException catch (e) {
@@ -37,6 +43,9 @@ class AuthNotifier extends _$AuthNotifier {
     try {
       final repository = ref.read(authRepositoryProvider);
       final response = await repository.register(username, email, password);
+      unawaited(
+        ref.read(appBootstrapProvider.notifier).handleAuthenticatedSession(),
+      );
       state = AsyncValue.data(response);
       return true;
     } on ApiException catch (e) {
@@ -54,6 +63,7 @@ class AuthNotifier extends _$AuthNotifier {
   Future<void> logout() async {
     final repository = ref.read(authRepositoryProvider);
     await repository.logout();
+    ref.read(appBootstrapProvider.notifier).handleLoggedOut();
     state = const AsyncValue.data(null);
   }
 
@@ -64,12 +74,10 @@ class AuthNotifier extends _$AuthNotifier {
 
 @riverpod
 Future<bool> isAuthenticated(Ref ref) async {
-  final repository = ref.watch(authRepositoryProvider);
-  return await repository.isAuthenticated();
+  return ref.watch(appBootstrapProvider).isAuthenticated;
 }
 
 @riverpod
 Future<int?> userId(Ref ref) async {
-  final repository = ref.watch(authRepositoryProvider);
-  return await repository.getUserId();
+  return ref.watch(appBootstrapProvider).userId;
 }

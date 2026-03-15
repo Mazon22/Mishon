@@ -49,10 +49,10 @@ class ProfileScreen extends ConsumerStatefulWidget {
   ConsumerState<ProfileScreen> createState() => _ProfileScreenState();
 }
 
-class _ProfileScreenState extends ConsumerState<ProfileScreen> {
+class _ProfileScreenState extends ConsumerState<ProfileScreen>
+    with AutomaticKeepAliveClientMixin {
   final _picker = ImagePicker();
 
-  Timer? _poller;
   bool _isLoading = true;
   bool _isActionBusy = false;
   bool _isMediaBusy = false;
@@ -66,22 +66,31 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   @override
   void initState() {
     super.initState();
-    _loadProfile();
-    _poller = Timer.periodic(
-      const Duration(seconds: 15),
-      (_) {
-        if (ref.read(appSettingsProvider).profileAutoRefresh) {
-          _loadProfile(silent: true);
-        }
-      },
+    final authRepository = ref.read(authRepositoryProvider);
+    final postRepository = ref.read(postRepositoryProvider);
+    final cachedOwnProfile = authRepository.peekProfile();
+    final cachedProfile =
+        cachedOwnProfile != null && cachedOwnProfile.id == widget.userId
+            ? cachedOwnProfile
+            : authRepository.peekUserProfile(widget.userId);
+    final cachedPosts = postRepository.peekUserPosts(widget.userId);
+
+    if (cachedProfile != null && cachedPosts != null) {
+      _profile = cachedProfile;
+      _posts = cachedPosts;
+      _isLoading = false;
+      if (cachedOwnProfile != null && cachedOwnProfile.id == widget.userId) {
+        _currentUserId = widget.userId;
+      }
+    }
+
+    unawaited(
+      _loadProfile(silent: cachedProfile != null && cachedPosts != null),
     );
   }
 
   @override
-  void dispose() {
-    _poller?.cancel();
-    super.dispose();
-  }
+  bool get wantKeepAlive => true;
 
   Future<void> _loadProfile({bool silent = false}) async {
     if (!silent) {
@@ -97,15 +106,21 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       final currentUserId = await authRepository.getUserId();
       final profile =
           currentUserId == widget.userId
-              ? await authRepository.getProfile()
-              : await authRepository.getUserProfile(widget.userId);
+              ? await authRepository.getProfile(forceRefresh: true)
+              : await authRepository.getUserProfile(
+                widget.userId,
+                forceRefresh: true,
+              );
       final shouldHidePosts =
           currentUserId != widget.userId &&
           (profile.hasBlockedViewer || profile.isBlockedByViewer);
       final posts =
           shouldHidePosts
               ? const <Post>[]
-              : await postRepository.getUserPosts(widget.userId);
+              : await postRepository.getUserPosts(
+                widget.userId,
+                forceRefresh: true,
+              );
 
       if (!mounted) {
         return;
@@ -122,6 +137,10 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
         return;
       }
 
+      if (silent && _profile != null) {
+        return;
+      }
+
       setState(() {
         _errorMessage = e.apiError.message;
         _isLoading = false;
@@ -131,12 +150,20 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
         return;
       }
 
+      if (silent && _profile != null) {
+        return;
+      }
+
       setState(() {
         _errorMessage = e.message;
         _isLoading = false;
       });
     } catch (_) {
       if (!mounted) {
+        return;
+      }
+
+      if (silent && _profile != null) {
         return;
       }
 
@@ -271,10 +298,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
         _posts = _posts
             .where((post) => post.id != postId)
             .toList(growable: false);
-        _profile =
-            _profile?.copyWith(
-              postsCount: (_profile!.postsCount - 1).clamp(0, 999999).toInt(),
-            );
+        _profile = _profile?.copyWith(
+          postsCount: (_profile!.postsCount - 1).clamp(0, 999999).toInt(),
+        );
       });
       _showSnackBar(AppStrings.of(context).postDeleted);
     } on ApiException catch (e) {
@@ -443,6 +469,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
 
   @override
   Widget build(BuildContext context) {
+    super.build(context);
     final settings = ref.watch(appSettingsProvider);
     final motionDuration =
         settings.motionEffects ? _kProfileMotionDuration : Duration.zero;
@@ -726,7 +753,10 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     );
   }
 
-  Widget _buildRestrictedProfileBody(BuildContext context, UserProfile profile) {
+  Widget _buildRestrictedProfileBody(
+    BuildContext context,
+    UserProfile profile,
+  ) {
     return RefreshIndicator(
       onRefresh: () => _loadProfile(),
       child: ListView(
@@ -1586,9 +1616,7 @@ class _ProfilePostsTab extends StatelessWidget {
         icon: Icons.edit_note_rounded,
         title: strings.noPostsYet,
         subtitle:
-            isOwnProfile
-                ? strings.firstPostPrompt
-                : strings.profileHasNoPosts,
+            isOwnProfile ? strings.firstPostPrompt : strings.profileHasNoPosts,
         ctaLabel: isOwnProfile ? strings.createPost : null,
         onTap: onCreatePost,
       ),
@@ -2322,7 +2350,10 @@ class _ProfileTabBar extends StatelessWidget implements PreferredSizeWidget {
               dividerColor: Colors.transparent,
               indicatorSize: TabBarIndicatorSize.tab,
               indicator: UnderlineTabIndicator(
-                borderSide: const BorderSide(width: 3, color: Color(0xFF1D4ED8)),
+                borderSide: const BorderSide(
+                  width: 3,
+                  color: Color(0xFF1D4ED8),
+                ),
                 insets: EdgeInsets.symmetric(horizontal: indicatorInset),
               ),
               labelColor: const Color(0xFF17263D),

@@ -151,7 +151,48 @@ public class ConversationService : IConversationService
         {
             if (userId == peerUserId)
             {
-                return Result<DirectConversationDto>.Failure("Нельзя создать диалог с собой", ResultError.BadRequest);
+                var currentUser = await _context.Users
+                    .AsNoTracking()
+                    .FirstOrDefaultAsync(u => u.Id == userId, cancellationToken);
+
+                if (currentUser == null)
+                {
+                    return Result<DirectConversationDto>.Failure("Пользователь не найден", ResultError.NotFound);
+                }
+
+                var savedMessagesConversation = await _context.Conversations
+                    .FirstOrDefaultAsync(c => c.UserAId == userId && c.UserBId == userId, cancellationToken);
+
+                if (savedMessagesConversation == null)
+                {
+                    savedMessagesConversation = new Conversation
+                    {
+                        UserAId = userId,
+                        UserBId = userId,
+                        UserAReadAt = DateTime.UtcNow,
+                        UserBReadAt = DateTime.UtcNow
+                    };
+
+                    _context.Conversations.Add(savedMessagesConversation);
+                    await _context.SaveChangesAsync(cancellationToken);
+                }
+                else if (IsConversationDeletedForUser(savedMessagesConversation, userId))
+                {
+                    SetConversationDeletedForUser(savedMessagesConversation, userId, false);
+                    SetArchived(savedMessagesConversation, userId, false);
+                    await _context.SaveChangesAsync(cancellationToken);
+                }
+
+                return Result<DirectConversationDto>.Success(new DirectConversationDto(
+                    savedMessagesConversation.Id,
+                    currentUser.Id,
+                    currentUser.Username,
+                    currentUser.AvatarUrl,
+                    currentUser.AvatarScale,
+                    currentUser.AvatarOffsetX,
+                    currentUser.AvatarOffsetY,
+                    currentUser.LastSeenAt,
+                    currentUser.LastSeenAt >= DateTime.UtcNow.AddMinutes(-5)));
             }
 
             var peer = await _context.Users
@@ -246,6 +287,7 @@ public class ConversationService : IConversationService
                 .AsNoTracking()
                 .Include(m => m.Sender)
                 .Include(m => m.Attachments)
+                .Include(m => m.ForwardedFromUser)
                 .Include(m => m.ReplyToMessage)
                     .ThenInclude(m => m!.Sender)
                 .Include(m => m.ReplyToMessage)
@@ -346,12 +388,12 @@ public class ConversationService : IConversationService
 
             if (conversation == null)
             {
-                return Result<ConversationRealtimeContextDto>.Failure("Р”РёР°Р»РѕРі РЅРµ РЅР°Р№РґРµРЅ", ResultError.NotFound);
+                return Result<ConversationRealtimeContextDto>.Failure("Диалог не найден", ResultError.NotFound);
             }
 
             if (!IsParticipant(conversation, userId))
             {
-                return Result<ConversationRealtimeContextDto>.Failure("РќРµС‚ РґРѕСЃС‚СѓРїР° Рє РґРёР°Р»РѕРіСѓ", ResultError.Forbidden);
+                return Result<ConversationRealtimeContextDto>.Failure("Нет доступа к диалогу", ResultError.Forbidden);
             }
 
             var peerId = GetPeerId(conversation, userId);
@@ -367,7 +409,7 @@ public class ConversationService : IConversationService
         catch (Exception ex)
         {
             return Result<ConversationRealtimeContextDto>.Failure(
-                $"РћС€РёР±РєР° realtime-РєРѕРЅС‚РµРєСЃС‚Р° РґРёР°Р»РѕРіР°: {ex.Message}",
+                $"Ошибка realtime-контекста диалога: {ex.Message}",
                 ResultError.InternalError);
         }
     }
@@ -532,6 +574,123 @@ public class ConversationService : IConversationService
         }
     }
 
+    public async Task<Result<MessageDto>> ForwardMessageAsync(
+        int userId,
+        int conversationId,
+        int sourceMessageId,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var conversation = await _context.Conversations
+                .Include(c => c.UserA)
+                .Include(c => c.UserB)
+                .FirstOrDefaultAsync(c => c.Id == conversationId, cancellationToken);
+
+            if (conversation == null)
+            {
+                return Result<MessageDto>.Failure("Диалог не найден", ResultError.NotFound);
+            }
+
+            if (!IsParticipant(conversation, userId))
+            {
+                return Result<MessageDto>.Failure("Нет доступа к диалогу", ResultError.Forbidden);
+            }
+
+            var peerId = GetPeerId(conversation, userId);
+            if (await _blockService.AreUsersBlockedAsync(userId, peerId, cancellationToken))
+            {
+                return Result<MessageDto>.Failure(
+                    "Отправка сообщений недоступна для этого пользователя",
+                    ResultError.Forbidden);
+            }
+
+            var sourceMessage = await _context.Messages
+                .AsNoTracking()
+                .Include(m => m.Conversation)
+                .Include(m => m.Sender)
+                .Include(m => m.Attachments)
+                .Include(m => m.ForwardedFromUser)
+                .FirstOrDefaultAsync(m => m.Id == sourceMessageId, cancellationToken);
+
+            if (sourceMessage == null || sourceMessage.Conversation == null)
+            {
+                return Result<MessageDto>.Failure("Сообщение не найдено", ResultError.NotFound);
+            }
+
+            if (!IsParticipant(sourceMessage.Conversation, userId) ||
+                IsMessageDeletedForUser(sourceMessage.Conversation, userId, sourceMessage))
+            {
+                return Result<MessageDto>.Failure("Сообщение не найдено", ResultError.NotFound);
+            }
+
+            var forwardedMessage = new Message
+            {
+                ConversationId = conversationId,
+                SenderId = userId,
+                Content = sourceMessage.Content,
+                DeliveredToPeerAt = _chatConnectionTracker.IsUserConnected(peerId)
+                    ? DateTime.UtcNow
+                    : null,
+                ForwardedFromMessageId = sourceMessage.ForwardedFromMessageId ?? sourceMessage.Id,
+                ForwardedFromUserId = sourceMessage.ForwardedFromUserId ?? sourceMessage.SenderId,
+                Attachments = sourceMessage.Attachments.Select(attachment => new MessageAttachment
+                {
+                    FileName = attachment.FileName,
+                    FileUrl = attachment.FileUrl,
+                    ContentType = attachment.ContentType,
+                    SizeBytes = attachment.SizeBytes,
+                    IsImage = attachment.IsImage
+                }).ToList()
+            };
+
+            _context.Messages.Add(forwardedMessage);
+            conversation.UpdatedAt = DateTime.UtcNow;
+            SetConversationDeletedForUser(conversation, conversation.UserAId, false);
+            SetConversationDeletedForUser(conversation, conversation.UserBId, false);
+            MarkAsRead(conversation, userId);
+
+            await _context.SaveChangesAsync(cancellationToken);
+
+            forwardedMessage.Sender = conversation.UserAId == userId
+                ? conversation.UserA
+                : conversation.UserB;
+            forwardedMessage.ForwardedFromUser = sourceMessage.ForwardedFromUser ?? sourceMessage.Sender;
+
+            var senderDto = MapToDto(
+                forwardedMessage,
+                conversation,
+                userId,
+                GetReadAt(conversation, peerId));
+            var recipientDto = MapToDto(
+                forwardedMessage,
+                conversation,
+                peerId,
+                GetReadAt(conversation, userId));
+
+            await _chatRealtimeNotifier.NotifyMessageSentAsync(peerId, recipientDto, cancellationToken);
+
+            if (senderDto.IsDeliveredToPeer && senderDto.DeliveredToPeerAt.HasValue)
+            {
+                await _chatRealtimeNotifier.NotifyMessageDeliveredAsync(
+                    userId,
+                    new MessageDeliveredEventDto(
+                        conversationId,
+                        forwardedMessage.Id,
+                        senderDto.DeliveredToPeerAt.Value),
+                    cancellationToken);
+            }
+
+            return Result<MessageDto>.Success(senderDto);
+        }
+        catch (Exception ex)
+        {
+            return Result<MessageDto>.Failure(
+                $"Ошибка пересылки сообщения: {ex.Message}",
+                ResultError.InternalError);
+        }
+    }
+
     public async Task<Result<MessageDto>> UpdateMessageAsync(
         int userId,
         int conversationId,
@@ -557,6 +716,7 @@ public class ConversationService : IConversationService
             var message = await _context.Messages
                 .Include(m => m.Sender)
                 .Include(m => m.Attachments)
+                .Include(m => m.ForwardedFromUser)
                 .Include(m => m.ReplyToMessage)
                     .ThenInclude(m => m!.Sender)
                 .Include(m => m.ReplyToMessage)
@@ -1004,6 +1164,9 @@ public class ConversationService : IConversationService
             message.ReplyToMessageId,
             replyIsVisible ? message.ReplyToMessage?.Sender.Username : null,
             replyIsVisible ? BuildMessagePreview(message.ReplyToMessage!) : null,
+            message.ForwardedFromMessageId,
+            message.ForwardedFromUserId,
+            message.ForwardedFromUser?.Username,
             message.Attachments.Select(MapAttachmentToDto).ToList());
     }
 

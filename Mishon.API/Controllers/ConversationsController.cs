@@ -160,6 +160,29 @@ public class ConversationsController : ControllerBase
             cancellationToken));
     }
 
+    [HttpPost("{conversationId:int}/messages/forward")]
+    [ProducesResponseType(typeof(MessageDto), StatusCodes.Status200OK)]
+    public async Task<ActionResult<MessageDto>> ForwardMessage(
+        int conversationId,
+        [FromBody] ForwardMessageDto dto,
+        CancellationToken cancellationToken)
+    {
+        if (dto.MessageId <= 0)
+        {
+            return BadRequest(new
+            {
+                error = "Validation Error",
+                message = "MessageId must be greater than zero."
+            });
+        }
+
+        return FromDataResult(await _conversationService.ForwardMessageAsync(
+            GetUserId(),
+            conversationId,
+            dto.MessageId,
+            cancellationToken));
+    }
+
     [HttpDelete("{conversationId:int}/messages/{messageId:int}")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     public async Task<ActionResult> DeleteMessage(int conversationId, int messageId, CancellationToken cancellationToken)

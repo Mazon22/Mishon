@@ -93,6 +93,7 @@ public interface IConversationService
     Task<Result<ConversationRealtimeContextDto>> GetRealtimeContextAsync(int userId, int conversationId, CancellationToken cancellationToken = default);
     Task<IReadOnlyCollection<PendingMessageDeliveryDto>> MarkPendingMessagesDeliveredAsync(int userId, CancellationToken cancellationToken = default);
     Task<Result<MessageDto>> SendMessageAsync(int userId, int conversationId, CreateMessageDto dto, CancellationToken cancellationToken = default);
+    Task<Result<MessageDto>> ForwardMessageAsync(int userId, int conversationId, int sourceMessageId, CancellationToken cancellationToken = default);
     Task<Result<MessageDto>> UpdateMessageAsync(int userId, int conversationId, int messageId, UpdateMessageDto dto, CancellationToken cancellationToken = default);
     Task<Result<DeleteMessageResultDto>> DeleteMessageAsync(int userId, int conversationId, int messageId, CancellationToken cancellationToken = default);
     Task<Result<DeleteMessageResultDto>> DeleteMessageForAllAsync(int userId, int conversationId, int messageId, CancellationToken cancellationToken = default);

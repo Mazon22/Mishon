@@ -34,6 +34,22 @@ public class UsersController : ControllerBase
         return Ok(result.Data);
     }
 
+    [HttpGet("search")]
+    [ProducesResponseType(typeof(IEnumerable<DiscoverUserDto>), StatusCodes.Status200OK)]
+    public async Task<ActionResult<IEnumerable<DiscoverUserDto>>> SearchUsers(
+        [FromQuery(Name = "q")] string? query,
+        [FromQuery] int limit = 24,
+        CancellationToken cancellationToken = default)
+    {
+        var result = await _userDiscoveryService.GetUsersAsync(GetUserId(), query, limit, cancellationToken);
+        if (!result.IsSuccess)
+        {
+            return StatusCode(500, new { error = result.Error });
+        }
+
+        return Ok(result.Data);
+    }
+
     [HttpGet("check-username")]
     [ProducesResponseType(typeof(UsernameAvailabilityDto), StatusCodes.Status200OK)]
     public async Task<ActionResult<UsernameAvailabilityDto>> CheckUsernameAvailability(

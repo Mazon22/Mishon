@@ -5,9 +5,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 
+import 'package:mishon_app/core/models/auth_model.dart';
 import 'package:mishon_app/core/localization/app_strings.dart';
 import 'package:mishon_app/core/models/social_models.dart';
 import 'package:mishon_app/core/network/exceptions.dart';
+import 'package:mishon_app/core/providers/app_bootstrap_provider.dart';
+import 'package:mishon_app/core/repositories/auth_repository.dart';
 import 'package:mishon_app/core/repositories/social_repository.dart';
 import 'package:mishon_app/core/settings/app_settings_provider.dart';
 import 'package:mishon_app/core/widgets/app_shell.dart';
@@ -28,6 +31,13 @@ final RegExp _fileCollectionPreviewPattern = RegExp(
 
 String _conversationFallbackPreview(AppStrings strings) =>
     strings.isRu ? 'Начните диалог' : 'Start the conversation';
+
+String _savedMessagesTitle() => 'Saved Messages';
+
+String _savedMessagesSubtitle(AppStrings strings) =>
+    strings.isRu
+        ? 'Личные заметки, файлы и пересылки'
+        : 'Private notes, files, and forwards';
 
 String _localizeConversationPreview(String? rawPreview, AppStrings strings) {
   final trimmed = rawPreview?.trim();
@@ -65,6 +75,43 @@ String _localizeConversationPreview(String? rawPreview, AppStrings strings) {
   return trimmed;
 }
 
+String _formatConversationTimeLabel(AppStrings strings, DateTime dateTime) {
+  final local = dateTime.toLocal();
+  final now = DateTime.now();
+  final today = DateTime(now.year, now.month, now.day);
+  final thatDay = DateTime(local.year, local.month, local.day);
+  final difference = today.difference(thatDay).inDays;
+
+  if (difference <= 0) {
+    return DateFormat('HH:mm').format(local);
+  }
+
+  if (difference == 1) {
+    return strings.isRu ? 'Вчера' : 'Yesterday';
+  }
+
+  if (difference < 7) {
+    switch (local.weekday) {
+      case DateTime.monday:
+        return strings.isRu ? 'Пн' : 'Mon';
+      case DateTime.tuesday:
+        return strings.isRu ? 'Вт' : 'Tue';
+      case DateTime.wednesday:
+        return strings.isRu ? 'Ср' : 'Wed';
+      case DateTime.thursday:
+        return strings.isRu ? 'Чт' : 'Thu';
+      case DateTime.friday:
+        return strings.isRu ? 'Пт' : 'Fri';
+      case DateTime.saturday:
+        return strings.isRu ? 'Сб' : 'Sat';
+      default:
+        return strings.isRu ? 'Вс' : 'Sun';
+    }
+  }
+
+  return DateFormat('dd.MM').format(local);
+}
+
 class ChatsScreen extends ConsumerStatefulWidget {
   final bool embeddedInNavigationShell;
 
@@ -80,15 +127,30 @@ class _ChatsScreenState extends ConsumerState<ChatsScreen> {
   bool _isLoading = true;
   String? _errorMessage;
   String _searchQuery = '';
-  bool _favoritesOnly = false;
   bool _showArchived = false;
   List<ConversationModel> _conversations = const [];
 
   @override
   void initState() {
     super.initState();
+    final repository = ref.read(socialRepositoryProvider);
+    final cachedConversations = repository.peekConversations();
+    if (cachedConversations != null) {
+      final previewOverrides = ref.read(
+        chatConversationPreviewOverridesProvider,
+      );
+      _conversations = cachedConversations
+          .map(
+            (conversation) => _applyConversationPreviewOverride(
+              conversation,
+              previewOverrides[conversation.id],
+            ),
+          )
+          .toList(growable: false);
+      _isLoading = false;
+    }
     _searchController.addListener(_handleSearchChanged);
-    _loadConversations();
+    unawaited(_loadConversations(silent: cachedConversations != null));
     _poller = Timer.periodic(
       const Duration(seconds: 5),
       (_) => _loadConversations(silent: true),
@@ -125,8 +187,9 @@ class _ChatsScreenState extends ConsumerState<ChatsScreen> {
     }
 
     try {
-      final conversations =
-          await ref.read(socialRepositoryProvider).getConversations();
+      final conversations = await ref
+          .read(socialRepositoryProvider)
+          .getConversations(forceRefresh: true);
       final previewOverrides = ref.read(
         chatConversationPreviewOverridesProvider,
       );
@@ -150,6 +213,10 @@ class _ChatsScreenState extends ConsumerState<ChatsScreen> {
         return;
       }
 
+      if (silent && _conversations.isNotEmpty) {
+        return;
+      }
+
       setState(() {
         _errorMessage = e.apiError.message;
         _isLoading = false;
@@ -159,12 +226,20 @@ class _ChatsScreenState extends ConsumerState<ChatsScreen> {
         return;
       }
 
+      if (silent && _conversations.isNotEmpty) {
+        return;
+      }
+
       setState(() {
         _errorMessage = e.message;
         _isLoading = false;
       });
     } catch (_) {
       if (!mounted) {
+        return;
+      }
+
+      if (silent && _conversations.isNotEmpty) {
         return;
       }
 
@@ -268,32 +343,6 @@ class _ChatsScreenState extends ConsumerState<ChatsScreen> {
     }
   }
 
-  Future<void> _toggleFavorite(ConversationModel conversation) async {
-    final strings = AppStrings.of(context);
-    try {
-      await ref
-          .read(socialRepositoryProvider)
-          .favoriteConversation(conversation.id, !conversation.isFavorite);
-      await _loadConversations(silent: true);
-      _showSnackBar(
-        conversation.isFavorite
-            ? (strings.isRu ? 'Чат убран из избранного' : 'Removed from favorites')
-            : (strings.isRu ? 'Чат добавлен в избранное' : 'Added to favorites'),
-      );
-    } on ApiException catch (e) {
-      _showSnackBar(e.apiError.message, isError: true);
-    } on OfflineException catch (e) {
-      _showSnackBar(e.message, isError: true);
-    } catch (_) {
-      _showSnackBar(
-        strings.isRu
-            ? 'Не удалось обновить избранное'
-            : 'Could not update favorites',
-        isError: true,
-      );
-    }
-  }
-
   Future<void> _toggleMute(ConversationModel conversation) async {
     final strings = AppStrings.of(context);
     try {
@@ -360,10 +409,12 @@ class _ChatsScreenState extends ConsumerState<ChatsScreen> {
     }
 
     try {
-      await ref.read(socialRepositoryProvider).deleteConversation(
-        conversation.id,
-        deleteForBoth: decision == _DeleteConversationMode.forBoth,
-      );
+      await ref
+          .read(socialRepositoryProvider)
+          .deleteConversation(
+            conversation.id,
+            deleteForBoth: decision == _DeleteConversationMode.forBoth,
+          );
       await _loadConversations(silent: true);
       _showSnackBar(strings.isRu ? 'Чат удален' : 'Chat deleted');
     } on ApiException catch (e) {
@@ -386,9 +437,7 @@ class _ChatsScreenState extends ConsumerState<ChatsScreen> {
           builder:
               (context) => AlertDialog(
                 title: Text(
-                  strings.isRu
-                      ? 'Заблокировать пользователя?'
-                      : 'Block user?',
+                  strings.isRu ? 'Заблокировать пользователя?' : 'Block user?',
                 ),
                 content: Text(
                   strings.isRu
@@ -402,9 +451,7 @@ class _ChatsScreenState extends ConsumerState<ChatsScreen> {
                   ),
                   FilledButton(
                     onPressed: () => Navigator.of(context).pop(true),
-                    child: Text(
-                      strings.isRu ? 'Заблокировать' : 'Block user',
-                    ),
+                    child: Text(strings.isRu ? 'Заблокировать' : 'Block user'),
                   ),
                 ],
               ),
@@ -416,9 +463,9 @@ class _ChatsScreenState extends ConsumerState<ChatsScreen> {
     }
 
     try {
-      await ref.read(socialRepositoryProvider).blockUserFromChat(
-        conversation.peerId,
-      );
+      await ref
+          .read(socialRepositoryProvider)
+          .blockUserFromChat(conversation.peerId);
       await _loadConversations(silent: true);
       _showSnackBar(
         strings.isRu ? 'Пользователь заблокирован' : 'User blocked',
@@ -483,26 +530,6 @@ class _ChatsScreenState extends ConsumerState<ChatsScreen> {
                 ),
                 ListTile(
                   leading: Icon(
-                    conversation.isFavorite
-                        ? Icons.star_outline_rounded
-                        : Icons.star_rounded,
-                  ),
-                  title: Text(
-                    conversation.isFavorite
-                        ? (strings.isRu
-                            ? 'Убрать из избранного'
-                            : 'Remove from favorites')
-                        : (strings.isRu
-                            ? 'Добавить в избранное'
-                            : 'Add to favorites'),
-                  ),
-                  onTap: () {
-                    Navigator.of(context).pop();
-                    _toggleFavorite(conversation);
-                  },
-                ),
-                ListTile(
-                  leading: Icon(
                     conversation.isMuted
                         ? Icons.notifications_active_outlined
                         : Icons.notifications_off_outlined,
@@ -545,34 +572,141 @@ class _ChatsScreenState extends ConsumerState<ChatsScreen> {
     );
   }
 
-  void _openConversation(ConversationModel conversation) {
+  void _pushChat({
+    required int conversationId,
+    required int peerId,
+    required String peerUsername,
+    required String? peerAvatarUrl,
+    required double peerAvatarScale,
+    required double peerAvatarOffsetX,
+    required double peerAvatarOffsetY,
+    required bool? initialIsOnline,
+    required DateTime? initialLastSeenAt,
+  }) {
     unawaited(
       ref
-          .read(chatMessagesNotifierProvider(conversation.id).notifier)
+          .read(chatMessagesNotifierProvider(conversationId).notifier)
           .ensureLoaded(),
     );
     context.push(
       '/chat',
       extra: ChatScreenArgs(
-        conversationId: conversation.id,
-        peerId: conversation.peerId,
-        peerUsername: conversation.username,
-        peerAvatarUrl: conversation.avatarUrl,
-        peerAvatarScale: conversation.avatarScale,
-        peerAvatarOffsetX: conversation.avatarOffsetX,
-        peerAvatarOffsetY: conversation.avatarOffsetY,
-        initialIsOnline: conversation.isOnline,
-        initialLastSeenAt: conversation.lastSeenAt,
+        conversationId: conversationId,
+        peerId: peerId,
+        peerUsername: peerUsername,
+        peerAvatarUrl: peerAvatarUrl,
+        peerAvatarScale: peerAvatarScale,
+        peerAvatarOffsetX: peerAvatarOffsetX,
+        peerAvatarOffsetY: peerAvatarOffsetY,
+        initialIsOnline: initialIsOnline,
+        initialLastSeenAt: initialLastSeenAt,
       ),
     );
   }
 
-  List<ConversationModel> _filteredConversations() {
+  void _openConversation(
+    ConversationModel conversation, {
+    String? titleOverride,
+  }) {
+    _pushChat(
+      conversationId: conversation.id,
+      peerId: conversation.peerId,
+      peerUsername: titleOverride ?? conversation.username,
+      peerAvatarUrl: conversation.avatarUrl,
+      peerAvatarScale: conversation.avatarScale,
+      peerAvatarOffsetX: conversation.avatarOffsetX,
+      peerAvatarOffsetY: conversation.avatarOffsetY,
+      initialIsOnline: conversation.isOnline,
+      initialLastSeenAt: conversation.lastSeenAt,
+    );
+  }
+
+  Future<void> _openSavedMessages(ConversationModel? conversation) async {
+    final strings = AppStrings.of(context);
+    if (conversation != null) {
+      _openConversation(conversation, titleOverride: _savedMessagesTitle());
+      return;
+    }
+
+    final currentUserId = ref.read(currentUserIdProvider);
+    if (currentUserId == null) {
+      return;
+    }
+
+    try {
+      final authRepository = ref.read(authRepositoryProvider);
+      UserProfile? currentProfile = authRepository.peekProfile();
+      if (currentProfile == null) {
+        try {
+          currentProfile = await authRepository.getProfile();
+        } catch (_) {
+          currentProfile = null;
+        }
+      }
+
+      final createdConversation = await ref
+          .read(socialRepositoryProvider)
+          .getOrCreateConversation(currentUserId);
+      if (!mounted) {
+        return;
+      }
+
+      await _loadConversations(silent: true);
+      if (!mounted) {
+        return;
+      }
+
+      _pushChat(
+        conversationId: createdConversation.id,
+        peerId: createdConversation.peerId,
+        peerUsername: _savedMessagesTitle(),
+        peerAvatarUrl:
+            currentProfile?.avatarUrl ?? createdConversation.avatarUrl,
+        peerAvatarScale:
+            currentProfile?.avatarScale ?? createdConversation.avatarScale,
+        peerAvatarOffsetX:
+            currentProfile?.avatarOffsetX ?? createdConversation.avatarOffsetX,
+        peerAvatarOffsetY:
+            currentProfile?.avatarOffsetY ?? createdConversation.avatarOffsetY,
+        initialIsOnline:
+            currentProfile?.isOnline ?? createdConversation.isOnline,
+        initialLastSeenAt:
+            currentProfile?.lastSeenAt ?? createdConversation.lastSeenAt,
+      );
+    } on ApiException catch (e) {
+      _showSnackBar(e.apiError.message, isError: true);
+    } on OfflineException catch (e) {
+      _showSnackBar(e.message, isError: true);
+    } catch (_) {
+      _showSnackBar(
+        strings.isRu
+            ? 'Не удалось открыть Saved Messages'
+            : 'Could not open Saved Messages',
+        isError: true,
+      );
+    }
+  }
+
+  ConversationModel? _savedMessagesConversation(int? currentUserId) {
+    if (currentUserId == null) {
+      return null;
+    }
+
+    for (final conversation in _conversations) {
+      if (conversation.peerId == currentUserId) {
+        return conversation;
+      }
+    }
+
+    return null;
+  }
+
+  List<ConversationModel> _filteredConversations(int? currentUserId) {
     final strings = AppStrings.of(context);
     final query = _searchQuery.trim().toLowerCase();
-    final filtered =
-        _conversations.where((conversation) {
-          if (_favoritesOnly && !conversation.isFavorite) {
+    final filtered = _conversations
+        .where((conversation) {
+          if (currentUserId != null && conversation.peerId == currentUserId) {
             return false;
           }
 
@@ -581,35 +715,40 @@ class _ChatsScreenState extends ConsumerState<ChatsScreen> {
           }
 
           final username = conversation.username.toLowerCase();
-          final preview = _localizeConversationPreview(
-            conversation.lastMessage,
-            strings,
-          ).toLowerCase();
+          final preview =
+              _localizeConversationPreview(
+                conversation.lastMessage,
+                strings,
+              ).toLowerCase();
           return username.contains(query) || preview.contains(query);
-        }).toList(growable: false);
+        })
+        .toList(growable: false);
 
     return filtered;
   }
 
-  List<ConversationModel> _mainConversations() {
-    return _filteredConversations()
+  List<ConversationModel> _mainConversations(int? currentUserId) {
+    return _filteredConversations(currentUserId)
         .where((conversation) {
           return !conversation.isArchived;
         })
         .toList(growable: false);
   }
 
-  List<ConversationModel> _archivedConversations() {
-    return _filteredConversations()
-        .where((conversation) => conversation.isArchived)
-        .toList(growable: false);
+  List<ConversationModel> _archivedConversations(int? currentUserId) {
+    return _filteredConversations(
+      currentUserId,
+    ).where((conversation) => conversation.isArchived).toList(growable: false);
   }
 
   @override
   Widget build(BuildContext context) {
     final strings = AppStrings.of(context);
-    final mainConversations = _mainConversations();
-    final archivedConversations = _archivedConversations();
+    final currentUserId = ref.watch(currentUserIdProvider);
+    final currentProfile = ref.watch(authRepositoryProvider).peekProfile();
+    final savedMessagesConversation = _savedMessagesConversation(currentUserId);
+    final mainConversations = _mainConversations(currentUserId);
+    final archivedConversations = _archivedConversations(currentUserId);
     final showEmptyState =
         mainConversations.isEmpty &&
         (!_showArchived || archivedConversations.isEmpty);
@@ -635,36 +774,54 @@ class _ChatsScreenState extends ConsumerState<ChatsScreen> {
             const SizedBox(height: 12),
             Row(
               children: [
-                FilterChip(
-                  selected: _favoritesOnly,
-                  label: Text(strings.isRu ? 'Избранные' : 'Favorites'),
-                  avatar: const Icon(Icons.star_rounded, size: 18),
-                  onSelected: (value) {
-                    setState(() {
-                      _favoritesOnly = value;
-                    });
-                  },
+                Expanded(
+                  child: _SavedMessagesShortcutCard(
+                    username: currentProfile?.username ?? strings.profile,
+                    avatarUrl: currentProfile?.avatarUrl,
+                    avatarScale: currentProfile?.avatarScale ?? 1,
+                    avatarOffsetX: currentProfile?.avatarOffsetX ?? 0,
+                    avatarOffsetY: currentProfile?.avatarOffsetY ?? 0,
+                    title: _savedMessagesTitle(),
+                    subtitle:
+                        savedMessagesConversation == null
+                            ? _savedMessagesSubtitle(strings)
+                            : _localizeConversationPreview(
+                              savedMessagesConversation.lastMessage,
+                              strings,
+                            ),
+                    timeLabel:
+                        savedMessagesConversation?.lastMessageAt != null
+                            ? _formatConversationTimeLabel(
+                              strings,
+                              savedMessagesConversation!.lastMessageAt!,
+                            )
+                            : null,
+                    onTap:
+                        currentUserId == null
+                            ? null
+                            : () =>
+                                _openSavedMessages(savedMessagesConversation),
+                  ),
                 ),
-                const SizedBox(width: 10),
-                if (archivedConversations.isNotEmpty)
-                  ActionChip(
-                    avatar: Icon(
-                      _showArchived
-                          ? Icons.unarchive_outlined
-                          : Icons.archive_outlined,
-                      size: 18,
-                    ),
-                    label: Text(
-                      _showArchived
-                          ? (strings.isRu ? 'Скрыть архив' : 'Hide archive')
-                          : '${strings.isRu ? 'Архив' : 'Archive'} (${archivedConversations.length})',
-                    ),
-                    onPressed: () {
+                if (archivedConversations.isNotEmpty) ...[
+                  const SizedBox(width: 10),
+                  _ChatsActionPill(
+                    icon:
+                        _showArchived
+                            ? Icons.unarchive_outlined
+                            : Icons.archive_outlined,
+                    label:
+                        _showArchived
+                            ? (strings.isRu ? 'Скрыть архив' : 'Hide archive')
+                            : '${strings.isRu ? 'Архив' : 'Archive'} (${archivedConversations.length})',
+                    isActive: _showArchived,
+                    onTap: () {
                       setState(() {
                         _showArchived = !_showArchived;
                       });
                     },
                   ),
+                ],
               ],
             ),
             const SizedBox(height: 16),
@@ -742,14 +899,18 @@ class _ChatsScreenState extends ConsumerState<ChatsScreen> {
                               children: [
                                 if (mainConversations.isNotEmpty) ...[
                                   _SectionLabel(
-                                    title: strings.isRu ? 'Диалоги' : 'Conversations',
+                                    title:
+                                        strings.isRu
+                                            ? 'Диалоги'
+                                            : 'Conversations',
                                     subtitle: strings.chatSwipeHint,
                                   ),
                                   const SizedBox(height: 6),
                                   ...mainConversations.map(
                                     (conversation) => _ConversationListItem(
                                       conversation: conversation,
-                                      onTap: () => _openConversation(conversation),
+                                      onTap:
+                                          () => _openConversation(conversation),
                                       onLongPress:
                                           () => _showChatActions(conversation),
                                       onPinToggle:
@@ -773,7 +934,8 @@ class _ChatsScreenState extends ConsumerState<ChatsScreen> {
                                   ...archivedConversations.map(
                                     (conversation) => _ConversationListItem(
                                       conversation: conversation,
-                                      onTap: () => _openConversation(conversation),
+                                      onTap:
+                                          () => _openConversation(conversation),
                                       onLongPress:
                                           () => _showChatActions(conversation),
                                       onPinToggle:
@@ -855,6 +1017,227 @@ class _ChatsSearchBar extends StatelessWidget {
               color: const Color(0xFF5C6980),
             ),
         ],
+      ),
+    );
+  }
+}
+
+class _SavedMessagesShortcutCard extends StatelessWidget {
+  final String username;
+  final String? avatarUrl;
+  final double avatarScale;
+  final double avatarOffsetX;
+  final double avatarOffsetY;
+  final String title;
+  final String subtitle;
+  final String? timeLabel;
+  final VoidCallback? onTap;
+
+  const _SavedMessagesShortcutCard({
+    required this.username,
+    required this.avatarUrl,
+    required this.avatarScale,
+    required this.avatarOffsetX,
+    required this.avatarOffsetY,
+    required this.title,
+    required this.subtitle,
+    required this.timeLabel,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedOpacity(
+      duration: const Duration(milliseconds: 180),
+      opacity: onTap == null ? 0.58 : 1,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(24),
+          child: Ink(
+            height: 82,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(24),
+              gradient: const LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: <Color>[
+                  Color(0xFFF7FBFF),
+                  Color(0xFFEAF2FF),
+                  Color(0xFFE7FFF5),
+                ],
+              ),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.9)),
+              boxShadow: <BoxShadow>[
+                BoxShadow(
+                  color: const Color(0xFF12294D).withValues(alpha: 0.08),
+                  blurRadius: 20,
+                  offset: const Offset(0, 12),
+                ),
+              ],
+            ),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 14),
+              child: Row(
+                children: [
+                  Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      AppAvatar(
+                        username: username,
+                        imageUrl: avatarUrl,
+                        size: 52,
+                        scale: avatarScale,
+                        offsetX: avatarOffsetX,
+                        offsetY: avatarOffsetY,
+                      ),
+                      Positioned(
+                        right: -2,
+                        bottom: -2,
+                        child: Container(
+                          width: 20,
+                          height: 20,
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF2F67FF),
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(color: Colors.white, width: 2),
+                          ),
+                          child: const Icon(
+                            Icons.bookmark_rounded,
+                            size: 11,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(
+                            context,
+                          ).textTheme.titleMedium?.copyWith(
+                            color: const Color(0xFF18243C),
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          subtitle,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(
+                            context,
+                          ).textTheme.bodyMedium?.copyWith(
+                            color: const Color(0xFF6F7E92),
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      if (timeLabel != null)
+                        Text(
+                          timeLabel!,
+                          style: Theme.of(
+                            context,
+                          ).textTheme.bodySmall?.copyWith(
+                            color: const Color(0xFF2F67FF),
+                            fontWeight: FontWeight.w700,
+                          ),
+                        )
+                      else
+                        const Icon(
+                          Icons.arrow_forward_ios_rounded,
+                          size: 16,
+                          color: Color(0xFF6B7B90),
+                        ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ChatsActionPill extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final bool isActive;
+  final VoidCallback onTap;
+
+  const _ChatsActionPill({
+    required this.icon,
+    required this.label,
+    required this.isActive,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(22),
+        child: Ink(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          decoration: BoxDecoration(
+            color:
+                isActive
+                    ? const Color(0xFF213F82)
+                    : Colors.white.withValues(alpha: 0.86),
+            borderRadius: BorderRadius.circular(22),
+            border: Border.all(
+              color:
+                  isActive
+                      ? const Color(0xFF213F82)
+                      : Colors.white.withValues(alpha: 0.9),
+            ),
+            boxShadow: <BoxShadow>[
+              BoxShadow(
+                color: const Color(0xFF13294F).withValues(alpha: 0.08),
+                blurRadius: 20,
+                offset: const Offset(0, 12),
+              ),
+            ],
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                icon,
+                size: 18,
+                color: isActive ? Colors.white : const Color(0xFF314B82),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                label,
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: isActive ? Colors.white : const Color(0xFF233A69),
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -1076,7 +1459,6 @@ class _ConversationTileState extends State<_ConversationTile> {
     final hasUnread = conversation.unreadCount > 0;
     final statusIcons = [
       if (conversation.isPinned) Icons.push_pin_rounded,
-      if (conversation.isFavorite) Icons.star_rounded,
       if (conversation.isMuted) Icons.notifications_off_rounded,
     ];
     final displayPreview =
@@ -1109,15 +1491,13 @@ class _ConversationTileState extends State<_ConversationTile> {
           borderRadius: BorderRadius.circular(22),
           border: Border.all(
             color:
-                _isHovered
-                    ? const Color(0xFFD4E1F7)
-                    : const Color(0xFFE1E8F5),
+                _isHovered ? const Color(0xFFD4E1F7) : const Color(0xFFE1E8F5),
           ),
           boxShadow: [
             BoxShadow(
-              color: const Color(0xFF17325E).withValues(
-                alpha: _isHovered ? 0.08 : 0.035,
-              ),
+              color: const Color(
+                0xFF17325E,
+              ).withValues(alpha: _isHovered ? 0.08 : 0.035),
               blurRadius: _isHovered ? 18 : 12,
               offset: const Offset(0, 8),
             ),
@@ -1242,7 +1622,9 @@ class _ConversationTileState extends State<_ConversationTile> {
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             if (showLastMessageStatus) ...[
-                              _LastMessageStatusIcon(conversation: conversation),
+                              _LastMessageStatusIcon(
+                                conversation: conversation,
+                              ),
                               const SizedBox(width: 4),
                             ],
                             Text(
@@ -1259,7 +1641,9 @@ class _ConversationTileState extends State<_ConversationTile> {
                                         ? const Color(0xFF2F67FF)
                                         : const Color(0xFF7A879A),
                                 fontWeight:
-                                    hasUnread ? FontWeight.w700 : FontWeight.w600,
+                                    hasUnread
+                                        ? FontWeight.w700
+                                        : FontWeight.w600,
                               ),
                             ),
                           ],

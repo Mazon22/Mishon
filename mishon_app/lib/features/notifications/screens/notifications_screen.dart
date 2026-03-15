@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -22,7 +20,6 @@ class NotificationsScreen extends ConsumerStatefulWidget {
 }
 
 class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
-  Timer? _poller;
   bool _isLoading = true;
   String? _errorMessage;
   List<NotificationItemModel> _items = const [];
@@ -32,13 +29,6 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
   void initState() {
     super.initState();
     _loadNotifications();
-    _poller = Timer.periodic(const Duration(seconds: 10), (_) => _loadNotifications(silent: true));
-  }
-
-  @override
-  void dispose() {
-    _poller?.cancel();
-    super.dispose();
   }
 
   Future<void> _loadNotifications({bool silent = false}) async {
