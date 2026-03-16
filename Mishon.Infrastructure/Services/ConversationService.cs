@@ -81,13 +81,14 @@ public class ConversationService : IConversationService
 
                     var lastMessage = visibleMessages.FirstOrDefault();
                     var readAt = GetReadAt(conversation, userId);
+                    var peerReadAt = GetReadAt(conversation, peer.Id);
                     var lastMessageIsMine = lastMessage?.SenderId == userId;
                     var lastMessageIsReadByPeer = lastMessageIsMine &&
-                        readAt.HasValue &&
+                        peerReadAt.HasValue &&
                         lastMessage != null &&
-                        lastMessage.CreatedAt <= readAt.Value;
+                        lastMessage.CreatedAt <= peerReadAt.Value;
                     var lastMessageDeliveredAt = lastMessageIsReadByPeer
-                        ? readAt
+                        ? peerReadAt
                         : lastMessage?.DeliveredToPeerAt;
                     var lastMessageIsDeliveredToPeer = lastMessageIsMine &&
                         lastMessageDeliveredAt.HasValue;
@@ -1167,6 +1168,10 @@ public class ConversationService : IConversationService
             message.ForwardedFromMessageId,
             message.ForwardedFromUserId,
             message.ForwardedFromUser?.Username,
+            message.ForwardedFromUser?.AvatarUrl,
+            message.ForwardedFromUser?.AvatarScale ?? 1,
+            message.ForwardedFromUser?.AvatarOffsetX ?? 0,
+            message.ForwardedFromUser?.AvatarOffsetY ?? 0,
             message.Attachments.Select(MapAttachmentToDto).ToList());
     }
 

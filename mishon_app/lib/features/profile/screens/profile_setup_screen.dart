@@ -8,6 +8,7 @@ import 'package:mishon_app/core/localization/app_strings.dart';
 import 'package:mishon_app/core/models/auth_model.dart';
 import 'package:mishon_app/core/network/exceptions.dart';
 import 'package:mishon_app/core/repositories/auth_repository.dart';
+import 'package:mishon_app/core/widgets/app_toast.dart';
 import 'package:mishon_app/core/widgets/profile_media.dart';
 import 'package:mishon_app/features/profile/screens/profile_media_editor_screen.dart';
 
@@ -23,8 +24,14 @@ class ProfileSetupScreen extends ConsumerStatefulWidget {
 class _ProfileSetupScreenState extends ConsumerState<ProfileSetupScreen> {
   final _picker = ImagePicker();
   final _usernameRegex = RegExp(r'^[a-z0-9._]{5,50}$');
-  final _usernameFormatter = TextInputFormatter.withFunction((oldValue, newValue) {
-    final sanitized = newValue.text.toLowerCase().replaceAll(RegExp(r'[^a-z0-9._]'), '');
+  final _usernameFormatter = TextInputFormatter.withFunction((
+    oldValue,
+    newValue,
+  ) {
+    final sanitized = newValue.text.toLowerCase().replaceAll(
+      RegExp(r'[^a-z0-9._]'),
+      '',
+    );
     return TextEditingValue(
       text: sanitized,
       selection: TextSelection.collapsed(offset: sanitized.length),
@@ -55,7 +62,8 @@ class _ProfileSetupScreenState extends ConsumerState<ProfileSetupScreen> {
   bool _avatarDirty = false;
   bool _bannerDirty = false;
 
-  String get _initialUsername => widget.initialProfile.username.trim().toLowerCase();
+  String get _initialUsername =>
+      widget.initialProfile.username.trim().toLowerCase();
   String get _initialAbout => (widget.initialProfile.aboutMe ?? '').trim();
   String get _username => _usernameController.text.trim().toLowerCase();
   String get _about => _aboutController.text.trim();
@@ -81,13 +89,18 @@ class _ProfileSetupScreenState extends ConsumerState<ProfileSetupScreen> {
   }
 
   bool get _canSave =>
-      !_isSaving && !_isMediaBusy && _isUsernameReadyToSave && _hasPendingChanges;
+      !_isSaving &&
+      !_isMediaBusy &&
+      _isUsernameReadyToSave &&
+      _hasPendingChanges;
 
   @override
   void initState() {
     super.initState();
     _usernameController = TextEditingController(text: _initialUsername);
-    _aboutController = TextEditingController(text: widget.initialProfile.aboutMe ?? '');
+    _aboutController = TextEditingController(
+      text: widget.initialProfile.aboutMe ?? '',
+    );
     _avatarScale = widget.initialProfile.avatarScale;
     _avatarOffsetX = widget.initialProfile.avatarOffsetX;
     _avatarOffsetY = widget.initialProfile.avatarOffsetY;
@@ -146,25 +159,27 @@ class _ProfileSetupScreenState extends ConsumerState<ProfileSetupScreen> {
         _usernameAvailabilityFuture = future;
       });
 
-      future.then((available) {
-        if (!mounted || _username != requestedUsername) {
-          return;
-        }
+      future
+          .then((available) {
+            if (!mounted || _username != requestedUsername) {
+              return;
+            }
 
-        setState(() {
-          _availabilityResult = available;
-          _isCheckingUsername = false;
-        });
-      }).catchError((_) {
-        if (!mounted || _username != requestedUsername) {
-          return;
-        }
+            setState(() {
+              _availabilityResult = available;
+              _isCheckingUsername = false;
+            });
+          })
+          .catchError((_) {
+            if (!mounted || _username != requestedUsername) {
+              return;
+            }
 
-        setState(() {
-          _availabilityResult = null;
-          _isCheckingUsername = false;
-        });
-      });
+            setState(() {
+              _availabilityResult = null;
+              _isCheckingUsername = false;
+            });
+          });
     });
   }
 
@@ -194,13 +209,23 @@ class _ProfileSetupScreenState extends ConsumerState<ProfileSetupScreen> {
 
       final result = await Navigator.of(context).push<ProfileMediaEditResult>(
         MaterialPageRoute(
-          builder: (_) => ProfileMediaEditorScreen(
-            imageBytes: bytes,
-            kind: kind,
-            initialScale: kind == ProfileMediaKind.avatar ? _avatarScale : _bannerScale,
-            initialOffsetX: kind == ProfileMediaKind.avatar ? _avatarOffsetX : _bannerOffsetX,
-            initialOffsetY: kind == ProfileMediaKind.avatar ? _avatarOffsetY : _bannerOffsetY,
-          ),
+          builder:
+              (_) => ProfileMediaEditorScreen(
+                imageBytes: bytes,
+                kind: kind,
+                initialScale:
+                    kind == ProfileMediaKind.avatar
+                        ? _avatarScale
+                        : _bannerScale,
+                initialOffsetX:
+                    kind == ProfileMediaKind.avatar
+                        ? _avatarOffsetX
+                        : _bannerOffsetX,
+                initialOffsetY:
+                    kind == ProfileMediaKind.avatar
+                        ? _avatarOffsetY
+                        : _bannerOffsetY,
+              ),
         ),
       );
 
@@ -306,12 +331,7 @@ class _ProfileSetupScreenState extends ConsumerState<ProfileSetupScreen> {
   }
 
   void _showSnackBar(String message, {bool isError = false}) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: isError ? const Color(0xFFD14343) : const Color(0xFF1F8F52),
-      ),
-    );
+    showAppToast(context, message: message, isError: isError);
   }
 
   Color get _usernameStatusColor {
@@ -405,10 +425,16 @@ class _ProfileSetupScreenState extends ConsumerState<ProfileSetupScreen> {
   Widget build(BuildContext context) {
     final strings = AppStrings.of(context);
     final theme = Theme.of(context);
-    final currentAvatarUrl = _removeAvatar ? null : widget.initialProfile.avatarUrl;
-    final currentBannerUrl = _removeBanner ? null : widget.initialProfile.bannerUrl;
-    final hasAvatar = (_avatarDirty && !_removeAvatar) || (widget.initialProfile.avatarUrl?.isNotEmpty ?? false);
-    final hasBanner = (_bannerDirty && !_removeBanner) || (widget.initialProfile.bannerUrl?.isNotEmpty ?? false);
+    final currentAvatarUrl =
+        _removeAvatar ? null : widget.initialProfile.avatarUrl;
+    final currentBannerUrl =
+        _removeBanner ? null : widget.initialProfile.bannerUrl;
+    final hasAvatar =
+        (_avatarDirty && !_removeAvatar) ||
+        (widget.initialProfile.avatarUrl?.isNotEmpty ?? false);
+    final hasBanner =
+        (_bannerDirty && !_removeBanner) ||
+        (widget.initialProfile.bannerUrl?.isNotEmpty ?? false);
 
     return Scaffold(
       backgroundColor: const Color(0xFFF6F8FC),
@@ -429,7 +455,10 @@ class _ProfileSetupScreenState extends ConsumerState<ProfileSetupScreen> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   _ProfileSetupHeader(
-                    username: _username.isEmpty ? widget.initialProfile.username : _username,
+                    username:
+                        _username.isEmpty
+                            ? widget.initialProfile.username
+                            : _username,
                     avatarUrl: currentAvatarUrl,
                     avatarBytes: _removeAvatar ? null : _avatarBytes,
                     avatarScale: _avatarScale,
@@ -542,30 +571,44 @@ class _ProfileSetupScreenState extends ConsumerState<ProfileSetupScreen> {
                       _ProfileQuickAction(
                         icon: Icons.add_a_photo_outlined,
                         label: strings.changeAvatar,
-                        onTap: _isMediaBusy || _isSaving
-                            ? null
-                            : () => _editMedia(ProfileMediaKind.avatar),
+                        onTap:
+                            _isMediaBusy || _isSaving
+                                ? null
+                                : () => _editMedia(ProfileMediaKind.avatar),
                       ),
                       _ProfileQuickAction(
                         icon: Icons.hide_image_outlined,
                         label: strings.removeAvatar,
-                        onTap: (_isMediaBusy || _isSaving || (!hasAvatar) || _removeAvatar)
-                            ? null
-                            : () => _removeSelectedMedia(ProfileMediaKind.avatar),
+                        onTap:
+                            (_isMediaBusy ||
+                                    _isSaving ||
+                                    (!hasAvatar) ||
+                                    _removeAvatar)
+                                ? null
+                                : () => _removeSelectedMedia(
+                                  ProfileMediaKind.avatar,
+                                ),
                       ),
                       _ProfileQuickAction(
                         icon: Icons.wallpaper_outlined,
                         label: strings.changeBanner,
-                        onTap: _isMediaBusy || _isSaving
-                            ? null
-                            : () => _editMedia(ProfileMediaKind.banner),
+                        onTap:
+                            _isMediaBusy || _isSaving
+                                ? null
+                                : () => _editMedia(ProfileMediaKind.banner),
                       ),
                       _ProfileQuickAction(
                         icon: Icons.layers_clear_outlined,
                         label: strings.removeBanner,
-                        onTap: (_isMediaBusy || _isSaving || (!hasBanner) || _removeBanner)
-                            ? null
-                            : () => _removeSelectedMedia(ProfileMediaKind.banner),
+                        onTap:
+                            (_isMediaBusy ||
+                                    _isSaving ||
+                                    (!hasBanner) ||
+                                    _removeBanner)
+                                ? null
+                                : () => _removeSelectedMedia(
+                                  ProfileMediaKind.banner,
+                                ),
                       ),
                     ],
                   ),
@@ -574,7 +617,10 @@ class _ProfileSetupScreenState extends ConsumerState<ProfileSetupScreen> {
                     children: [
                       Expanded(
                         child: OutlinedButton(
-                          onPressed: _isSaving ? null : () => Navigator.of(context).maybePop(),
+                          onPressed:
+                              _isSaving
+                                  ? null
+                                  : () => Navigator.of(context).maybePop(),
                           style: OutlinedButton.styleFrom(
                             minimumSize: const Size.fromHeight(54),
                             shape: RoundedRectangleBorder(
@@ -594,7 +640,9 @@ class _ProfileSetupScreenState extends ConsumerState<ProfileSetupScreen> {
                               borderRadius: BorderRadius.circular(18),
                             ),
                           ),
-                          child: Text(_isSaving ? strings.saving : strings.save),
+                          child: Text(
+                            _isSaving ? strings.saving : strings.save,
+                          ),
                         ),
                       ),
                     ],
@@ -674,9 +722,10 @@ class _ProfileSetupHeader extends StatelessWidget {
                   left: 0,
                   right: 0,
                   child: MouseRegion(
-                    cursor: isBusy
-                        ? SystemMouseCursors.basic
-                        : SystemMouseCursors.click,
+                    cursor:
+                        isBusy
+                            ? SystemMouseCursors.basic
+                            : SystemMouseCursors.click,
                     child: GestureDetector(
                       onTap: isBusy ? null : onChangeBanner,
                       child: _BannerPreview(
@@ -710,9 +759,10 @@ class _ProfileSetupHeader extends StatelessWidget {
                   left: 24,
                   top: avatarTop,
                   child: MouseRegion(
-                    cursor: isBusy
-                        ? SystemMouseCursors.basic
-                        : SystemMouseCursors.click,
+                    cursor:
+                        isBusy
+                            ? SystemMouseCursors.basic
+                            : SystemMouseCursors.click,
                     child: GestureDetector(
                       onTap: isBusy ? null : onChangeAvatar,
                       child: SizedBox(
@@ -728,10 +778,15 @@ class _ProfileSetupHeader extends StatelessWidget {
                               decoration: BoxDecoration(
                                 shape: BoxShape.circle,
                                 color: Colors.white,
-                                border: Border.all(color: Colors.white, width: 3),
+                                border: Border.all(
+                                  color: Colors.white,
+                                  width: 3,
+                                ),
                                 boxShadow: [
                                   BoxShadow(
-                                    color: const Color(0xFF10203D).withValues(alpha: 0.14),
+                                    color: const Color(
+                                      0xFF10203D,
+                                    ).withValues(alpha: 0.14),
                                     blurRadius: 20,
                                     offset: const Offset(0, 10),
                                   ),
@@ -841,11 +896,11 @@ class _ProfileQuickAction extends StatelessWidget {
       label: Text(label),
       style: OutlinedButton.styleFrom(
         minimumSize: const Size(0, 48),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         side: BorderSide(
-          color: const Color(0xFFD7DFF0).withValues(alpha: onTap == null ? 0.5 : 1),
+          color: const Color(
+            0xFFD7DFF0,
+          ).withValues(alpha: onTap == null ? 0.5 : 1),
         ),
       ),
     );
@@ -1010,20 +1065,21 @@ class _EditableMediaViewport extends StatelessWidget {
         final dx = constraints.maxWidth * 0.35 * offsetX;
         final dy = constraints.maxHeight * 0.35 * offsetY;
 
-        final image = imageBytes != null
-            ? Image.memory(
-                imageBytes!,
-                fit: BoxFit.cover,
-                width: constraints.maxWidth,
-                height: constraints.maxHeight,
-              )
-            : Image.network(
-                imageUrl!,
-                fit: BoxFit.cover,
-                width: constraints.maxWidth,
-                height: constraints.maxHeight,
-                errorBuilder: (_, __, ___) => const SizedBox.shrink(),
-              );
+        final image =
+            imageBytes != null
+                ? Image.memory(
+                  imageBytes!,
+                  fit: BoxFit.cover,
+                  width: constraints.maxWidth,
+                  height: constraints.maxHeight,
+                )
+                : Image.network(
+                  imageUrl!,
+                  fit: BoxFit.cover,
+                  width: constraints.maxWidth,
+                  height: constraints.maxHeight,
+                  errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+                );
 
         return Transform.translate(
           offset: Offset(dx, dy),

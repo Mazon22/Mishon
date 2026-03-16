@@ -54,6 +54,7 @@ test-results/
 *.iml
 .metadata
 .tmp/
+.codex-build/
 
 # Uploaded files (images, etc.)
 **/uploads/*

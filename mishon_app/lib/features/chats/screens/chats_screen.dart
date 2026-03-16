@@ -14,8 +14,10 @@ import 'package:mishon_app/core/repositories/auth_repository.dart';
 import 'package:mishon_app/core/repositories/social_repository.dart';
 import 'package:mishon_app/core/settings/app_settings_provider.dart';
 import 'package:mishon_app/core/widgets/app_shell.dart';
+import 'package:mishon_app/core/widgets/app_toast.dart';
 import 'package:mishon_app/core/widgets/profile_media.dart';
 import 'package:mishon_app/core/widgets/states.dart';
+import 'package:mishon_app/core/utils/chat_share_content.dart';
 import 'package:mishon_app/features/chats/providers/chat_conversation_preview_provider.dart';
 import 'package:mishon_app/features/chats/providers/chat_messages_provider.dart';
 import 'package:mishon_app/features/chats/screens/chat_screen.dart';
@@ -43,6 +45,11 @@ String _localizeConversationPreview(String? rawPreview, AppStrings strings) {
   final trimmed = rawPreview?.trim();
   if (trimmed == null || trimmed.isEmpty) {
     return _conversationFallbackPreview(strings);
+  }
+
+  final sharedPost = tryParseSharedPostMessage(trimmed);
+  if (sharedPost != null) {
+    return sharedPostPreviewLabel(strings, sharedPost);
   }
 
   final normalized = trimmed.toLowerCase();
@@ -139,11 +146,13 @@ class _ChatsScreenState extends ConsumerState<ChatsScreen> {
       final previewOverrides = ref.read(
         chatConversationPreviewOverridesProvider,
       );
+      final stateOverrides = ref.read(chatConversationStateOverridesProvider);
       _conversations = cachedConversations
           .map(
             (conversation) => _applyConversationPreviewOverride(
               conversation,
               previewOverrides[conversation.id],
+              stateOverrides[conversation.id],
             ),
           )
           .toList(growable: false);
@@ -193,6 +202,7 @@ class _ChatsScreenState extends ConsumerState<ChatsScreen> {
       final previewOverrides = ref.read(
         chatConversationPreviewOverridesProvider,
       );
+      final stateOverrides = ref.read(chatConversationStateOverridesProvider);
       if (!mounted) {
         return;
       }
@@ -203,6 +213,7 @@ class _ChatsScreenState extends ConsumerState<ChatsScreen> {
               (conversation) => _applyConversationPreviewOverride(
                 conversation,
                 previewOverrides[conversation.id],
+                stateOverrides[conversation.id],
               ),
             )
             .toList(growable: false);
@@ -256,20 +267,32 @@ class _ChatsScreenState extends ConsumerState<ChatsScreen> {
   ConversationModel _applyConversationPreviewOverride(
     ConversationModel conversation,
     ConversationPreviewOverride? override,
+    ConversationStateOverride? stateOverride,
   ) {
-    if (override == null) {
-      return conversation;
+    var nextConversation = conversation;
+    if (stateOverride != null) {
+      nextConversation = nextConversation.copyWith(
+        isBlockedByViewer:
+            stateOverride.isBlockedByViewer ??
+            nextConversation.isBlockedByViewer,
+        hasBlockedViewer:
+            stateOverride.hasBlockedViewer ?? nextConversation.hasBlockedViewer,
+      );
     }
 
-    final serverLastMessageAt = conversation.lastMessageAt;
+    if (override == null) {
+      return nextConversation;
+    }
+
+    final serverLastMessageAt = nextConversation.lastMessageAt;
     final overrideLastMessageAt = override.lastMessageAt;
     if (serverLastMessageAt != null &&
         overrideLastMessageAt != null &&
         overrideLastMessageAt.isBefore(serverLastMessageAt)) {
-      return conversation;
+      return nextConversation;
     }
 
-    return conversation.copyWith(
+    return nextConversation.copyWith(
       lastMessage: override.lastMessage,
       lastMessageAt: override.lastMessageAt,
       lastMessageIsMine: override.lastMessageIsMine,
@@ -283,12 +306,7 @@ class _ChatsScreenState extends ConsumerState<ChatsScreen> {
       return;
     }
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: isError ? Colors.red : const Color(0xFF1F8F52),
-      ),
-    );
+    showAppToast(context, message: message, isError: isError);
   }
 
   Future<void> _togglePin(ConversationModel conversation) async {
@@ -687,12 +705,31 @@ class _ChatsScreenState extends ConsumerState<ChatsScreen> {
     }
   }
 
-  ConversationModel? _savedMessagesConversation(int? currentUserId) {
+  List<ConversationModel> _applyActiveOverrides() {
+    final previewOverrides = ref.watch(
+      chatConversationPreviewOverridesProvider,
+    );
+    final stateOverrides = ref.watch(chatConversationStateOverridesProvider);
+    return _conversations
+        .map(
+          (conversation) => _applyConversationPreviewOverride(
+            conversation,
+            previewOverrides[conversation.id],
+            stateOverrides[conversation.id],
+          ),
+        )
+        .toList(growable: false);
+  }
+
+  ConversationModel? _savedMessagesConversation(
+    int? currentUserId,
+    List<ConversationModel> sourceConversations,
+  ) {
     if (currentUserId == null) {
       return null;
     }
 
-    for (final conversation in _conversations) {
+    for (final conversation in sourceConversations) {
       if (conversation.peerId == currentUserId) {
         return conversation;
       }
@@ -701,10 +738,13 @@ class _ChatsScreenState extends ConsumerState<ChatsScreen> {
     return null;
   }
 
-  List<ConversationModel> _filteredConversations(int? currentUserId) {
+  List<ConversationModel> _filteredConversations(
+    int? currentUserId,
+    List<ConversationModel> sourceConversations,
+  ) {
     final strings = AppStrings.of(context);
     final query = _searchQuery.trim().toLowerCase();
-    final filtered = _conversations
+    final filtered = sourceConversations
         .where((conversation) {
           if (currentUserId != null && conversation.peerId == currentUserId) {
             return false;
@@ -727,17 +767,24 @@ class _ChatsScreenState extends ConsumerState<ChatsScreen> {
     return filtered;
   }
 
-  List<ConversationModel> _mainConversations(int? currentUserId) {
-    return _filteredConversations(currentUserId)
+  List<ConversationModel> _mainConversations(
+    int? currentUserId,
+    List<ConversationModel> sourceConversations,
+  ) {
+    return _filteredConversations(currentUserId, sourceConversations)
         .where((conversation) {
           return !conversation.isArchived;
         })
         .toList(growable: false);
   }
 
-  List<ConversationModel> _archivedConversations(int? currentUserId) {
+  List<ConversationModel> _archivedConversations(
+    int? currentUserId,
+    List<ConversationModel> sourceConversations,
+  ) {
     return _filteredConversations(
       currentUserId,
+      sourceConversations,
     ).where((conversation) => conversation.isArchived).toList(growable: false);
   }
 
@@ -746,9 +793,19 @@ class _ChatsScreenState extends ConsumerState<ChatsScreen> {
     final strings = AppStrings.of(context);
     final currentUserId = ref.watch(currentUserIdProvider);
     final currentProfile = ref.watch(authRepositoryProvider).peekProfile();
-    final savedMessagesConversation = _savedMessagesConversation(currentUserId);
-    final mainConversations = _mainConversations(currentUserId);
-    final archivedConversations = _archivedConversations(currentUserId);
+    final visibleConversations = _applyActiveOverrides();
+    final savedMessagesConversation = _savedMessagesConversation(
+      currentUserId,
+      visibleConversations,
+    );
+    final mainConversations = _mainConversations(
+      currentUserId,
+      visibleConversations,
+    );
+    final archivedConversations = _archivedConversations(
+      currentUserId,
+      visibleConversations,
+    );
     final showEmptyState =
         mainConversations.isEmpty &&
         (!_showArchived || archivedConversations.isEmpty);

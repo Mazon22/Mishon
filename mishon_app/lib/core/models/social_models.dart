@@ -174,6 +174,47 @@ class FriendUser {
   }
 }
 
+class BlockedUserModel {
+  final int id;
+  final String username;
+  final String? aboutMe;
+  final String? avatarUrl;
+  final double avatarScale;
+  final double avatarOffsetX;
+  final double avatarOffsetY;
+  final DateTime lastSeenAt;
+  final DateTime blockedAt;
+
+  const BlockedUserModel({
+    required this.id,
+    required this.username,
+    required this.aboutMe,
+    required this.avatarUrl,
+    this.avatarScale = 1,
+    this.avatarOffsetX = 0,
+    this.avatarOffsetY = 0,
+    required this.lastSeenAt,
+    required this.blockedAt,
+  });
+
+  factory BlockedUserModel.fromJson(Map<String, dynamic> json) {
+    return BlockedUserModel(
+      id: json['id'] as int,
+      username: json['username'] as String,
+      aboutMe: json['aboutMe'] as String?,
+      avatarUrl: json['avatarUrl'] as String?,
+      avatarScale: (json['avatarScale'] as num?)?.toDouble() ?? 1,
+      avatarOffsetX: (json['avatarOffsetX'] as num?)?.toDouble() ?? 0,
+      avatarOffsetY: (json['avatarOffsetY'] as num?)?.toDouble() ?? 0,
+      lastSeenAt:
+          json['lastSeenAt'] != null
+              ? DateTime.parse(json['lastSeenAt'] as String)
+              : DateTime.fromMillisecondsSinceEpoch(0),
+      blockedAt: DateTime.parse(json['blockedAt'] as String),
+    );
+  }
+}
+
 class FriendRequestModel {
   final int id;
   final int userId;
@@ -433,6 +474,10 @@ class ChatMessageModel {
   final int? forwardedFromMessageId;
   final int? forwardedFromUserId;
   final String? forwardedFromSenderUsername;
+  final String? forwardedFromUserAvatarUrl;
+  final double forwardedFromUserAvatarScale;
+  final double forwardedFromUserAvatarOffsetX;
+  final double forwardedFromUserAvatarOffsetY;
   final List<ChatAttachmentModel> attachments;
 
   const ChatMessageModel({
@@ -454,6 +499,10 @@ class ChatMessageModel {
     required this.forwardedFromMessageId,
     required this.forwardedFromUserId,
     required this.forwardedFromSenderUsername,
+    required this.forwardedFromUserAvatarUrl,
+    this.forwardedFromUserAvatarScale = 1,
+    this.forwardedFromUserAvatarOffsetX = 0,
+    this.forwardedFromUserAvatarOffsetY = 0,
     required this.attachments,
   });
 
@@ -476,6 +525,10 @@ class ChatMessageModel {
     int? forwardedFromMessageId,
     int? forwardedFromUserId,
     String? forwardedFromSenderUsername,
+    String? forwardedFromUserAvatarUrl,
+    double? forwardedFromUserAvatarScale,
+    double? forwardedFromUserAvatarOffsetX,
+    double? forwardedFromUserAvatarOffsetY,
     List<ChatAttachmentModel>? attachments,
   }) {
     return ChatMessageModel(
@@ -500,6 +553,14 @@ class ChatMessageModel {
       forwardedFromUserId: forwardedFromUserId ?? this.forwardedFromUserId,
       forwardedFromSenderUsername:
           forwardedFromSenderUsername ?? this.forwardedFromSenderUsername,
+      forwardedFromUserAvatarUrl:
+          forwardedFromUserAvatarUrl ?? this.forwardedFromUserAvatarUrl,
+      forwardedFromUserAvatarScale:
+          forwardedFromUserAvatarScale ?? this.forwardedFromUserAvatarScale,
+      forwardedFromUserAvatarOffsetX:
+          forwardedFromUserAvatarOffsetX ?? this.forwardedFromUserAvatarOffsetX,
+      forwardedFromUserAvatarOffsetY:
+          forwardedFromUserAvatarOffsetY ?? this.forwardedFromUserAvatarOffsetY,
       attachments: attachments ?? this.attachments,
     );
   }
@@ -534,6 +595,13 @@ class ChatMessageModel {
       forwardedFromUserId: json['forwardedFromUserId'] as int?,
       forwardedFromSenderUsername:
           json['forwardedFromSenderUsername'] as String?,
+      forwardedFromUserAvatarUrl: json['forwardedFromUserAvatarUrl'] as String?,
+      forwardedFromUserAvatarScale:
+          (json['forwardedFromUserAvatarScale'] as num?)?.toDouble() ?? 1,
+      forwardedFromUserAvatarOffsetX:
+          (json['forwardedFromUserAvatarOffsetX'] as num?)?.toDouble() ?? 0,
+      forwardedFromUserAvatarOffsetY:
+          (json['forwardedFromUserAvatarOffsetY'] as num?)?.toDouble() ?? 0,
       attachments: (json['attachments'] as List<dynamic>? ?? const [])
           .map((e) => ChatAttachmentModel.fromJson(e as Map<String, dynamic>))
           .toList(growable: false),

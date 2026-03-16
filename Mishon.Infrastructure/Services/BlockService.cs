@@ -85,6 +85,38 @@ public class BlockService : IBlockService
         }
     }
 
+    public async Task<Result<IEnumerable<BlockedUserDto>>> GetBlockedUsersAsync(
+        int blockerId,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var blockedUsers = await _context.UserBlocks
+                .AsNoTracking()
+                .Where(x => x.BlockerId == blockerId)
+                .OrderByDescending(x => x.CreatedAt)
+                .Select(x => new BlockedUserDto(
+                    x.BlockedUser.Id,
+                    x.BlockedUser.Username,
+                    x.BlockedUser.AboutMe,
+                    x.BlockedUser.AvatarUrl,
+                    x.BlockedUser.AvatarScale,
+                    x.BlockedUser.AvatarOffsetX,
+                    x.BlockedUser.AvatarOffsetY,
+                    x.BlockedUser.LastSeenAt,
+                    x.CreatedAt))
+                .ToListAsync(cancellationToken);
+
+            return Result<IEnumerable<BlockedUserDto>>.Success(blockedUsers);
+        }
+        catch (Exception ex)
+        {
+            return Result<IEnumerable<BlockedUserDto>>.Failure(
+                $"РћС€РёР±РєР° Р·Р°РіСЂСѓР·РєРё СЃРїРёСЃРєР° Р·Р°Р±Р»РѕРєРёСЂРѕРІР°РЅРЅС‹С…: {ex.Message}",
+                ResultError.InternalError);
+        }
+    }
+
     public async Task<UserBlockStatusDto> GetStatusAsync(
         int viewerId,
         int otherUserId,

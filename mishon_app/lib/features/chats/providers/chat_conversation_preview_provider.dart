@@ -7,6 +7,11 @@ final chatConversationPreviewOverridesProvider = StateNotifierProvider<
   Map<int, ConversationPreviewOverride>
 >((ref) => ChatConversationPreviewOverridesNotifier());
 
+final chatConversationStateOverridesProvider = StateNotifierProvider<
+  ChatConversationStateOverridesNotifier,
+  Map<int, ConversationStateOverride>
+>((ref) => ChatConversationStateOverridesNotifier());
+
 class ConversationPreviewOverride {
   final int lastMessageId;
   final String? lastMessage;
@@ -116,6 +121,45 @@ class ChatConversationPreviewOverridesNotifier
       conversationId: current.copyWith(
         lastMessageIsDeliveredToPeer: true,
         lastMessageIsReadByPeer: true,
+      ),
+    };
+  }
+}
+
+class ConversationStateOverride {
+  final bool? isBlockedByViewer;
+  final bool? hasBlockedViewer;
+
+  const ConversationStateOverride({
+    this.isBlockedByViewer,
+    this.hasBlockedViewer,
+  });
+
+  ConversationStateOverride copyWith({
+    bool? isBlockedByViewer,
+    bool? hasBlockedViewer,
+  }) {
+    return ConversationStateOverride(
+      isBlockedByViewer: isBlockedByViewer ?? this.isBlockedByViewer,
+      hasBlockedViewer: hasBlockedViewer ?? this.hasBlockedViewer,
+    );
+  }
+}
+
+class ChatConversationStateOverridesNotifier
+    extends StateNotifier<Map<int, ConversationStateOverride>> {
+  ChatConversationStateOverridesNotifier() : super(const {});
+
+  void setBlockFlags(
+    int conversationId, {
+    required bool isBlockedByViewer,
+    required bool hasBlockedViewer,
+  }) {
+    state = {
+      ...state,
+      conversationId: ConversationStateOverride(
+        isBlockedByViewer: isBlockedByViewer,
+        hasBlockedViewer: hasBlockedViewer,
       ),
     };
   }

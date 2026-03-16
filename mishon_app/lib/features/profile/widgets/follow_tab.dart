@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:mishon_app/core/localization/app_strings.dart';
 import 'package:mishon_app/core/models/post_model.dart';
+import 'package:mishon_app/core/widgets/app_toast.dart';
 import 'package:mishon_app/core/widgets/empty_posts_banner.dart';
 import 'package:mishon_app/core/widgets/profile_media.dart';
 import 'package:mishon_app/features/profile/providers/follow_provider.dart';
@@ -29,52 +30,52 @@ class FollowTab extends ConsumerWidget {
 
     return state.when(
       data:
-          (list) => list.isEmpty
-              ? EmptyPostsBanner(
-                title:
-                    isFollowersTab
-                        ? strings.noFollowersYet
-                        : strings.noFollowingYet,
-                subtitle:
-                    isFollowersTab
-                        ? strings.followersWillAppearHere
-                        : strings.followingWillAppearHere,
-                icon:
-                    isFollowersTab
-                        ? Icons.people_outline_rounded
-                        : Icons.person_add_alt_1_outlined,
-                showCta: false,
-              )
-              : ListView.separated(
-                itemCount: list.length,
-                separatorBuilder: (_, __) => const Divider(height: 1),
-                itemBuilder: (context, index) {
-                  final user = list[index];
-                  return _FollowListTile(
-                    user: user,
-                    onTap: () {
-                      Navigator.pop(context);
-                      context.go('/profile/${user.id}');
+          (list) =>
+              list.isEmpty
+                  ? EmptyPostsBanner(
+                    title:
+                        isFollowersTab
+                            ? strings.noFollowersYet
+                            : strings.noFollowingYet,
+                    subtitle:
+                        isFollowersTab
+                            ? strings.followersWillAppearHere
+                            : strings.followingWillAppearHere,
+                    icon:
+                        isFollowersTab
+                            ? Icons.people_outline_rounded
+                            : Icons.person_add_alt_1_outlined,
+                    showCta: false,
+                  )
+                  : ListView.separated(
+                    itemCount: list.length,
+                    separatorBuilder: (_, __) => const Divider(height: 1),
+                    itemBuilder: (context, index) {
+                      final user = list[index];
+                      return _FollowListTile(
+                        user: user,
+                        onTap: () {
+                          Navigator.pop(context);
+                          context.go('/profile/${user.id}');
+                        },
+                        onFollowToggle: () async {
+                          try {
+                            await ref
+                                .read(followNotifierProvider.notifier)
+                                .toggleFollow(user.id);
+                          } catch (_) {
+                            if (context.mounted) {
+                              showAppToast(
+                                context,
+                                message: strings.operationError,
+                                isError: true,
+                              );
+                            }
+                          }
+                        },
+                      );
                     },
-                    onFollowToggle: () async {
-                      try {
-                        await ref
-                            .read(followNotifierProvider.notifier)
-                            .toggleFollow(user.id);
-                      } catch (_) {
-                        if (context.mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text(strings.operationError),
-                              backgroundColor: Colors.red,
-                            ),
-                          );
-                        }
-                      }
-                    },
-                  );
-                },
-              ),
+                  ),
       loading: () => const Center(child: CircularProgressIndicator()),
       error:
           (error, _) => Center(

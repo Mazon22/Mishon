@@ -34,6 +34,18 @@ public record FriendDto(
     bool IsOnline
 );
 
+public record BlockedUserDto(
+    int Id,
+    string Username,
+    string? AboutMe,
+    string? AvatarUrl,
+    double AvatarScale,
+    double AvatarOffsetX,
+    double AvatarOffsetY,
+    DateTime LastSeenAt,
+    DateTime BlockedAt
+);
+
 public record FriendRequestDto(
     int Id,
     int UserId,
@@ -105,6 +117,10 @@ public record MessageDto(
     int? ForwardedFromMessageId,
     int? ForwardedFromUserId,
     string? ForwardedFromSenderUsername,
+    string? ForwardedFromUserAvatarUrl,
+    double ForwardedFromUserAvatarScale,
+    double ForwardedFromUserAvatarOffsetX,
+    double ForwardedFromUserAvatarOffsetY,
     IReadOnlyCollection<MessageAttachmentDto> Attachments
 );
 

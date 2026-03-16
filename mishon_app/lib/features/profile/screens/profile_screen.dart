@@ -17,14 +17,16 @@ import 'package:mishon_app/core/settings/app_settings_provider.dart';
 import 'package:mishon_app/core/repositories/post_repository.dart';
 import 'package:mishon_app/core/repositories/social_repository.dart';
 import 'package:mishon_app/core/widgets/app_shell.dart';
+import 'package:mishon_app/core/widgets/app_toast.dart';
 import 'package:mishon_app/core/widgets/empty_posts_banner.dart';
 import 'package:mishon_app/core/widgets/fullscreen_image_screen.dart';
 import 'package:mishon_app/core/widgets/post_card.dart';
 import 'package:mishon_app/core/widgets/profile_media.dart';
 import 'package:mishon_app/core/widgets/states.dart';
 import 'package:mishon_app/features/auth/providers/auth_provider.dart';
+import 'package:mishon_app/features/chats/utils/chat_post_share.dart';
 import 'package:mishon_app/features/chats/screens/chat_screen.dart';
-import 'package:mishon_app/features/comments/screens/comments_screen.dart';
+import 'package:mishon_app/features/comments/screens/comments_screen_args.dart';
 import 'package:mishon_app/features/feed/providers/feed_provider.dart';
 import 'package:mishon_app/features/profile/providers/profile_provider.dart';
 import 'package:mishon_app/features/profile/screens/profile_media_editor_screen.dart';
@@ -445,20 +447,19 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
   }
 
   void _showSnackBar(String message, {bool isError = false}) {
-    if (!mounted || !isError) {
+    if (!mounted) {
       return;
     }
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: isError ? Colors.red : const Color(0xFF1F8F52),
-      ),
-    );
+    showAppToast(context, message: message, isError: isError);
   }
 
   void _sharePost(Post post) {
-    _showSnackBar(AppStrings.of(context).shareNotConfigured(post.username));
+    unawaited(_sharePostAsync(post));
+  }
+
+  Future<void> _sharePostAsync(Post post) async {
+    await sharePostToChat(context: context, ref: ref, post: post);
   }
 
   List<Post> get _mediaPosts =>
@@ -2647,7 +2648,7 @@ class _SecondaryProfileButton extends StatelessWidget {
   }
 }
 
-class _PostActionButton extends StatelessWidget {
+class _PostActionButton extends StatefulWidget {
   final IconData icon;
   final String label;
   final Color foreground;
@@ -2663,33 +2664,85 @@ class _PostActionButton extends StatelessWidget {
   });
 
   @override
+  State<_PostActionButton> createState() => _PostActionButtonState();
+}
+
+class _PostActionButtonState extends State<_PostActionButton> {
+  bool _hovered = false;
+  bool _pressed = false;
+
+  @override
   Widget build(BuildContext context) {
-    return Material(
-      color: background,
-      borderRadius: BorderRadius.circular(18),
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(18),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(icon, size: 18, color: foreground),
-              const SizedBox(width: 8),
-              Flexible(
-                child: Text(
-                  label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: foreground,
-                    fontWeight: FontWeight.w800,
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      child: Listener(
+        onPointerDown: (_) => setState(() => _pressed = true),
+        onPointerUp: (_) => setState(() => _pressed = false),
+        onPointerCancel: (_) => setState(() => _pressed = false),
+        child: AnimatedScale(
+          scale: _pressed ? 0.97 : 1,
+          duration: const Duration(milliseconds: 120),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 180),
+            curve: Curves.easeOutCubic,
+            decoration: BoxDecoration(
+              color:
+                  _hovered
+                      ? widget.foreground.withValues(alpha: 0.12)
+                      : widget.background,
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(
+                color: widget.foreground.withValues(
+                  alpha: _hovered ? 0.18 : 0.08,
+                ),
+              ),
+              boxShadow:
+                  _hovered
+                      ? [
+                        BoxShadow(
+                          color: widget.foreground.withValues(alpha: 0.12),
+                          blurRadius: 16,
+                          offset: const Offset(0, 10),
+                        ),
+                      ]
+                      : const [],
+            ),
+            child: Material(
+              color: Colors.transparent,
+              borderRadius: BorderRadius.circular(18),
+              clipBehavior: Clip.antiAlias,
+              child: InkWell(
+                onTap: widget.onTap,
+                borderRadius: BorderRadius.circular(18),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 12,
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(widget.icon, size: 18, color: widget.foreground),
+                      const SizedBox(width: 8),
+                      Flexible(
+                        child: Text(
+                          widget.label,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(
+                            context,
+                          ).textTheme.bodyMedium?.copyWith(
+                            color: widget.foreground,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ),
-            ],
+            ),
           ),
         ),
       ),

@@ -66,6 +66,7 @@ abstract class ApiService {
 
   Future<List<DiscoverUser>> getUsers({String? query, int limit = 24});
   Future<List<FriendUser>> getFriends();
+  Future<List<BlockedUserModel>> getBlockedUsers();
   Future<List<FriendRequestModel>> getIncomingFriendRequests();
   Future<List<FriendRequestModel>> getOutgoingFriendRequests();
   Future<void> sendFriendRequest(int userId);
@@ -439,6 +440,14 @@ class ApiServiceImpl implements ApiService {
   Future<List<FriendUser>> getFriends() async {
     final response = await _dio.get('/friends');
     return (response.data as List).map((e) => FriendUser.fromJson(e)).toList();
+  }
+
+  @override
+  Future<List<BlockedUserModel>> getBlockedUsers() async {
+    final response = await _dio.get('/chat/blocked-users');
+    return (response.data as List)
+        .map((e) => BlockedUserModel.fromJson(e))
+        .toList();
   }
 
   @override

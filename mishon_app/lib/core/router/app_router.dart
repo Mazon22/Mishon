@@ -8,7 +8,8 @@ import 'package:mishon_app/features/auth/screens/login_screen.dart';
 import 'package:mishon_app/features/auth/screens/register_screen.dart';
 import 'package:mishon_app/features/chats/screens/chat_screen.dart';
 import 'package:mishon_app/features/chats/screens/chats_overview_screen.dart';
-import 'package:mishon_app/features/comments/screens/comments_screen.dart';
+import 'package:mishon_app/features/comments/screens/comments_screen_args.dart';
+import 'package:mishon_app/features/comments/screens/telegram_comments_screen.dart';
 import 'package:mishon_app/features/feed/screens/feed_screen.dart';
 import 'package:mishon_app/features/friends/screens/friends_overview_screen.dart';
 import 'package:mishon_app/features/notifications/screens/notifications_screen.dart';
@@ -202,7 +203,7 @@ final goRouterProvider = Provider<GoRouter>((ref) {
           final args = state.extra as CommentsScreenArgs;
           return _buildTelegramRoutePage(
             state: state,
-            child: CommentsScreen(args: args),
+            child: TelegramCommentsScreen(args: args),
           );
         },
       ),

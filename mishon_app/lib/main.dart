@@ -8,6 +8,7 @@ import 'core/providers/app_bootstrap_provider.dart';
 import 'core/router/app_router.dart';
 import 'core/settings/app_settings_provider.dart';
 import 'core/theme/app_theme.dart';
+import 'core/widgets/app_security_shell.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -33,24 +34,41 @@ class MishonApp extends ConsumerWidget {
     final bootstrapState = ref.watch(appBootstrapProvider);
 
     if (!bootstrapState.allowsInteraction) {
-      return MaterialApp(
-        onGenerateTitle: (context) => AppStrings.of(context).appName,
-        debugShowCheckedModeBanner: false,
-        theme: AppTheme.lightTheme,
-        locale: settings.locale,
-        supportedLocales: AppStrings.supportedLocales,
-        localizationsDelegates: const [
-          AppStrings.delegate,
-          GlobalMaterialLocalizations.delegate,
-          GlobalWidgetsLocalizations.delegate,
-          GlobalCupertinoLocalizations.delegate,
-        ],
-        home: _BootstrapScreen(state: bootstrapState),
-      );
+      return _buildBootstrapApp(settings, bootstrapState);
     }
 
     final router = ref.watch(goRouterProvider);
     return MaterialApp.router(
+      onGenerateTitle: (context) => AppStrings.of(context).appName,
+      debugShowCheckedModeBanner: false,
+      theme: AppTheme.lightTheme,
+      builder:
+          (context, child) =>
+              AppSecurityShell(child: child ?? const SizedBox.shrink()),
+      locale: settings.locale,
+      supportedLocales: AppStrings.supportedLocales,
+      localizationsDelegates: const [
+        AppStrings.delegate,
+        GlobalMaterialLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+      ],
+      routerConfig: router,
+    );
+  }
+
+  MaterialApp _buildBootstrapApp(
+    AppSettingsState settings,
+    AppBootstrapState bootstrapState,
+  ) {
+    Route<dynamic> buildBootstrapRoute(RouteSettings routeSettings) {
+      return MaterialPageRoute<void>(
+        settings: routeSettings,
+        builder: (_) => _BootstrapScreen(state: bootstrapState),
+      );
+    }
+
+    return MaterialApp(
       onGenerateTitle: (context) => AppStrings.of(context).appName,
       debugShowCheckedModeBanner: false,
       theme: AppTheme.lightTheme,
@@ -62,7 +80,8 @@ class MishonApp extends ConsumerWidget {
         GlobalWidgetsLocalizations.delegate,
         GlobalCupertinoLocalizations.delegate,
       ],
-      routerConfig: router,
+      onGenerateRoute: buildBootstrapRoute,
+      onUnknownRoute: buildBootstrapRoute,
     );
   }
 }

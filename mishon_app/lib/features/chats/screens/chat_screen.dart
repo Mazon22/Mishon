@@ -17,13 +17,17 @@ import 'package:mishon_app/core/repositories/auth_repository.dart';
 import 'package:mishon_app/core/repositories/social_repository.dart';
 import 'package:mishon_app/core/settings/app_settings_provider.dart';
 import 'package:mishon_app/core/utils/attachment_picker.dart';
+import 'package:mishon_app/core/utils/chat_share_content.dart';
 import 'package:mishon_app/core/utils/external_url.dart';
+import 'package:mishon_app/core/widgets/app_toast.dart';
 import 'package:mishon_app/core/widgets/fullscreen_image_screen.dart';
+import 'package:mishon_app/core/widgets/interactive_content_text.dart';
 import 'package:mishon_app/core/widgets/profile_media.dart';
 import 'package:mishon_app/core/widgets/states.dart';
 import 'package:mishon_app/features/chats/providers/chat_conversation_preview_provider.dart';
 import 'package:mishon_app/features/chats/providers/chat_messages_provider.dart';
 import 'package:mishon_app/features/chats/providers/chat_realtime_service.dart';
+import 'package:mishon_app/features/comments/screens/comments_screen_args.dart';
 import 'package:mishon_app/features/notifications/providers/notification_summary_provider.dart';
 
 class ChatScreenArgs {
@@ -57,6 +61,11 @@ String _messageContextPreview(
   required bool hasImageAttachment,
 }) {
   final trimmed = content.trim();
+  final sharedPost = tryParseSharedPostMessage(trimmed);
+  if (sharedPost != null) {
+    return sharedPostPreviewLabel(strings, sharedPost);
+  }
+
   if (trimmed.isNotEmpty) {
     return trimmed;
   }
@@ -122,6 +131,11 @@ String _localizeChatGeneratedPreview(
   final trimmed = rawPreview?.trim();
   if (trimmed == null || trimmed.isEmpty) {
     return fallback ?? strings.message;
+  }
+
+  final sharedPost = tryParseSharedPostMessage(trimmed);
+  if (sharedPost != null) {
+    return sharedPostPreviewLabel(strings, sharedPost);
   }
 
   final normalized = trimmed.toLowerCase();
@@ -334,15 +348,21 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     context.goNamed('chats');
   }
 
-  Future<void> _loadPeerProfile({bool silent = false}) async {
+  Future<void> _loadPeerProfile({
+    bool silent = false,
+    bool forceRefresh = false,
+  }) async {
     final isRu = ref.read(appSettingsProvider).language == AppLanguage.ru;
     try {
       final authRepository = ref.read(authRepositoryProvider);
       final currentUserId = ref.read(currentUserIdProvider);
       final profile =
           currentUserId != null && widget.args.peerId == currentUserId
-              ? await authRepository.getProfile()
-              : await authRepository.getUserProfile(widget.args.peerId);
+              ? await authRepository.getProfile(forceRefresh: forceRefresh)
+              : await authRepository.getUserProfile(
+                widget.args.peerId,
+                forceRefresh: forceRefresh,
+              );
       if (!mounted) {
         return;
       }
@@ -350,6 +370,13 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
       setState(() {
         _peerProfile = profile;
       });
+      ref
+          .read(chatConversationStateOverridesProvider.notifier)
+          .setBlockFlags(
+            widget.args.conversationId,
+            isBlockedByViewer: profile.isBlockedByViewer,
+            hasBlockedViewer: profile.hasBlockedViewer,
+          );
     } on ApiException catch (_) {
       if (!silent && mounted) {
         _showSnackBar(
@@ -759,7 +786,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
         await repository.blockUserFromChat(widget.args.peerId);
       }
       _resetComposer();
-      await _loadPeerProfile(silent: true);
+      await _loadPeerProfile(silent: true, forceRefresh: true);
       await messagesNotifier.refresh(silent: true, force: true);
       _showSnackBar(
         unblock
@@ -786,6 +813,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
 
   Future<void> _showMessageActionsSheet(ChatMessageModel message) async {
     final strings = AppStrings.of(context);
+    final canEditMessage =
+        message.isMine && tryParseSharedPostMessage(message.content) == null;
     final action = await showModalBottomSheet<String>(
       context: context,
       showDragHandle: true,
@@ -819,7 +848,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
                   title: Text(strings.isRu ? 'Переслать' : 'Forward'),
                   onTap: () => Navigator.of(context).pop('forward'),
                 ),
-                if (message.isMine)
+                if (canEditMessage)
                   ListTile(
                     leading: const Icon(Icons.edit_rounded),
                     title: Text(strings.isRu ? 'Редактировать' : 'Edit'),
@@ -1127,6 +1156,10 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     if (replyTo == null) {
       return null;
     }
+    final sharedPost = tryParseSharedPostMessage(replyTo.content);
+    if (sharedPost != null) {
+      return sharedPostPreviewLabel(strings, sharedPost);
+    }
     if (replyTo.content.isNotEmpty) {
       return replyTo.content;
     }
@@ -1352,12 +1385,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
       return;
     }
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: isError ? Colors.red : Colors.green,
-      ),
-    );
+    showAppToast(context, message: message, isError: isError);
   }
 
   Future<void> _openAttachment(ChatAttachmentModel attachment) async {
@@ -1404,6 +1432,91 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     }
 
     context.push('/profile/$forwardedFromUserId');
+  }
+
+  void _openSharedPost(SharedPostPayload payload) {
+    context.push(
+      '/comments',
+      extra: CommentsScreenArgs(
+        postId: payload.postId,
+        postUserId: payload.userId,
+      ),
+    );
+  }
+
+  Future<void> _openMentionProfile(String username) async {
+    final normalized = username.trim().replaceFirst('@', '').toLowerCase();
+    if (normalized.isEmpty) {
+      return;
+    }
+
+    final currentUserId = ref.read(currentUserIdProvider);
+    final authRepository = ref.read(authRepositoryProvider);
+    final currentProfile = authRepository.peekProfile();
+    if (currentUserId != null &&
+        currentProfile?.username.toLowerCase() == normalized) {
+      if (!mounted) {
+        return;
+      }
+      context.push('/profile/$currentUserId');
+      return;
+    }
+
+    try {
+      final users = await ref
+          .read(socialRepositoryProvider)
+          .getUsers(query: normalized, limit: 12, forceRefresh: true);
+      DiscoverUser? match;
+      for (final user in users) {
+        if (user.username.toLowerCase() == normalized) {
+          match = user;
+          break;
+        }
+      }
+      if (!mounted) {
+        return;
+      }
+
+      if (match == null) {
+        _showSnackBar(
+          AppStrings.of(context).isRu
+              ? 'Профиль @$normalized не найден'
+              : 'Profile @$normalized was not found',
+          isError: true,
+        );
+        return;
+      }
+
+      context.push('/profile/${match.id}');
+    } on ApiException catch (e) {
+      _showSnackBar(e.apiError.message, isError: true);
+    } on OfflineException catch (e) {
+      _showSnackBar(e.message, isError: true);
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+      _showSnackBar(
+        AppStrings.of(context).isRu
+            ? 'Не удалось открыть профиль'
+            : 'Could not open profile',
+        isError: true,
+      );
+    }
+  }
+
+  Future<void> _openMessageUrl(String url) async {
+    final opened = await openExternalUrl(url);
+    if (!mounted || opened) {
+      return;
+    }
+
+    _showSnackBar(
+      AppStrings.of(context).isRu
+          ? 'Не удалось открыть ссылку'
+          : 'Could not open the link',
+      isError: true,
+    );
   }
 
   String _formatPresenceLabel() {
@@ -1746,6 +1859,15 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
                                     return _MessageBubble(
                                       message: message,
                                       onReply: () => _startReply(message),
+                                      onOpenSharedPost: _openSharedPost,
+                                      onOpenMentionProfile: (username) {
+                                        unawaited(
+                                          _openMentionProfile(username),
+                                        );
+                                      },
+                                      onOpenUrl: (url) {
+                                        unawaited(_openMessageUrl(url));
+                                      },
                                       onOpenForwardedProfile:
                                           message.forwardedFromUserId == null
                                               ? null
@@ -2456,6 +2578,9 @@ class _MessageComposer extends StatelessWidget {
 class _MessageBubble extends StatelessWidget {
   final ChatMessageModel message;
   final VoidCallback onReply;
+  final ValueChanged<SharedPostPayload> onOpenSharedPost;
+  final ValueChanged<String> onOpenMentionProfile;
+  final ValueChanged<String> onOpenUrl;
   final VoidCallback? onOpenForwardedProfile;
   final VoidCallback onOpenMenu;
   final ValueChanged<ChatAttachmentModel> onOpenAttachment;
@@ -2463,6 +2588,9 @@ class _MessageBubble extends StatelessWidget {
   const _MessageBubble({
     required this.message,
     required this.onReply,
+    required this.onOpenSharedPost,
+    required this.onOpenMentionProfile,
+    required this.onOpenUrl,
     required this.onOpenForwardedProfile,
     required this.onOpenMenu,
     required this.onOpenAttachment,
@@ -2546,6 +2674,31 @@ class _MessageBubble extends StatelessWidget {
       children: [
         Icon(Icons.forward_rounded, size: 15, color: accentColor),
         const SizedBox(width: 4),
+        Container(
+          width: 18,
+          height: 18,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            border: Border.all(
+              color:
+                  message.isMine
+                      ? Colors.white.withValues(alpha: 0.45)
+                      : const Color(0xFFD7E5FF),
+              width: 1.5,
+            ),
+          ),
+          child: ClipOval(
+            child: AppAvatar(
+              username: username,
+              imageUrl: message.forwardedFromUserAvatarUrl,
+              size: 18,
+              scale: message.forwardedFromUserAvatarScale,
+              offsetX: message.forwardedFromUserAvatarOffsetX,
+              offsetY: message.forwardedFromUserAvatarOffsetY,
+            ),
+          ),
+        ),
+        const SizedBox(width: 6),
         Flexible(
           child: Text.rich(
             TextSpan(
@@ -2589,6 +2742,146 @@ class _MessageBubble extends StatelessWidget {
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 2),
           child: content,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSharedPostCard(
+    BuildContext context,
+    AppStrings strings,
+    SharedPostPayload payload,
+  ) {
+    final titleColor =
+        message.isMine ? const Color(0xFFF5F8FF) : const Color(0xFF18243C);
+    final subtitleColor =
+        message.isMine ? const Color(0xFFD8E4FF) : const Color(0xFF66758E);
+    final cardColor =
+        message.isMine
+            ? Colors.white.withValues(alpha: 0.16)
+            : const Color(0xFFF5F8FE);
+
+    return Padding(
+      padding: EdgeInsets.only(bottom: message.attachments.isNotEmpty ? 10 : 2),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: () => onOpenSharedPost(payload),
+          borderRadius: BorderRadius.circular(18),
+          child: Ink(
+            decoration: BoxDecoration(
+              color: cardColor,
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(
+                color:
+                    message.isMine
+                        ? Colors.white.withValues(alpha: 0.14)
+                        : const Color(0xFFE1E8F4),
+              ),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 12, 12, 10),
+                  child: Row(
+                    children: [
+                      AppAvatar(
+                        username: payload.username,
+                        imageUrl: payload.userAvatarUrl,
+                        size: 28,
+                        scale: payload.userAvatarScale,
+                        offsetX: payload.userAvatarOffsetX,
+                        offsetY: payload.userAvatarOffsetY,
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              payload.username,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: Theme.of(
+                                context,
+                              ).textTheme.bodyMedium?.copyWith(
+                                color: titleColor,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              sharedPostSubtitleLabel(strings),
+                              style: Theme.of(
+                                context,
+                              ).textTheme.bodySmall?.copyWith(
+                                color: subtitleColor,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Icon(
+                        Icons.open_in_new_rounded,
+                        size: 16,
+                        color: subtitleColor,
+                      ),
+                    ],
+                  ),
+                ),
+                if (payload.imageUrl != null)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(16),
+                      child: AspectRatio(
+                        aspectRatio: 16 / 9,
+                        child: CachedNetworkImage(
+                          imageUrl: payload.imageUrl!,
+                          fit: BoxFit.cover,
+                          placeholder:
+                              (_, __) => Container(
+                                color:
+                                    message.isMine
+                                        ? Colors.white.withValues(alpha: 0.16)
+                                        : const Color(0xFFEAF0F8),
+                              ),
+                          errorWidget:
+                              (_, __, ___) => Container(
+                                color:
+                                    message.isMine
+                                        ? Colors.white.withValues(alpha: 0.16)
+                                        : const Color(0xFFEAF0F8),
+                                alignment: Alignment.center,
+                                child: Icon(
+                                  Icons.image_not_supported_outlined,
+                                  color: subtitleColor,
+                                ),
+                              ),
+                        ),
+                      ),
+                    ),
+                  ),
+                if (payload.contentPreview.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
+                    child: Text(
+                      payload.contentPreview,
+                      maxLines: 4,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        color: titleColor,
+                        height: 1.4,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
         ),
       ),
     );
@@ -2760,9 +3053,18 @@ class _MessageBubble extends StatelessWidget {
         .where((attachment) => !attachment.isImage)
         .toList(growable: false);
     final readTooltip = _readReceiptTooltip(context);
+    final sharedPost = tryParseSharedPostMessage(message.content);
     final hasTextOnlyBody =
+        sharedPost == null &&
         message.content.isNotEmpty &&
         imageAttachments.isEmpty &&
+        fileAttachments.isEmpty;
+    final hasStandaloneImage =
+        sharedPost == null &&
+        message.forwardedFromSenderUsername == null &&
+        message.replyToContent == null &&
+        message.content.trim().isEmpty &&
+        imageAttachments.isNotEmpty &&
         fileAttachments.isEmpty;
 
     return LayoutBuilder(
@@ -2859,7 +3161,12 @@ class _MessageBubble extends StatelessWidget {
                     onLongPress: onOpenMenu,
                     borderRadius: _bubbleRadius,
                     child: Padding(
-                      padding: const EdgeInsets.fromLTRB(14, 10, 12, 8),
+                      padding: EdgeInsets.fromLTRB(
+                        hasStandaloneImage ? 6 : 14,
+                        hasStandaloneImage ? 6 : 10,
+                        hasStandaloneImage ? 6 : 12,
+                        8,
+                      ),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
@@ -2867,6 +3174,8 @@ class _MessageBubble extends StatelessWidget {
                             _buildForwardedHeader(context),
                           if (message.replyToContent != null)
                             _buildReplyCard(context, strings),
+                          if (sharedPost != null)
+                            _buildSharedPostCard(context, strings, sharedPost),
                           if (hasTextOnlyBody)
                             Stack(
                               alignment: Alignment.bottomRight,
@@ -2876,8 +3185,8 @@ class _MessageBubble extends StatelessWidget {
                                     right: _footerReserveWidth(),
                                     bottom: 2,
                                   ),
-                                  child: Text(
-                                    message.content,
+                                  child: InteractiveContentText(
+                                    text: message.content,
                                     style: Theme.of(
                                       context,
                                     ).textTheme.bodyLarge?.copyWith(
@@ -2885,6 +3194,38 @@ class _MessageBubble extends StatelessWidget {
                                       height: 1.3,
                                       fontWeight: FontWeight.w500,
                                     ),
+                                    mentionStyle: Theme.of(
+                                      context,
+                                    ).textTheme.bodyLarge?.copyWith(
+                                      color:
+                                          message.isMine
+                                              ? const Color(0xFFF3F7FF)
+                                              : const Color(0xFF1D5FE9),
+                                      height: 1.3,
+                                      fontWeight: FontWeight.w800,
+                                      decoration: TextDecoration.underline,
+                                      decorationColor: (message.isMine
+                                              ? const Color(0xFFF3F7FF)
+                                              : const Color(0xFF1D5FE9))
+                                          .withValues(alpha: 0.55),
+                                    ),
+                                    linkStyle: Theme.of(
+                                      context,
+                                    ).textTheme.bodyLarge?.copyWith(
+                                      color:
+                                          message.isMine
+                                              ? const Color(0xFFF3F7FF)
+                                              : const Color(0xFF1D5FE9),
+                                      height: 1.3,
+                                      fontWeight: FontWeight.w800,
+                                      decoration: TextDecoration.underline,
+                                      decorationColor: (message.isMine
+                                              ? const Color(0xFFF3F7FF)
+                                              : const Color(0xFF1D5FE9))
+                                          .withValues(alpha: 0.55),
+                                    ),
+                                    onMentionTap: onOpenMentionProfile,
+                                    onUrlTap: onOpenUrl,
                                   ),
                                 ),
                                 Positioned(
@@ -2899,13 +3240,15 @@ class _MessageBubble extends StatelessWidget {
                                 ),
                               ],
                             ),
-                          if (!hasTextOnlyBody && message.content.isNotEmpty)
+                          if (sharedPost == null &&
+                              !hasTextOnlyBody &&
+                              message.content.isNotEmpty)
                             Padding(
                               padding: EdgeInsets.only(
                                 bottom: message.attachments.isNotEmpty ? 10 : 0,
                               ),
-                              child: Text(
-                                message.content,
+                              child: InteractiveContentText(
+                                text: message.content,
                                 style: Theme.of(
                                   context,
                                 ).textTheme.bodyLarge?.copyWith(
@@ -2913,6 +3256,38 @@ class _MessageBubble extends StatelessWidget {
                                   height: 1.32,
                                   fontWeight: FontWeight.w500,
                                 ),
+                                mentionStyle: Theme.of(
+                                  context,
+                                ).textTheme.bodyLarge?.copyWith(
+                                  color:
+                                      message.isMine
+                                          ? const Color(0xFFF3F7FF)
+                                          : const Color(0xFF1D5FE9),
+                                  height: 1.32,
+                                  fontWeight: FontWeight.w800,
+                                  decoration: TextDecoration.underline,
+                                  decorationColor: (message.isMine
+                                          ? const Color(0xFFF3F7FF)
+                                          : const Color(0xFF1D5FE9))
+                                      .withValues(alpha: 0.55),
+                                ),
+                                linkStyle: Theme.of(
+                                  context,
+                                ).textTheme.bodyLarge?.copyWith(
+                                  color:
+                                      message.isMine
+                                          ? const Color(0xFFF3F7FF)
+                                          : const Color(0xFF1D5FE9),
+                                  height: 1.32,
+                                  fontWeight: FontWeight.w800,
+                                  decoration: TextDecoration.underline,
+                                  decorationColor: (message.isMine
+                                          ? const Color(0xFFF3F7FF)
+                                          : const Color(0xFF1D5FE9))
+                                      .withValues(alpha: 0.55),
+                                ),
+                                onMentionTap: onOpenMentionProfile,
+                                onUrlTap: onOpenUrl,
                               ),
                             ),
                           if (imageAttachments.isNotEmpty)
@@ -3036,7 +3411,24 @@ class _FailedMessageBubble extends StatelessWidget {
                 ],
               ),
               child: Padding(
-                padding: const EdgeInsets.fromLTRB(14, 12, 14, 10),
+                padding: EdgeInsets.fromLTRB(
+                  message.content.trim().isEmpty &&
+                          imageAttachments.isNotEmpty &&
+                          fileAttachments.isEmpty
+                      ? 6
+                      : 14,
+                  message.content.trim().isEmpty &&
+                          imageAttachments.isNotEmpty &&
+                          fileAttachments.isEmpty
+                      ? 6
+                      : 12,
+                  message.content.trim().isEmpty &&
+                          imageAttachments.isNotEmpty &&
+                          fileAttachments.isEmpty
+                      ? 6
+                      : 14,
+                  8,
+                ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
@@ -3200,13 +3592,21 @@ class _LocalOutgoingMessageBubble extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final strings = AppStrings.of(context);
     final imageAttachments = message.attachments
         .where((attachment) => attachment.isImage)
         .toList(growable: false);
     final fileAttachments = message.attachments
         .where((attachment) => !attachment.isImage)
         .toList(growable: false);
+    final hasTextOnlyBody =
+        message.content.isNotEmpty &&
+        imageAttachments.isEmpty &&
+        fileAttachments.isEmpty;
+    final hasStandaloneImage =
+        message.replyToContent == null &&
+        message.content.trim().isEmpty &&
+        imageAttachments.isNotEmpty &&
+        fileAttachments.isEmpty;
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -3214,87 +3614,89 @@ class _LocalOutgoingMessageBubble extends StatelessWidget {
 
         return Align(
           alignment: Alignment.centerRight,
-          child: TweenAnimationBuilder<double>(
-            key: ValueKey('local-${message.localId}-${message.status.name}'),
-            duration: const Duration(milliseconds: 280),
-            curve: Curves.easeOutCubic,
-            tween: Tween(begin: 0, end: 1),
-            builder: (context, value, child) {
-              final progress = Curves.easeOutCubic.transform(value);
-              return Opacity(
-                opacity: progress,
-                child: Transform.translate(
-                  offset: Offset((1 - progress) * 24, (1 - progress) * 10),
-                  child: Transform.scale(
-                    scale: 0.97 + (progress * 0.03),
-                    child: child,
-                  ),
+          child: Container(
+            margin: const EdgeInsets.only(bottom: 12),
+            constraints: BoxConstraints(maxWidth: maxBubbleWidth),
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  Color(0xFF2F67FF),
+                  Color(0xFF4A7DFF),
+                  Color(0xFF3A89FF),
+                ],
+              ),
+              borderRadius: const BorderRadius.only(
+                topLeft: Radius.circular(24),
+                topRight: Radius.circular(24),
+                bottomLeft: Radius.circular(24),
+                bottomRight: Radius.circular(10),
+              ),
+              border: Border.all(
+                color: const Color(0xFF7EA4FF).withValues(alpha: 0.22),
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: const Color(0xFF2F67FF).withValues(alpha: 0.16),
+                  blurRadius: 16,
+                  offset: const Offset(0, 8),
                 ),
-              );
-            },
-            child: Container(
-              margin: const EdgeInsets.only(bottom: 12),
-              constraints: BoxConstraints(maxWidth: maxBubbleWidth),
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [
-                    Color(0xFF2F67FF),
-                    Color(0xFF4A7DFF),
-                    Color(0xFF3A89FF),
-                  ],
-                ),
+              ],
+            ),
+            child: Material(
+              color: Colors.transparent,
+              borderRadius: const BorderRadius.only(
+                topLeft: Radius.circular(24),
+                topRight: Radius.circular(24),
+                bottomLeft: Radius.circular(24),
+                bottomRight: Radius.circular(10),
+              ),
+              child: InkWell(
+                onLongPress: onOpenMenu,
                 borderRadius: const BorderRadius.only(
                   topLeft: Radius.circular(24),
                   topRight: Radius.circular(24),
                   bottomLeft: Radius.circular(24),
                   bottomRight: Radius.circular(10),
                 ),
-                border: Border.all(
-                  color: const Color(0xFF7EA4FF).withValues(alpha: 0.28),
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: const Color(0xFF2F67FF).withValues(alpha: 0.18),
-                    blurRadius: 24,
-                    offset: const Offset(0, 12),
+                child: Padding(
+                  padding: EdgeInsets.fromLTRB(
+                    hasStandaloneImage ? 6 : 14,
+                    hasStandaloneImage ? 6 : 10,
+                    hasStandaloneImage ? 6 : 12,
+                    8,
                   ),
-                ],
-              ),
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(14, 12, 14, 10),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    if (message.replyToContent != null)
-                      Container(
-                        width: double.infinity,
-                        margin: const EdgeInsets.only(bottom: 8),
-                        padding: const EdgeInsets.fromLTRB(12, 10, 10, 10),
-                        decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.18),
-                          borderRadius: BorderRadius.circular(16),
-                          border: const Border(
-                            left: BorderSide(
-                              color: Color(0xFFDDE9FF),
-                              width: 3,
-                            ),
-                          ),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              message.replyToSenderUsername ?? strings.message,
-                              style: Theme.of(
-                                context,
-                              ).textTheme.bodySmall?.copyWith(
-                                color: Colors.white70,
-                                fontWeight: FontWeight.w700,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (message.replyToContent != null)
+                        Container(
+                          width: double.infinity,
+                          margin: const EdgeInsets.only(bottom: 8),
+                          padding: const EdgeInsets.fromLTRB(12, 10, 10, 10),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.18),
+                            borderRadius: BorderRadius.circular(16),
+                            border: const Border(
+                              left: BorderSide(
+                                color: Color(0xFFDDE9FF),
+                                width: 3,
                               ),
                             ),
-                            if (message.replyToContent != null) ...[
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                message.replyToSenderUsername ?? 'Message',
+                                style: Theme.of(
+                                  context,
+                                ).textTheme.bodySmall?.copyWith(
+                                  color: Colors.white70,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
                               const SizedBox(height: 4),
                               Text(
                                 message.replyToContent!,
@@ -3304,161 +3706,136 @@ class _LocalOutgoingMessageBubble extends StatelessWidget {
                                     ?.copyWith(color: Colors.white70),
                               ),
                             ],
-                          ],
-                        ),
-                      ),
-                    if (message.content.isNotEmpty)
-                      Padding(
-                        padding: EdgeInsets.only(
-                          bottom: message.attachments.isNotEmpty ? 10 : 0,
-                        ),
-                        child: Text(
-                          message.content,
-                          style: Theme.of(
-                            context,
-                          ).textTheme.bodyLarge?.copyWith(
-                            color: Colors.white,
-                            height: 1.4,
-                            fontWeight: FontWeight.w500,
                           ),
                         ),
-                      ),
-                    if (imageAttachments.isNotEmpty)
-                      Padding(
-                        padding: EdgeInsets.only(
-                          bottom: fileAttachments.isNotEmpty ? 10 : 0,
+                      if (hasTextOnlyBody)
+                        Stack(
+                          alignment: Alignment.bottomRight,
+                          children: [
+                            Padding(
+                              padding: const EdgeInsets.only(
+                                right: 78,
+                                bottom: 2,
+                              ),
+                              child: Text(
+                                message.content,
+                                style: Theme.of(
+                                  context,
+                                ).textTheme.bodyLarge?.copyWith(
+                                  color: Colors.white,
+                                  height: 1.3,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ),
+                            Positioned(
+                              right: 0,
+                              bottom: 0,
+                              child: _LocalOutgoingFooter(
+                                createdAt: message.createdAt,
+                                isFailed: message.isFailed,
+                              ),
+                            ),
+                          ],
                         ),
-                        child: Column(
-                          children: imageAttachments
+                      if (!hasTextOnlyBody && message.content.isNotEmpty)
+                        Padding(
+                          padding: EdgeInsets.only(
+                            bottom: message.attachments.isNotEmpty ? 10 : 0,
+                          ),
+                          child: Text(
+                            message.content,
+                            style: Theme.of(
+                              context,
+                            ).textTheme.bodyLarge?.copyWith(
+                              color: Colors.white,
+                              height: 1.32,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ),
+                      if (imageAttachments.isNotEmpty)
+                        Padding(
+                          padding: EdgeInsets.only(
+                            bottom: fileAttachments.isNotEmpty ? 10 : 0,
+                          ),
+                          child: Column(
+                            children: imageAttachments
+                                .map(
+                                  (attachment) => Padding(
+                                    padding: const EdgeInsets.only(bottom: 8),
+                                    child: _PendingImageAttachmentCard(
+                                      attachment: attachment,
+                                    ),
+                                  ),
+                                )
+                                .toList(growable: false),
+                          ),
+                        ),
+                      if (fileAttachments.isNotEmpty)
+                        Column(
+                          children: fileAttachments
                               .map(
                                 (attachment) => Padding(
                                   padding: const EdgeInsets.only(bottom: 8),
-                                  child: _PendingImageAttachmentCard(
+                                  child: _PendingFileAttachmentTile(
                                     attachment: attachment,
                                   ),
                                 ),
                               )
                               .toList(growable: false),
                         ),
-                      ),
-                    if (fileAttachments.isNotEmpty)
-                      Column(
-                        children: fileAttachments
-                            .map(
-                              (attachment) => Padding(
-                                padding: const EdgeInsets.only(bottom: 8),
-                                child: _PendingFileAttachmentTile(
-                                  attachment: attachment,
-                                ),
-                              ),
-                            )
-                            .toList(growable: false),
-                      ),
-                    if (message.isUploading) ...[
-                      const SizedBox(height: 4),
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(999),
-                        child: LinearProgressIndicator(
-                          value: message.uploadProgress,
-                          minHeight: 4,
-                          backgroundColor: Colors.white.withValues(alpha: 0.16),
-                          valueColor: const AlwaysStoppedAnimation<Color>(
-                            Colors.white,
-                          ),
-                        ),
-                      ),
-                    ],
-                    const SizedBox(height: 8),
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          DateFormat(
-                            'HH:mm',
-                          ).format(message.createdAt.toLocal()),
-                          style: Theme.of(
-                            context,
-                          ).textTheme.bodySmall?.copyWith(
-                            color: Colors.white70,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Text(
-                          switch (message.status) {
-                            _LocalOutgoingMessageStatus.uploading =>
-                              message.uploadProgress != null
-                                  ? strings.uploadingWithProgress(
-                                    (message.uploadProgress! * 100).round(),
-                                  )
-                                  : strings.uploading,
-                            _LocalOutgoingMessageStatus.sending =>
-                              strings.sendingMessage,
-                            _LocalOutgoingMessageStatus.failed =>
-                              strings.failedStatus,
-                          },
-                          style: Theme.of(
-                            context,
-                          ).textTheme.bodySmall?.copyWith(
-                            color:
-                                message.isFailed
-                                    ? const Color(0xFFFFD6D6)
-                                    : Colors.white70,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        if (message.isFailed)
-                          InkWell(
-                            onTap: onRetry,
-                            borderRadius: BorderRadius.circular(999),
-                            child: const Padding(
-                              padding: EdgeInsets.all(2),
-                              child: Icon(
-                                Icons.error_outline_rounded,
-                                size: 18,
-                                color: Color(0xFFFFD6D6),
-                              ),
+                      if (!hasTextOnlyBody) ...[
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            const Spacer(),
+                            _LocalOutgoingFooter(
+                              createdAt: message.createdAt,
+                              isFailed: message.isFailed,
                             ),
-                          )
-                        else
-                          const Icon(
-                            Icons.schedule_rounded,
-                            size: 17,
-                            color: Colors.white70,
-                          ),
-                        PopupMenuButton<String>(
-                          padding: EdgeInsets.zero,
-                          icon: const SizedBox.shrink(),
-                          onSelected: (value) {
-                            if (value == 'retry') {
-                              onRetry();
-                            } else if (value == 'delete') {
-                              onDelete();
-                            }
-                          },
-                          itemBuilder:
-                              (context) => [
-                                if (message.isFailed)
-                                  PopupMenuItem(
-                                    value: 'retry',
-                                    child: Text(strings.retry),
-                                  ),
-                                PopupMenuItem(
-                                  value: 'delete',
-                                  child: Text(strings.delete),
-                                ),
-                              ],
+                          ],
                         ),
                       ],
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
             ),
           ),
         );
       },
+    );
+  }
+}
+
+class _LocalOutgoingFooter extends StatelessWidget {
+  final DateTime createdAt;
+  final bool isFailed;
+
+  const _LocalOutgoingFooter({required this.createdAt, required this.isFailed});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Text(
+          DateFormat('HH:mm').format(createdAt.toLocal()),
+          style: Theme.of(context).textTheme.labelSmall?.copyWith(
+            color: const Color(0xFFD6E4FF),
+            fontWeight: FontWeight.w600,
+            letterSpacing: 0,
+          ),
+        ),
+        const SizedBox(width: 4),
+        Icon(
+          isFailed ? Icons.schedule_rounded : Icons.check_rounded,
+          size: 16,
+          color: isFailed ? const Color(0xFFFFD6D6) : const Color(0xFFC6D8FF),
+        ),
+      ],
     );
   }
 }
@@ -3863,39 +4240,37 @@ class _ImageAttachmentCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [
-          BoxShadow(
-            color: const Color(0xFF132443).withValues(alpha: 0.08),
-            blurRadius: 16,
-            offset: const Offset(0, 8),
-          ),
-        ],
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(20),
-        child: Material(
-          color: const Color(0x14000000),
-          child: InkWell(
-            onTap: onTap,
-            child: SizedBox(
-              width: 260,
-              child: AspectRatio(
-                aspectRatio: 1.25,
-                child: CachedNetworkImage(
-                  imageUrl: attachment.fileUrl,
-                  fit: BoxFit.cover,
-                  placeholder:
-                      (_, __) => const Center(
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(20),
+      child: Material(
+        color: const Color(0x14000000),
+        child: InkWell(
+          onTap: onTap,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(
+              minWidth: 180,
+              maxWidth: 320,
+              maxHeight: 360,
+            ),
+            child: AspectRatio(
+              aspectRatio: 1,
+              child: CachedNetworkImage(
+                imageUrl: attachment.fileUrl,
+                fit: BoxFit.cover,
+                placeholder:
+                    (_, __) => const ColoredBox(
+                      color: Color(0x14000000),
+                      child: Center(
                         child: CircularProgressIndicator(strokeWidth: 2),
                       ),
-                  errorWidget:
-                      (_, __, ___) => const Center(
+                    ),
+                errorWidget:
+                    (_, __, ___) => const ColoredBox(
+                      color: Color(0x14000000),
+                      child: Center(
                         child: Icon(Icons.broken_image_rounded, size: 34),
                       ),
-                ),
+                    ),
               ),
             ),
           ),
@@ -4006,34 +4381,26 @@ class _PendingImageAttachmentCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [
-          BoxShadow(
-            color: const Color(0xFF132443).withValues(alpha: 0.08),
-            blurRadius: 16,
-            offset: const Offset(0, 8),
-          ),
-        ],
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(20),
-        child: SizedBox(
-          width: 260,
-          child: AspectRatio(
-            aspectRatio: 1.25,
-            child: Image.memory(
-              attachment.bytes,
-              fit: BoxFit.cover,
-              errorBuilder:
-                  (_, __, ___) => const ColoredBox(
-                    color: Color(0x14000000),
-                    child: Center(
-                      child: Icon(Icons.broken_image_rounded, size: 34),
-                    ),
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(20),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(
+          minWidth: 180,
+          maxWidth: 320,
+          maxHeight: 360,
+        ),
+        child: AspectRatio(
+          aspectRatio: 1,
+          child: Image.memory(
+            attachment.bytes,
+            fit: BoxFit.cover,
+            errorBuilder:
+                (_, __, ___) => const ColoredBox(
+                  color: Color(0x14000000),
+                  child: Center(
+                    child: Icon(Icons.broken_image_rounded, size: 34),
                   ),
-            ),
+                ),
           ),
         ),
       ),

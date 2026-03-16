@@ -8,6 +8,7 @@ import 'package:mishon_app/core/localization/app_strings.dart';
 import 'package:mishon_app/core/models/social_models.dart';
 import 'package:mishon_app/core/network/exceptions.dart';
 import 'package:mishon_app/core/widgets/app_shell.dart';
+import 'package:mishon_app/core/widgets/app_toast.dart';
 import 'package:mishon_app/core/widgets/profile_media.dart';
 import 'package:mishon_app/core/widgets/states.dart';
 import 'package:mishon_app/features/chats/screens/chat_screen.dart';
@@ -396,13 +397,7 @@ class _PeopleOverviewScreenState extends ConsumerState<PeopleOverviewScreen>
       return;
     }
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor:
-            isError ? const Color(0xFFB42318) : const Color(0xFF117A47),
-      ),
-    );
+    showAppToast(context, message: message, isError: isError);
   }
 
   String _messageFromError(

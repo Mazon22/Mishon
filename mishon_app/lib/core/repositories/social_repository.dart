@@ -17,6 +17,7 @@ class SocialRepository {
   static final Map<String, MemoryCacheEntry<List<DiscoverUser>>>
   _discoverUsersCache = <String, MemoryCacheEntry<List<DiscoverUser>>>{};
   static MemoryCacheEntry<List<FriendUser>>? _friendsCache;
+  static MemoryCacheEntry<List<BlockedUserModel>>? _blockedUsersCache;
   static MemoryCacheEntry<List<FriendRequestModel>>? _incomingRequestsCache;
   static MemoryCacheEntry<List<FriendRequestModel>>? _outgoingRequestsCache;
   static MemoryCacheEntry<List<ConversationModel>>? _conversationsCache;
@@ -39,6 +40,15 @@ class SocialRepository {
 
   List<FriendUser>? peekFriends() {
     final cache = _friendsCache;
+    if (cache == null || !cache.isFresh(_cacheTtl)) {
+      return null;
+    }
+
+    return cache.value;
+  }
+
+  List<BlockedUserModel>? peekBlockedUsers() {
+    final cache = _blockedUsersCache;
     if (cache == null || !cache.isFresh(_cacheTtl)) {
       return null;
     }
@@ -157,6 +167,29 @@ class SocialRepository {
       rethrow;
     } on OfflineException {
       _logger.w('No connection getting friends');
+      rethrow;
+    }
+  }
+
+  Future<List<BlockedUserModel>> getBlockedUsers({
+    bool forceRefresh = false,
+  }) async {
+    final cachedBlockedUsers = !forceRefresh ? peekBlockedUsers() : null;
+    if (cachedBlockedUsers != null) {
+      return cachedBlockedUsers;
+    }
+
+    try {
+      final blockedUsers = await _apiService.getBlockedUsers();
+      _blockedUsersCache = MemoryCacheEntry<List<BlockedUserModel>>.now(
+        List<BlockedUserModel>.unmodifiable(blockedUsers),
+      );
+      return blockedUsers;
+    } on ApiException catch (e) {
+      _logger.e('Get blocked users failed: ${e.apiError.message}');
+      rethrow;
+    } on OfflineException {
+      _logger.w('No connection getting blocked users');
       rethrow;
     }
   }
@@ -495,6 +528,8 @@ class SocialRepository {
   Future<void> blockUserFromChat(int userId) async {
     try {
       await _apiService.blockUserFromChat(userId);
+      _conversationsCache = null;
+      _blockedUsersCache = null;
     } on ApiException catch (e) {
       _logger.e('Block user from chat failed: ${e.apiError.message}');
       rethrow;
@@ -507,6 +542,8 @@ class SocialRepository {
   Future<void> unblockUserFromChat(int userId) async {
     try {
       await _apiService.unblockUserFromChat(userId);
+      _conversationsCache = null;
+      _blockedUsersCache = null;
     } on ApiException catch (e) {
       _logger.e('Unblock user from chat failed: ${e.apiError.message}');
       rethrow;

@@ -221,6 +221,21 @@ class PostRepository {
     }
   }
 
+  Future<Post?> getPost(int postId) async {
+    try {
+      return await _apiService.getPost(postId);
+    } on ApiException catch (e) {
+      _logger.e('Get post failed: ${e.apiError.message}');
+      rethrow;
+    } on OfflineException {
+      _logger.w('No connection getting post');
+      rethrow;
+    } catch (e, st) {
+      _logger.e('Unexpected get post error', error: e, stackTrace: st);
+      rethrow;
+    }
+  }
+
   Future<Post> toggleLike(int postId) async {
     try {
       final post = await _apiService.toggleLike(postId);

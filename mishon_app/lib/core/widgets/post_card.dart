@@ -175,6 +175,7 @@ class PostCard extends StatelessWidget {
                       onTap: onLike,
                     ),
                   ),
+                  const SizedBox(width: 8),
                   Expanded(
                     child: _PostActionButton(
                       icon: Icons.mode_comment_outlined,
@@ -183,6 +184,7 @@ class PostCard extends StatelessWidget {
                       onTap: onComment,
                     ),
                   ),
+                  const SizedBox(width: 8),
                   Expanded(
                     child: _PostActionButton(
                       icon: Icons.share_outlined,
@@ -228,10 +230,7 @@ class _PostMenuButton extends StatelessWidget {
       if (onShare != null)
         PopupMenuItem<String>(value: 'share', child: Text(strings.share)),
       if (isOwnPost && onDelete != null)
-        PopupMenuItem<String>(
-          value: 'delete',
-          child: Text(strings.deletePost),
-        ),
+        PopupMenuItem<String>(value: 'delete', child: Text(strings.deletePost)),
     ];
 
     if (items.isEmpty) {
@@ -470,6 +469,7 @@ class _PostActionButtonState extends State<_PostActionButton>
   late final AnimationController _controller;
   late final Animation<double> _pulseScale;
   bool _pressed = false;
+  bool _hovered = false;
 
   @override
   void initState() {
@@ -512,44 +512,89 @@ class _PostActionButtonState extends State<_PostActionButton>
 
   @override
   Widget build(BuildContext context) {
-    return Listener(
-      onPointerDown:
-          widget.onTap != null ? (_) => setState(() => _pressed = true) : null,
-      onPointerUp: (_) => setState(() => _pressed = false),
-      onPointerCancel: (_) => setState(() => _pressed = false),
-      child: AnimatedScale(
-        scale: _pressed ? 0.97 : 1,
-        duration: const Duration(milliseconds: 120),
-        curve: Curves.easeOut,
-        child: Material(
-          color: Colors.transparent,
-          child: InkWell(
-            onTap: widget.onTap,
-            borderRadius: BorderRadius.circular(12),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 10),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.start,
-                children: [
-                  AnimatedBuilder(
-                    animation: _pulseScale,
-                    builder: (context, child) {
-                      return Transform.scale(
-                        scale: widget.isActive ? _pulseScale.value : 1,
-                        child: child,
-                      );
-                    },
-                    child: Icon(widget.icon, size: 20, color: widget.color),
+    final backgroundAlpha =
+        widget.isActive
+            ? 0.16
+            : _hovered
+            ? 0.11
+            : 0.06;
+
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      child: Listener(
+        onPointerDown:
+            widget.onTap != null
+                ? (_) => setState(() => _pressed = true)
+                : null,
+        onPointerUp: (_) => setState(() => _pressed = false),
+        onPointerCancel: (_) => setState(() => _pressed = false),
+        child: AnimatedScale(
+          scale: _pressed ? 0.97 : 1,
+          duration: const Duration(milliseconds: 120),
+          curve: Curves.easeOut,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 180),
+            curve: Curves.easeOutCubic,
+            decoration: BoxDecoration(
+              color: widget.color.withValues(alpha: backgroundAlpha),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(
+                color: widget.color.withValues(
+                  alpha: widget.isActive || _hovered ? 0.18 : 0.08,
+                ),
+              ),
+              boxShadow:
+                  _hovered
+                      ? [
+                        BoxShadow(
+                          color: widget.color.withValues(alpha: 0.14),
+                          blurRadius: 14,
+                          offset: const Offset(0, 8),
+                        ),
+                      ]
+                      : const [],
+            ),
+            child: Material(
+              color: Colors.transparent,
+              child: InkWell(
+                onTap: widget.onTap,
+                borderRadius: BorderRadius.circular(16),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 12,
                   ),
-                  const SizedBox(width: 8),
-                  Text(
-                    widget.label,
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: widget.color,
-                      fontWeight: FontWeight.w700,
-                    ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      AnimatedBuilder(
+                        animation: _pulseScale,
+                        builder: (context, child) {
+                          return Transform.scale(
+                            scale: widget.isActive ? _pulseScale.value : 1,
+                            child: child,
+                          );
+                        },
+                        child: Icon(widget.icon, size: 20, color: widget.color),
+                      ),
+                      const SizedBox(width: 8),
+                      Flexible(
+                        child: Text(
+                          widget.label,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(
+                            context,
+                          ).textTheme.bodyMedium?.copyWith(
+                            color: widget.color,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
-                ],
+                ),
               ),
             ),
           ),

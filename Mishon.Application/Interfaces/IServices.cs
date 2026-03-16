@@ -109,6 +109,7 @@ public interface IBlockService
 {
     Task<Result> BlockUserAsync(int blockerId, int blockedUserId, CancellationToken cancellationToken = default);
     Task<Result> UnblockUserAsync(int blockerId, int blockedUserId, CancellationToken cancellationToken = default);
+    Task<Result<IEnumerable<BlockedUserDto>>> GetBlockedUsersAsync(int blockerId, CancellationToken cancellationToken = default);
     Task<UserBlockStatusDto> GetStatusAsync(int viewerId, int otherUserId, CancellationToken cancellationToken = default);
     Task<HashSet<int>> GetRestrictedUserIdsAsync(int viewerId, CancellationToken cancellationToken = default);
     Task<bool> AreUsersBlockedAsync(int firstUserId, int secondUserId, CancellationToken cancellationToken = default);

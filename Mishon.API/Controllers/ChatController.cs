@@ -104,6 +104,18 @@ public class ChatController : ControllerBase
         return FromResult(await _blockService.UnblockUserAsync(GetUserId(), dto.UserId, cancellationToken));
     }
 
+    [HttpGet("blocked-users")]
+    public async Task<ActionResult<IEnumerable<BlockedUserDto>>> GetBlockedUsers(CancellationToken cancellationToken)
+    {
+        var result = await _blockService.GetBlockedUsersAsync(GetUserId(), cancellationToken);
+        if (result.IsSuccess)
+        {
+            return Ok(result.Data ?? []);
+        }
+
+        return FromFailure(result.Error, result.ResultError);
+    }
+
     [HttpPost("typing-start")]
     public async Task<ActionResult> TypingStart([FromBody] TypingIndicatorDto dto, CancellationToken cancellationToken)
     {

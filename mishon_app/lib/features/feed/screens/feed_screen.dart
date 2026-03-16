@@ -11,7 +11,8 @@ import 'package:mishon_app/core/network/exceptions.dart';
 import 'package:mishon_app/core/providers/app_bootstrap_provider.dart';
 import 'package:mishon_app/core/widgets/app_shell.dart';
 import 'package:mishon_app/core/widgets/post_card.dart';
-import 'package:mishon_app/features/comments/screens/comments_screen.dart';
+import 'package:mishon_app/features/chats/utils/chat_post_share.dart';
+import 'package:mishon_app/features/comments/screens/comments_screen_args.dart';
 import 'package:mishon_app/features/feed/providers/feed_provider.dart';
 import 'package:mishon_app/features/notifications/providers/notification_summary_provider.dart';
 
@@ -183,10 +184,6 @@ class _FeedScreenState extends ConsumerState<FeedScreen>
         ],
       ),
     );
-  }
-
-  static void _showSharePlaceholder(BuildContext context, Post post) {
-    // Intentionally silent: informational snackbars are disabled.
   }
 
   static String _getErrorMessage(BuildContext context, Object? error) {
@@ -473,9 +470,12 @@ class _FeedTimeline extends ConsumerWidget {
                             ),
                           ),
                       onShare:
-                          () => _FeedScreenState._showSharePlaceholder(
-                            context,
-                            post,
+                          () => unawaited(
+                            sharePostToChat(
+                              context: context,
+                              ref: ref,
+                              post: post,
+                            ),
                           ),
                     ),
                   );

@@ -185,6 +185,27 @@ class SecureStorage {
     return value.toLowerCase() == 'true';
   }
 
+  Future<void> writeStringSetting(String key, String value) async {
+    await _writeValue(key, value, label: 'string setting');
+  }
+
+  Future<String?> readStringSetting(String key) async {
+    return _readValue(key, label: 'string setting');
+  }
+
+  Future<void> writeIntSetting(String key, int value) async {
+    await _writeValue(key, value.toString(), label: 'int setting');
+  }
+
+  Future<int?> readIntSetting(String key) async {
+    final value = await _readValue(key, label: 'int setting');
+    return _parseInt(value);
+  }
+
+  Future<void> deleteSetting(String key) async {
+    await _deleteValue(key, label: 'setting');
+  }
+
   Future<void> _writeValue(
     String key,
     String value, {
