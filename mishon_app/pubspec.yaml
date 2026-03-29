@@ -18,6 +18,7 @@ dependencies:
 
   # Networking
   dio: ^5.4.3+1
+  http_parser: ^4.0.2
   connectivity_plus: ^5.0.2
 
   # Navigation
@@ -45,6 +46,8 @@ dependencies:
   # UI
   cupertino_icons: ^1.0.8
   google_fonts: ^6.2.1
+  just_audio: ^0.9.40
+  record: ^6.2.0
   web: ^1.1.1
   signalr_netcore: ^1.4.4
 

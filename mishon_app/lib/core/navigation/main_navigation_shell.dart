@@ -9,6 +9,7 @@ import 'package:mishon_app/core/models/social_models.dart';
 import 'package:mishon_app/core/providers/app_bootstrap_provider.dart';
 import 'package:mishon_app/core/providers/app_connection_status_provider.dart';
 import 'package:mishon_app/core/widgets/app_shell.dart';
+import 'package:mishon_app/core/theme/app_theme.dart';
 import 'package:mishon_app/features/notifications/providers/notification_summary_provider.dart';
 import 'package:mishon_app/features/profile/screens/profile_screen.dart';
 
@@ -810,11 +811,7 @@ class _RootShellBottomNavigationState extends State<_RootShellBottomNavigation>
                         height: _indicatorHeight,
                         decoration: BoxDecoration(
                           borderRadius: BorderRadius.circular(18),
-                          gradient: const LinearGradient(
-                            colors: [Color(0xFF4A8DFF), Color(0xFF7468FF)],
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
-                          ),
+                          gradient: AppGradients.profile,
                           boxShadow: const [
                             BoxShadow(
                               color: Color(0x1F4A67FF),
@@ -942,7 +939,7 @@ class _RootShellRail extends StatelessWidget {
               minWidth: 96,
               groupAlignment: -0.4,
               backgroundColor: Colors.transparent,
-              indicatorColor: const Color(0xFFE8EEFF),
+              indicatorColor: AppColors.profileSoft,
               destinations: destinations
                   .map(
                     (item) => NavigationRailDestination(

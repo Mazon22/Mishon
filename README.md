@@ -1,130 +1,135 @@
 # Mishon
 
-Mishon is a small social network project with one backend, one database, and Flutter clients for Android and web.
+Mishon - это социальная платформа, в которой сайт и мобильное приложение работают на одном backend.
 
-The repository contains:
+В проекте нет раздвоенной серверной логики: один backend на Go обслуживает веб-версию, Flutter Web и мобильное приложение. Это делает разработку чище, поддержку проще, а поведение продукта - предсказуемым на всех платформах.
 
-- `Mishon.API` - ASP.NET Core API
-- `Mishon.Application` - service contracts and DTOs
-- `Mishon.Domain` - domain entities
-- `Mishon.Infrastructure` - EF Core, data access, services, migrations
-- `mishon_app` - Flutter client for Android and web
+## Из чего состоит проект
 
-## What works
+- `mishon-go-api` - единый backend на Go
+- `mishon-web` - веб-клиент для больших экранов на React + TypeScript
+- `mishon_app` - мобильное приложение на Flutter и его web-версия
 
-- registration and login
-- profile editing
-- feed and user posts
-- likes and comments
-- follow system
-- friends and friend requests
-- private chats
-- shared data source for mobile client and backend
+## Что уже есть
 
-## Stack
+- единая серверная архитектура для web и mobile
+- аутентификация на JWT
+- лента постов, лайки и комментарии
+- чаты и уведомления
+- друзья, подписки и поиск людей
+- светлая и тёмная темы
+- раздача собранного сайта и медиа напрямую через backend
 
-- ASP.NET Core 8
-- Entity Framework Core
+## Архитектурная идея
+
+Сайт и мобильное приложение используют одну и ту же базу данных и один backend.
+
+`mishon-go-api` отвечает сразу за несколько задач:
+
+- отдает web API по пути `/api/v1`
+- отдает mobile-compatible API по пути `/api`
+- раздает собранный сайт из `mishon-web/dist`
+- отдает загруженные файлы из `/uploads`
+
+За счет этого проект остаётся цельным: фронтенды разделены по технологиям, но опираются на одну серверную основу.
+
+## Технологии
+
+- Go
 - PostgreSQL
-- JWT auth
+- React
+- TypeScript
+- Vite
+- Sass
 - Flutter
 - Riverpod
-- Dio
+- GoRouter
 
-## Project layout
+## Структура репозитория
 
-```text
-Mishon/
-|-- Mishon.API/
-|-- Mishon.Application/
-|-- Mishon.Domain/
-|-- Mishon.Infrastructure/
-`-- mishon_app/
-```
+- `mishon-go-api/` - серверная часть
+- `mishon-web/` - основной сайт
+- `mishon_app/` - мобильный клиент
+- `PROJECT_STRUCTURE.md` - подробная карта проекта
+- `ROADMAP.md` - дальнейшие планы развития
 
-## Requirements
+## Быстрый запуск
 
-- .NET 8 SDK
-- Flutter SDK
-- Android SDK / Android Studio
-- PostgreSQL
-
-## Backend setup
-
-1. Create a PostgreSQL database.
-2. Set the connection string and JWT key.
-3. Apply migrations.
-4. Start the API.
-
-Example for PowerShell:
+### 1. Сборка сайта
 
 ```powershell
-$env:ConnectionStrings__DefaultConnection="Host=localhost;Port=5432;Database=mishon;Username=postgres;Password=YOUR_PASSWORD"
-$env:Jwt__Key="YOUR_SECRET_KEY_AT_LEAST_32_CHARS"
-
-dotnet ef database update --project .\Mishon.Infrastructure\ --startup-project .\Mishon.API\
-dotnet run --project .\Mishon.API\
+cd .\mishon-web\
+npm install
+npm run build
 ```
 
-## Flutter app setup
+### 2. Запуск backend
+
+```powershell
+cd .\mishon-go-api\
+$env:DATABASE_URL = "postgres://postgres:CHANGE_ME@localhost:5432/mishon?sslmode=disable"
+$env:JWT_KEY = "replace-with-a-long-random-secret-at-least-32-characters"
+go run .\cmd\mishon-go-api\
+```
+
+После запуска сайт будет доступен по адресу:
+
+- [http://localhost:8081](http://localhost:8081)
+
+### 3. Запуск web-версии мобильного приложения
 
 ```powershell
 cd .\mishon_app\
 flutter pub get
-flutter run
+flutter run -d chrome --web-port 3000 --dart-define=API_BASE_URL=http://localhost:8081/api
 ```
 
-Run in Chrome:
+Flutter Web будет доступен по адресу:
+
+- [http://localhost:3000](http://localhost:3000)
+
+### 4. Запуск Android-приложения
 
 ```powershell
 cd .\mishon_app\
-flutter run -d chrome
+flutter run --dart-define=API_BASE_URL=http://10.0.2.2:8081/api
 ```
 
-Debug APK build:
+## Проверка проекта
+
+### Веб-клиент
+
+```powershell
+cd .\mishon-web\
+npm run lint
+npm run build
+```
+
+### Backend
+
+```powershell
+cd .\mishon-go-api\
+go build ./...
+```
+
+### Flutter
 
 ```powershell
 cd .\mishon_app\
-flutter build apk --debug
+flutter analyze
+flutter test
 ```
 
-Release APK build:
+## Важно
 
-```powershell
-cd .\mishon_app\
-flutter build apk --release
-```
+- Основной backend проекта - `mishon-go-api`.
+- Сайту больше не нужен отдельный сервер.
+- Веб-клиент переведен на более аккуратную структуру `app / pages / widgets / shared`.
+- Стили сайта работают через `Sass`.
+- Веб и мобильное приложение используют одну серверную модель и один источник данных.
 
-## API address
+## Дополнительно
 
-The Flutter app uses `mishon_app/lib/core/constants/api_constants.dart`.
+Подробная структура каталогов и файлов описана в [PROJECT_STRUCTURE.md](/Users/Michael/Desktop/Mishon/PROJECT_STRUCTURE.md).
 
-- Android emulator: `http://10.0.2.2:5097/api`
-- web: `http://localhost:5097/api`
-- physical phone: replace with your PC local IP
-
-If you run the app on a real device, backend and phone must be in the same network.
-
-## Database
-
-The application is built around one shared database. Feed, profiles, comments, friend requests, chats, and messages come from the same backend and are used by the Android client directly through the API.
-
-## Main API areas
-
-- `/api/auth`
-- `/api/posts`
-- `/api/comments`
-- `/api/follows`
-- `/api/friends`
-- `/api/users`
-- `/api/conversations`
-
-## Notes
-
-- Do not commit real secrets to `appsettings.Development.json`.
-- Keep `Jwt__Key` long enough for production use.
-- Before the first launch on a phone, make sure the backend is reachable from the device.
-
-## Current state
-
-The root duplicate Flutter template was removed. The working client now lives in `mishon_app` and can be launched on Android or in the browser.
+Планы по следующим этапам вынесены в [ROADMAP.md](/Users/Michael/Desktop/Mishon/ROADMAP.md).

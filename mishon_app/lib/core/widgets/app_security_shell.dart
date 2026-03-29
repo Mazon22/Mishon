@@ -16,6 +16,7 @@ class _AppSecurityShellState extends ConsumerState<AppSecurityShell>
     with WidgetsBindingObserver {
   DateTime? _backgroundedAt;
   bool _isLocked = false;
+  bool _hasUnlockedThisSession = false;
 
   @override
   void initState() {
@@ -75,16 +76,26 @@ class _AppSecurityShellState extends ConsumerState<AppSecurityShell>
       throw Exception('invalid-passcode');
     }
 
-    setState(() => _isLocked = false);
+    setState(() {
+      _isLocked = false;
+      _hasUnlockedThisSession = true;
+    });
   }
 
   @override
   Widget build(BuildContext context) {
     final settings = ref.watch(appSettingsProvider);
-    if (!settings.passcodeLockEnabled && _isLocked) {
+    final shouldShowLock = settings.passcodeLockEnabled &&
+        (!_hasUnlockedThisSession || _isLocked);
+
+    if (!settings.passcodeLockEnabled &&
+        (_isLocked || _hasUnlockedThisSession)) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) {
-          setState(() => _isLocked = false);
+          setState(() {
+            _isLocked = false;
+            _hasUnlockedThisSession = false;
+          });
         }
       });
     }
@@ -93,7 +104,7 @@ class _AppSecurityShellState extends ConsumerState<AppSecurityShell>
       fit: StackFit.expand,
       children: [
         widget.child,
-        if (_isLocked && settings.passcodeLockEnabled)
+        if (shouldShowLock)
           _PasscodeLockOverlay(onUnlock: _handleUnlock),
       ],
     );

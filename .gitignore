@@ -1,61 +1,58 @@
-# .NET
-bin/
-obj/
-*.user
-*.suo
-*.db
-*.pdb
-*.dll
-*.exe
+# Build outputs
+artifacts/
+build/
+dist/
+out/
+coverage/
+test-results/
+.codex-build/
+.tmp/
+.sass-cache/
 
-# Rider / VS
+# Dependency directories
+node_modules/
+
+# IDEs
 .idea/
 .vs/
 .vscode/
+*.user
+*.suo
+*.iml
 
-# Logs
+# Logs and temp
 logs/
 *.log
+*.tmp
+*.cache
 
-# Secrets
-appsettings.Development.json
+# Secrets and local config
 .env
 .env.*
 *.env
-password.txt
 secrets.json
-appsettings.Production.json
-appsettings.Local.json
+password.txt
+*.pfx
+*.snk
 
 # Flutter / Dart
 .dart_tool/
 .flutter-plugins
 .flutter-plugins-dependencies
-.pub-cache/
 .pub/
-build/
-*.lock
-
-# Flutter generated
+.pub-cache/
+.metadata
+pubspec.lock
 **/ios/Flutter/.last_build_id
-**/android/app/debug
-**/android/app/profile
-**/android/app/release
+**/android/.gradle/
+**/android/app/debug/
+**/android/app/profile/
+**/android/app/release/
 
-# Mac / Windows
+# OS junk
 .DS_Store
 Thumbs.db
 
-# Test / Coverage
-coverage/
-test-results/
-
-# Misc
-*.iml
-.metadata
-.tmp/
-.codex-build/
-
-# Uploaded files (images, etc.)
+# User content / generated media
 **/uploads/*
 !**/uploads/.gitkeep

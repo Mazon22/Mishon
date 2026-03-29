@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:mishon_app/core/localization/app_strings.dart';
-import 'package:mishon_app/core/providers/app_bootstrap_provider.dart';
 import 'package:mishon_app/core/providers/app_connection_status_provider.dart';
+import 'package:mishon_app/core/theme/app_theme.dart';
 
 import '../../features/notifications/providers/notification_summary_provider.dart';
 import '../models/social_models.dart';
@@ -40,7 +40,6 @@ class AppShell extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final currentUserId = ref.watch(currentUserIdProvider);
     final connectionStatus = ref.watch(appConnectionStatusProvider);
     final summary = ref
         .watch(notificationSummaryProvider)
@@ -53,7 +52,7 @@ class AppShell extends ConsumerWidget {
                 incomingFriendRequests: 0,
               ),
         );
-    final destinations = _buildDestinations(context, currentUserId, summary);
+    final destinations = _buildDestinations(context, summary);
     final shellActions = <Widget>[
       if (showNotificationsAction)
         Padding(
@@ -78,6 +77,7 @@ class AppShell extends ConsumerWidget {
                 title: _AppShellTitleBlock(
                   title: title,
                   connectionStatus: connectionStatus,
+                  accentColor: AppColors.profile,
                 ),
                 actions: shellActions,
               )
@@ -134,7 +134,7 @@ class AppShell extends ConsumerWidget {
                               minWidth: 96,
                               groupAlignment: -0.4,
                               backgroundColor: Colors.transparent,
-                              indicatorColor: const Color(0xFFE8EEFF),
+                              indicatorColor: AppColors.profileSoft,
                               destinations:
                                   destinations
                                       .map(
@@ -143,11 +143,16 @@ class AppShell extends ConsumerWidget {
                                             icon: item.icon,
                                             badgeCount: item.badgeCount,
                                             selected: false,
+                                            accentColor:
+                                                _sectionPaletteFor(
+                                                  item.section,
+                                                ).accent,
                                           ),
                                           selectedIcon: _DestinationIcon(
                                             icon: item.selectedIcon,
                                             badgeCount: item.badgeCount,
                                             selected: true,
+                                            accentColor: _navigationAccent,
                                           ),
                                           label: Text(item.label),
                                         ),
@@ -183,7 +188,7 @@ class AppShell extends ConsumerWidget {
                 child: DecoratedBox(
                   decoration: BoxDecoration(
                     color: Colors.white.withValues(alpha: 0.92),
-                    borderRadius: BorderRadius.circular(28),
+                    borderRadius: BorderRadius.circular(30),
                     border: Border.all(
                       color: Colors.white.withValues(alpha: 0.85),
                     ),
@@ -195,48 +200,29 @@ class AppShell extends ConsumerWidget {
                       ),
                     ],
                   ),
-                  child: NavigationBarTheme(
-                    data: NavigationBarThemeData(
-                      backgroundColor: Colors.transparent,
-                      indicatorColor: const Color(0xFFE9EEFF),
-                      labelTextStyle: WidgetStateProperty.resolveWith((states) {
-                        final isSelected = states.contains(
-                          WidgetState.selected,
-                        );
-                        return TextStyle(
-                          fontSize: 12,
-                          fontWeight:
-                              isSelected ? FontWeight.w700 : FontWeight.w500,
-                          color:
-                              isSelected
-                                  ? const Color(0xFF18243C)
-                                  : const Color(0xFF5B687D),
-                        );
-                      }),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 8,
                     ),
-                    child: NavigationBar(
-                      height: 76,
-                      selectedIndex: currentSection.index,
-                      onDestinationSelected:
-                          (index) => _goTo(context, destinations[index].route),
-                      destinations:
-                          destinations
-                              .map(
-                                (item) => NavigationDestination(
-                                  icon: _DestinationIcon(
-                                    icon: item.icon,
-                                    badgeCount: item.badgeCount,
-                                    selected: false,
-                                  ),
-                                  selectedIcon: _DestinationIcon(
-                                    icon: item.selectedIcon,
-                                    badgeCount: item.badgeCount,
-                                    selected: true,
-                                  ),
-                                  label: item.label,
+                    child: Row(
+                      children:
+                          destinations.asMap().entries.map((entry) {
+                            final index = entry.key;
+                            final item = entry.value;
+                            return Expanded(
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 4,
                                 ),
-                              )
-                              .toList(),
+                                child: _BottomNavItem(
+                                  destination: item,
+                                  isSelected: index == currentSection.index,
+                                  onTap: () => _goTo(context, item.route),
+                                ),
+                              ),
+                            );
+                          }).toList(),
                     ),
                   ),
                 ),
@@ -247,12 +233,12 @@ class AppShell extends ConsumerWidget {
 
   List<_ShellDestination> _buildDestinations(
     BuildContext context,
-    int? currentUserId,
     NotificationSummaryModel summary,
   ) {
     final strings = AppStrings.of(context);
     return [
       _ShellDestination(
+        section: AppSection.feed,
         label: strings.feed,
         icon: Icons.newspaper_outlined,
         selectedIcon: Icons.newspaper_rounded,
@@ -260,12 +246,14 @@ class AppShell extends ConsumerWidget {
         badgeCount: summary.unreadNotifications,
       ),
       _ShellDestination(
+        section: AppSection.people,
         label: strings.people,
         icon: Icons.people_outline_rounded,
         selectedIcon: Icons.people_rounded,
         route: '/people',
       ),
       _ShellDestination(
+        section: AppSection.friends,
         label: strings.friends,
         icon: Icons.favorite_outline_rounded,
         selectedIcon: Icons.favorite_rounded,
@@ -273,6 +261,7 @@ class AppShell extends ConsumerWidget {
         badgeCount: summary.incomingFriendRequests,
       ),
       _ShellDestination(
+        section: AppSection.chats,
         label: strings.chats,
         icon: Icons.forum_outlined,
         selectedIcon: Icons.forum_rounded,
@@ -280,6 +269,7 @@ class AppShell extends ConsumerWidget {
         badgeCount: summary.unreadChats,
       ),
       _ShellDestination(
+        section: AppSection.profile,
         label: strings.profile,
         icon: Icons.person_outline_rounded,
         selectedIcon: Icons.person_rounded,
@@ -296,10 +286,12 @@ class AppShell extends ConsumerWidget {
 class _AppShellTitleBlock extends StatelessWidget {
   final String title;
   final AppConnectionStatus connectionStatus;
+  final Color accentColor;
 
   const _AppShellTitleBlock({
     required this.title,
     required this.connectionStatus,
+    required this.accentColor,
   });
 
   @override
@@ -316,7 +308,21 @@ class _AppShellTitleBlock extends StatelessWidget {
       mainAxisAlignment: MainAxisAlignment.center,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(title),
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 10,
+              height: 10,
+              decoration: BoxDecoration(
+                color: accentColor,
+                shape: BoxShape.circle,
+              ),
+            ),
+            const SizedBox(width: 8),
+            Flexible(child: Text(title)),
+          ],
+        ),
         AnimatedSwitcher(
           duration: const Duration(milliseconds: 180),
           switchInCurve: Curves.easeOut,
@@ -357,11 +363,7 @@ class _AppShellTitleBlock extends StatelessWidget {
 }
 
 const _defaultBodyDecoration = BoxDecoration(
-  gradient: LinearGradient(
-    begin: Alignment.topLeft,
-    end: Alignment.bottomRight,
-    colors: [Color(0xFFF5F8FF), Color(0xFFF0EEFF), Color(0xFFEAF4FF)],
-  ),
+  gradient: AppGradients.shellBackground,
 );
 
 const _defaultBackgroundLayers = [
@@ -392,6 +394,7 @@ const _defaultBackgroundLayers = [
 ];
 
 class _ShellDestination {
+  final AppSection section;
   final String label;
   final IconData icon;
   final IconData selectedIcon;
@@ -399,12 +402,58 @@ class _ShellDestination {
   final int badgeCount;
 
   const _ShellDestination({
+    required this.section,
     required this.label,
     required this.icon,
     required this.selectedIcon,
     required this.route,
     this.badgeCount = 0,
   });
+}
+
+class _SectionPalette {
+  final Color accent;
+  final Color soft;
+  final LinearGradient gradient;
+
+  const _SectionPalette({
+    required this.accent,
+    required this.soft,
+    required this.gradient,
+  });
+}
+
+const _navigationAccent = AppColors.profile;
+const _navigationGradient = AppGradients.profile;
+
+_SectionPalette _sectionPaletteFor(AppSection section) {
+  return switch (section) {
+    AppSection.feed => const _SectionPalette(
+      accent: AppColors.feed,
+      soft: AppColors.feedSoft,
+      gradient: AppGradients.feed,
+    ),
+    AppSection.people => const _SectionPalette(
+      accent: AppColors.people,
+      soft: AppColors.peopleSoft,
+      gradient: AppGradients.people,
+    ),
+    AppSection.friends => const _SectionPalette(
+      accent: AppColors.friends,
+      soft: AppColors.friendsSoft,
+      gradient: AppGradients.friends,
+    ),
+    AppSection.chats => const _SectionPalette(
+      accent: AppColors.chats,
+      soft: AppColors.chatsSoft,
+      gradient: AppGradients.chats,
+    ),
+    AppSection.profile => const _SectionPalette(
+      accent: AppColors.profile,
+      soft: AppColors.profileSoft,
+      gradient: AppGradients.profile,
+    ),
+  };
 }
 
 class _ShellGlowOrb extends StatelessWidget {
@@ -432,11 +481,13 @@ class _DestinationIcon extends StatelessWidget {
   final IconData icon;
   final int badgeCount;
   final bool selected;
+  final Color accentColor;
 
   const _DestinationIcon({
     required this.icon,
     required this.badgeCount,
     required this.selected,
+    required this.accentColor,
   });
 
   @override
@@ -444,7 +495,7 @@ class _DestinationIcon extends StatelessWidget {
     return Stack(
       clipBehavior: Clip.none,
       children: [
-        Icon(icon),
+        Icon(icon, color: selected ? accentColor : const Color(0xFF6B7890)),
         if (badgeCount > 0)
           Positioned(
             right: -8,
@@ -453,10 +504,7 @@ class _DestinationIcon extends StatelessWidget {
               padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
               constraints: const BoxConstraints(minWidth: 18),
               decoration: BoxDecoration(
-                color:
-                    selected
-                        ? const Color(0xFF2A5BFF)
-                        : const Color(0xFF101727),
+                color: selected ? accentColor : const Color(0xFF101727),
                 borderRadius: BorderRadius.circular(999),
               ),
               child: Text(
@@ -471,6 +519,125 @@ class _DestinationIcon extends StatelessWidget {
             ),
           ),
       ],
+    );
+  }
+}
+
+class _BottomNavItem extends StatelessWidget {
+  final _ShellDestination destination;
+  final bool isSelected;
+  final VoidCallback onTap;
+
+  const _BottomNavItem({
+    required this.destination,
+    required this.isSelected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final iconColor = isSelected ? Colors.white : const Color(0xFF5B687D);
+    final iconBackgroundColor =
+        isSelected
+            ? Colors.white.withValues(alpha: 0.18)
+            : const Color(0xFFF3F6FC);
+
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 220),
+      curve: Curves.easeOutCubic,
+      decoration: BoxDecoration(
+        gradient: isSelected ? _navigationGradient : null,
+        color: isSelected ? null : Colors.transparent,
+        borderRadius: BorderRadius.circular(22),
+        boxShadow:
+            isSelected
+                ? [
+                  BoxShadow(
+                    color: _navigationAccent.withValues(alpha: 0.22),
+                    blurRadius: 20,
+                    offset: const Offset(0, 10),
+                  ),
+                ]
+                : const [],
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(22),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    AnimatedContainer(
+                      duration: const Duration(milliseconds: 220),
+                      curve: Curves.easeOutCubic,
+                      width: 34,
+                      height: 34,
+                      decoration: BoxDecoration(
+                        color: iconBackgroundColor,
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      child: Icon(
+                        isSelected
+                            ? destination.selectedIcon
+                            : destination.icon,
+                        size: 20,
+                        color: iconColor,
+                      ),
+                    ),
+                    if (destination.badgeCount > 0)
+                      Positioned(
+                        right: -7,
+                        top: -5,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 5,
+                            vertical: 2,
+                          ),
+                          constraints: const BoxConstraints(minWidth: 18),
+                          decoration: BoxDecoration(
+                            color:
+                                isSelected
+                                    ? const Color(0xFF13203B)
+                                    : _navigationAccent,
+                            borderRadius: BorderRadius.circular(999),
+                            border: Border.all(color: Colors.white, width: 1.4),
+                          ),
+                          child: Text(
+                            destination.badgeCount > 99
+                                ? '99+'
+                                : '${destination.badgeCount}',
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 10,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  destination.label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: isSelected ? Colors.white : const Color(0xFF5B687D),
+                    fontWeight: isSelected ? FontWeight.w800 : FontWeight.w700,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

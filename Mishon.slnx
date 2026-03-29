@@ -1,5 +1,0 @@
-<Solution>
-  <Project Path="Mishon.Application/Mishon.Application.csproj" />
-  <Project Path="Mishon.Domain/Mishon.Domain.csproj" />
-  <Project Path="Mishon.Infrastructure/Mishon.Infrastructure.csproj" />
-</Solution>

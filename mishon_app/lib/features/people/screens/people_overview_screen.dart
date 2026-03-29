@@ -9,8 +9,11 @@ import 'package:mishon_app/core/models/social_models.dart';
 import 'package:mishon_app/core/network/exceptions.dart';
 import 'package:mishon_app/core/widgets/app_shell.dart';
 import 'package:mishon_app/core/widgets/app_toast.dart';
+import 'package:mishon_app/core/widgets/minimal_components.dart';
 import 'package:mishon_app/core/widgets/profile_media.dart';
 import 'package:mishon_app/core/widgets/states.dart';
+import 'package:mishon_app/core/theme/app_theme.dart';
+import 'package:mishon_app/core/theme/app_tokens.dart';
 import 'package:mishon_app/features/chats/screens/chat_screen.dart';
 import 'package:mishon_app/features/people/providers/people_screen_provider.dart';
 
@@ -158,8 +161,49 @@ class _PeopleOverviewScreenState extends ConsumerState<PeopleOverviewScreen>
               SliverPadding(
                 padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
                 sliver: SliverList.builder(
-                  itemCount: users.length,
+                  itemCount:
+                      users.length +
+                      ((state.isSearching
+                              ? state.hasMoreSearch
+                              : state.hasMoreDirectory)
+                          ? 1
+                          : 0),
                   itemBuilder: (context, index) {
+                    if (index >= users.length) {
+                      final isLoadingMore =
+                          state.isSearching
+                              ? state.isLoadingMoreSearch
+                              : state.isLoadingMoreDirectory;
+                      return FilledButton.tonal(
+                        onPressed:
+                            isLoadingMore
+                                ? null
+                                : () =>
+                                    state.isSearching
+                                        ? ref
+                                            .read(
+                                              peopleScreenControllerProvider
+                                                  .notifier,
+                                            )
+                                            .loadMoreSearch()
+                                        : ref
+                                            .read(
+                                              peopleScreenControllerProvider
+                                                  .notifier,
+                                            )
+                                            .loadMoreDiscovery(),
+                        child:
+                            isLoadingMore
+                                ? const SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                                : Text(strings.loadMore),
+                      );
+                    }
                     final user = users[index];
                     return Padding(
                       padding: EdgeInsets.only(
@@ -184,54 +228,51 @@ class _PeopleOverviewScreenState extends ConsumerState<PeopleOverviewScreen>
     final strings = AppStrings.of(context);
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
-      child: Container(
-        padding: const EdgeInsets.all(22),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(32),
-          gradient: const LinearGradient(
-            colors: [Color(0xFF101C38), Color(0xFF1B4B7C), Color(0xFF21A67A)],
-          ),
-        ),
+      child: AppSurfaceCard(
+        padding: const EdgeInsets.all(20),
+        radius: AppRadii.xl,
+        color: Colors.white.withValues(alpha: 0.94),
+        boxShadow: AppShadows.soft(),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              strings.isRu ? 'Поиск людей' : 'Discover people',
-              style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                color: Colors.white,
-                fontWeight: FontWeight.w800,
-              ),
+            AppSectionHeader(
+              title: strings.isRu ? 'Поиск людей' : 'Discover people',
+              subtitle:
+                  strings.isRu
+                      ? 'Находите людей по username и имени профиля.'
+                      : 'Find people by username or profile name.',
+              icon: Icons.search_rounded,
+              accentColor: AppColors.people,
             ),
-            const SizedBox(height: 16),
-            TextField(
+            const SizedBox(height: AppSpacing.lg),
+            AppSearchField(
               controller: _searchController,
-              decoration: InputDecoration(
-                hintText:
-                    strings.isRu
-                        ? 'Username или имя профиля'
-                        : 'Username or profile name',
-                prefixIcon: const Icon(Icons.search_rounded),
-                suffixIcon:
-                    _searchController.text.isEmpty
-                        ? null
-                        : IconButton(
-                          onPressed: _searchController.clear,
-                          icon: const Icon(Icons.close_rounded),
-                        ),
-                filled: true,
-                fillColor: Colors.white,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(20),
-                  borderSide: BorderSide.none,
-                ),
-              ),
+              hintText:
+                  strings.isRu
+                      ? 'Username или имя профиля'
+                      : 'Username or profile name',
+              onClear: _searchController.clear,
             ),
-            const SizedBox(height: 12),
-            Text(
-              '${state.directoryUsers.where((user) => user.isOnline).length} ${strings.online}',
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                color: Colors.white.withValues(alpha: 0.82),
-              ),
+            const SizedBox(height: AppSpacing.md),
+            Wrap(
+              spacing: AppSpacing.sm,
+              runSpacing: AppSpacing.sm,
+              children: [
+                _PeopleMoodChip(
+                  label:
+                      '${state.directoryUsers.where((user) => user.isOnline).length} ${strings.online}',
+                  accent: AppColors.people,
+                ),
+                _PeopleMoodChip(
+                  label: strings.isRu ? 'Активные' : 'Active',
+                  accent: AppColors.primary,
+                ),
+                _PeopleMoodChip(
+                  label: strings.isRu ? 'Подборка' : 'Discovery',
+                  accent: AppColors.profile,
+                ),
+              ],
             ),
           ],
         ),
@@ -242,17 +283,18 @@ class _PeopleOverviewScreenState extends ConsumerState<PeopleOverviewScreen>
   Widget _buildUserCard(BuildContext context, DiscoverUser user, bool isBusy) {
     final strings = AppStrings.of(context);
     final isFollowing = user.isFollowing || user.isFriend;
-    return Container(
+    final hasPendingRequest =
+        user.hasPendingFollowRequest || user.outgoingFriendRequestId != null;
+    return AppSurfaceCard(
       padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.92),
-        borderRadius: BorderRadius.circular(28),
-        border: Border.all(color: Colors.white),
-      ),
+      radius: AppRadii.xl,
+      color: Colors.white.withValues(alpha: 0.96),
+      boxShadow: AppShadows.soft(),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               AppAvatar(
                 username: user.username,
@@ -271,18 +313,31 @@ class _PeopleOverviewScreenState extends ConsumerState<PeopleOverviewScreen>
                     Text(
                       user.username,
                       style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w800,
+                        fontWeight: FontWeight.w900,
                       ),
                     ),
+                    const SizedBox(height: 4),
                     Text(
                       '@${user.username}',
                       style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        color: const Color(0xFF5C6B80),
+                        color: AppColors.textSecondary,
                       ),
                     ),
+                    if (user.isPrivateAccount || !user.canViewProfile) ...[
+                      const SizedBox(height: 8),
+                      _PeopleMoodChip(
+                        label:
+                            hasPendingRequest
+                                ? strings.followRequestPendingSubtitle
+                                : strings.privateProfileLockedSubtitle,
+                        accent: AppColors.primary,
+                        compact: true,
+                      ),
+                    ],
                   ],
                 ),
               ),
+              const SizedBox(width: 12),
               if (isBusy)
                 const SizedBox(
                   width: 24,
@@ -302,7 +357,7 @@ class _PeopleOverviewScreenState extends ConsumerState<PeopleOverviewScreen>
                 ),
             ],
           ),
-          const SizedBox(height: 14),
+          const SizedBox(height: AppSpacing.md),
           Text(
             (user.aboutMe ?? '').trim().isEmpty
                 ? (strings.isRu
@@ -311,8 +366,12 @@ class _PeopleOverviewScreenState extends ConsumerState<PeopleOverviewScreen>
                 : user.aboutMe!.trim(),
             maxLines: 3,
             overflow: TextOverflow.ellipsis,
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+              color: AppColors.textSecondary,
+              height: 1.45,
+            ),
           ),
-          const SizedBox(height: 14),
+          const SizedBox(height: AppSpacing.md),
           Row(
             children: [
               Expanded(
@@ -343,13 +402,7 @@ class _PeopleOverviewScreenState extends ConsumerState<PeopleOverviewScreen>
     final operationError = AppStrings.of(context).operationError;
     final controller = ref.read(peopleScreenControllerProvider.notifier);
     try {
-      if (user.isFollowing ||
-          user.isFriend ||
-          user.outgoingFriendRequestId != null) {
-        await controller.toggleFollow(user);
-      } else {
-        await controller.sendFriendRequest(user);
-      }
+      await controller.toggleFollow(user);
     } on ApiException catch (e) {
       _showSnackBar(e.apiError.message, isError: true);
     } on OfflineException catch (e) {
@@ -360,6 +413,14 @@ class _PeopleOverviewScreenState extends ConsumerState<PeopleOverviewScreen>
   }
 
   Future<void> _openChat(DiscoverUser user) async {
+    if (!user.canSendMessages) {
+      _showSnackBar(
+        AppStrings.of(context).youCannotSendMessagesToThisUser,
+        isError: true,
+      );
+      return;
+    }
+
     try {
       final conversation = await ref
           .read(peopleScreenControllerProvider.notifier)
@@ -413,5 +474,39 @@ class _PeopleOverviewScreenState extends ConsumerState<PeopleOverviewScreen>
       return raw.replaceFirst('OfflineException: ', '');
     }
     return raw.isEmpty ? fallbackEn : raw;
+  }
+}
+
+class _PeopleMoodChip extends StatelessWidget {
+  final String label;
+  final Color accent;
+  final bool compact;
+
+  const _PeopleMoodChip({
+    required this.label,
+    required this.accent,
+    this.compact = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: EdgeInsets.symmetric(
+        horizontal: compact ? 10 : 12,
+        vertical: compact ? 6 : 8,
+      ),
+      decoration: BoxDecoration(
+        color: accent.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(AppRadii.pill),
+        border: Border.all(color: accent.withValues(alpha: 0.12)),
+      ),
+      child: Text(
+        label,
+        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+          color: accent,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+    );
   }
 }

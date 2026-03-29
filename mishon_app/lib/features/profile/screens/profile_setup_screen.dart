@@ -39,6 +39,7 @@ class _ProfileSetupScreenState extends ConsumerState<ProfileSetupScreen> {
   });
 
   late final TextEditingController _usernameController;
+  late final TextEditingController _displayNameController;
   late final TextEditingController _aboutController;
 
   Timer? _usernameDebounce;
@@ -64,12 +65,16 @@ class _ProfileSetupScreenState extends ConsumerState<ProfileSetupScreen> {
 
   String get _initialUsername =>
       widget.initialProfile.username.trim().toLowerCase();
+  String get _initialDisplayName =>
+      _displayNameFromProfile(widget.initialProfile);
   String get _initialAbout => (widget.initialProfile.aboutMe ?? '').trim();
   String get _username => _usernameController.text.trim().toLowerCase();
+  String get _displayName => _displayNameController.text.trim();
   String get _about => _aboutController.text.trim();
 
   bool get _isUsernameLocallyValid => _usernameRegex.hasMatch(_username);
   bool get _hasPendingChanges =>
+      _displayName != _initialDisplayName ||
       _username != _initialUsername ||
       _about != _initialAbout ||
       _avatarDirty ||
@@ -98,6 +103,7 @@ class _ProfileSetupScreenState extends ConsumerState<ProfileSetupScreen> {
   void initState() {
     super.initState();
     _usernameController = TextEditingController(text: _initialUsername);
+    _displayNameController = TextEditingController(text: _initialDisplayName);
     _aboutController = TextEditingController(
       text: widget.initialProfile.aboutMe ?? '',
     );
@@ -118,6 +124,7 @@ class _ProfileSetupScreenState extends ConsumerState<ProfileSetupScreen> {
     _usernameDebounce?.cancel();
     _usernameController.removeListener(_onUsernameChanged);
     _usernameController.dispose();
+    _displayNameController.dispose();
     _aboutController.dispose();
     super.dispose();
   }
@@ -305,8 +312,11 @@ class _ProfileSetupScreenState extends ConsumerState<ProfileSetupScreen> {
         );
       }
 
-      if (_username != _initialUsername || _about != _initialAbout) {
+      if (_displayName != _initialDisplayName ||
+          _username != _initialUsername ||
+          _about != _initialAbout) {
         updatedProfile = await repository.updateProfile(
+          displayName: _displayName,
           username: _username,
           aboutMe: _about,
         );
@@ -332,6 +342,24 @@ class _ProfileSetupScreenState extends ConsumerState<ProfileSetupScreen> {
 
   void _showSnackBar(String message, {bool isError = false}) {
     showAppToast(context, message: message, isError: isError);
+  }
+
+  static String _displayNameFromProfile(UserProfile profile) {
+    final raw = profile.displayName?.trim();
+    if (raw != null && raw.isNotEmpty) {
+      return raw;
+    }
+
+    final fallback = profile.username.trim().replaceAll(RegExp(r'[_\.]+'), ' ');
+    if (fallback.isEmpty) {
+      return 'Mishon';
+    }
+
+    return fallback
+        .split(' ')
+        .where((part) => part.isNotEmpty)
+        .map((part) => part[0].toUpperCase() + part.substring(1))
+        .join(' ');
   }
 
   Color get _usernameStatusColor {
@@ -490,6 +518,40 @@ class _ProfileSetupScreenState extends ConsumerState<ProfileSetupScreen> {
                     ),
                   ),
                   const SizedBox(height: 20),
+                  _FieldCard(
+                    label: strings.displayName,
+                    accent: const Color(0xFFD9E2F1),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        TextFormField(
+                          controller: _displayNameController,
+                          textInputAction: TextInputAction.next,
+                          maxLength: 64,
+                          decoration: InputDecoration(
+                            hintText: strings.displayNameHint,
+                            border: InputBorder.none,
+                            counterText: '',
+                            isDense: true,
+                          ),
+                          style: theme.textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: -0.2,
+                          ),
+                          onChanged: (_) => setState(() {}),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          strings.displayNameHelperText,
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: const Color(0xFF8291A8),
+                            height: 1.35,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
                   _FieldCard(
                     label: strings.username,
                     accent: _usernameStatusColor,
@@ -741,17 +803,26 @@ class _ProfileSetupHeader extends StatelessWidget {
                 ),
                 Positioned(
                   right: 14,
-                  bottom: avatarTop + 14,
+                  bottom: 72,
                   child: FilledButton.tonalIcon(
                     onPressed: isBusy ? null : onChangeBanner,
                     icon: const Icon(Icons.wallpaper_outlined, size: 18),
                     label: Text(strings.changeBanner),
                     style: FilledButton.styleFrom(
-                      backgroundColor: Colors.white.withValues(alpha: 0.16),
+                      backgroundColor: const Color(0xFF17315A).withValues(
+                        alpha: 0.74,
+                      ),
                       foregroundColor: Colors.white,
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(999),
                       ),
+                      side: BorderSide(
+                        color: Colors.white.withValues(alpha: 0.22),
+                      ),
+                      shadowColor: const Color(0xFF10203D).withValues(
+                        alpha: 0.24,
+                      ),
+                      elevation: 3,
                     ),
                   ),
                 ),

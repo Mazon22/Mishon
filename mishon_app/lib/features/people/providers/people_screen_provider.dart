@@ -13,8 +13,14 @@ class PeopleScreenState {
   final bool isRefreshing;
   final String? errorMessage;
   final List<DiscoverUser> directoryUsers;
+  final bool isLoadingMoreDirectory;
+  final bool hasMoreDirectory;
+  final int nextDirectoryPage;
   final String searchQuery;
   final bool isSearchLoading;
+  final bool isLoadingMoreSearch;
+  final bool hasMoreSearch;
+  final int nextSearchPage;
   final String? searchErrorMessage;
   final List<DiscoverUser> searchResults;
   final Set<int> busyUserIds;
@@ -24,8 +30,14 @@ class PeopleScreenState {
     required this.isRefreshing,
     required this.errorMessage,
     required this.directoryUsers,
+    required this.isLoadingMoreDirectory,
+    required this.hasMoreDirectory,
+    required this.nextDirectoryPage,
     required this.searchQuery,
     required this.isSearchLoading,
+    required this.isLoadingMoreSearch,
+    required this.hasMoreSearch,
+    required this.nextSearchPage,
     required this.searchErrorMessage,
     required this.searchResults,
     required this.busyUserIds,
@@ -36,8 +48,14 @@ class PeopleScreenState {
       isRefreshing = false,
       errorMessage = null,
       directoryUsers = const <DiscoverUser>[],
+      isLoadingMoreDirectory = false,
+      hasMoreDirectory = false,
+      nextDirectoryPage = 1,
       searchQuery = '',
       isSearchLoading = false,
+      isLoadingMoreSearch = false,
+      hasMoreSearch = false,
+      nextSearchPage = 1,
       searchErrorMessage = null,
       searchResults = const <DiscoverUser>[],
       busyUserIds = const <int>{};
@@ -49,8 +67,14 @@ class PeopleScreenState {
     bool? isRefreshing,
     Object? errorMessage = _peopleErrorSentinel,
     List<DiscoverUser>? directoryUsers,
+    bool? isLoadingMoreDirectory,
+    bool? hasMoreDirectory,
+    int? nextDirectoryPage,
     String? searchQuery,
     bool? isSearchLoading,
+    bool? isLoadingMoreSearch,
+    bool? hasMoreSearch,
+    int? nextSearchPage,
     Object? searchErrorMessage = _peopleErrorSentinel,
     List<DiscoverUser>? searchResults,
     Set<int>? busyUserIds,
@@ -63,8 +87,15 @@ class PeopleScreenState {
               ? this.errorMessage
               : errorMessage as String?,
       directoryUsers: directoryUsers ?? this.directoryUsers,
+      isLoadingMoreDirectory:
+          isLoadingMoreDirectory ?? this.isLoadingMoreDirectory,
+      hasMoreDirectory: hasMoreDirectory ?? this.hasMoreDirectory,
+      nextDirectoryPage: nextDirectoryPage ?? this.nextDirectoryPage,
       searchQuery: searchQuery ?? this.searchQuery,
       isSearchLoading: isSearchLoading ?? this.isSearchLoading,
+      isLoadingMoreSearch: isLoadingMoreSearch ?? this.isLoadingMoreSearch,
+      hasMoreSearch: hasMoreSearch ?? this.hasMoreSearch,
+      nextSearchPage: nextSearchPage ?? this.nextSearchPage,
       searchErrorMessage:
           identical(searchErrorMessage, _peopleErrorSentinel)
               ? this.searchErrorMessage
@@ -81,8 +112,8 @@ final peopleScreenControllerProvider =
     );
 
 class PeopleScreenController extends Notifier<PeopleScreenState> {
-  static const _directoryLimit = 48;
-  static const _searchLimit = 24;
+  static const _directoryPageSize = 24;
+  static const _searchPageSize = 24;
 
   var _didInitialize = false;
   var _searchRequestVersion = 0;
@@ -91,13 +122,14 @@ class PeopleScreenController extends Notifier<PeopleScreenState> {
   PeopleScreenState build() {
     final cachedUsers = ref
         .read(socialRepositoryProvider)
-        .peekUsers(limit: _directoryLimit);
+        .peekUsers(limit: _directoryPageSize);
     final initialState =
         cachedUsers == null
             ? const PeopleScreenState.initial()
             : const PeopleScreenState.initial().copyWith(
               isBootstrapping: false,
               directoryUsers: cachedUsers,
+              nextDirectoryPage: 2,
             );
 
     if (!_didInitialize) {
@@ -123,14 +155,18 @@ class PeopleScreenController extends Notifier<PeopleScreenState> {
     }
 
     try {
-      final users = await ref
-          .read(socialRepositoryProvider)
-          .getUsers(limit: _directoryLimit, forceRefresh: forceRefresh);
+      final response = await ref.read(socialRepositoryProvider).getUsersPage(
+            page: 1,
+            pageSize: _directoryPageSize,
+            forceRefresh: forceRefresh,
+          );
       state = state.copyWith(
         isBootstrapping: false,
         isRefreshing: false,
         errorMessage: null,
-        directoryUsers: users,
+        directoryUsers: _normalizeUsers(response.items),
+        hasMoreDirectory: response.hasNext,
+        nextDirectoryPage: response.page + 1,
       );
     } catch (error) {
       if (silent && state.directoryUsers.isNotEmpty) {
@@ -142,6 +178,31 @@ class PeopleScreenController extends Notifier<PeopleScreenState> {
         isRefreshing: false,
         errorMessage: error.toString(),
       );
+    }
+  }
+
+  Future<void> loadMoreDiscovery() async {
+    if (state.isLoadingMoreDirectory || !state.hasMoreDirectory) {
+      return;
+    }
+
+    state = state.copyWith(isLoadingMoreDirectory: true);
+    try {
+      final response = await ref.read(socialRepositoryProvider).getUsersPage(
+            page: state.nextDirectoryPage,
+            pageSize: _directoryPageSize,
+          );
+      state = state.copyWith(
+        isLoadingMoreDirectory: false,
+        directoryUsers: <DiscoverUser>[
+          ...state.directoryUsers,
+          ..._normalizeUsers(response.items),
+        ],
+        hasMoreDirectory: response.hasNext,
+        nextDirectoryPage: response.page + 1,
+      );
+    } catch (_) {
+      state = state.copyWith(isLoadingMoreDirectory: false);
     }
   }
 
@@ -160,6 +221,9 @@ class PeopleScreenController extends Notifier<PeopleScreenState> {
       state = state.copyWith(
         searchQuery: '',
         isSearchLoading: false,
+        isLoadingMoreSearch: false,
+        hasMoreSearch: false,
+        nextSearchPage: 1,
         searchErrorMessage: null,
         searchResults: const <DiscoverUser>[],
       );
@@ -169,15 +233,15 @@ class PeopleScreenController extends Notifier<PeopleScreenState> {
     state = state.copyWith(
       searchQuery: normalizedQuery,
       isSearchLoading: true,
+      isLoadingMoreSearch: false,
       searchErrorMessage: null,
     );
 
     try {
-      final results = await ref
-          .read(socialRepositoryProvider)
-          .getUsers(
+      final response = await ref.read(socialRepositoryProvider).getUsersPage(
             query: normalizedQuery,
-            limit: _searchLimit,
+            page: 1,
+            pageSize: _searchPageSize,
             forceRefresh: forceRefresh,
           );
       if (requestVersion != _searchRequestVersion) {
@@ -186,8 +250,10 @@ class PeopleScreenController extends Notifier<PeopleScreenState> {
 
       state = state.copyWith(
         isSearchLoading: false,
+        hasMoreSearch: response.hasNext,
+        nextSearchPage: response.page + 1,
         searchErrorMessage: null,
-        searchResults: results,
+        searchResults: _normalizeUsers(response.items),
       );
     } catch (error) {
       if (requestVersion != _searchRequestVersion) {
@@ -202,16 +268,43 @@ class PeopleScreenController extends Notifier<PeopleScreenState> {
     }
   }
 
+  Future<void> loadMoreSearch() async {
+    if (!state.isSearching || state.isLoadingMoreSearch || !state.hasMoreSearch) {
+      return;
+    }
+
+    state = state.copyWith(isLoadingMoreSearch: true);
+    try {
+      final response = await ref.read(socialRepositoryProvider).getUsersPage(
+            query: state.searchQuery,
+            page: state.nextSearchPage,
+            pageSize: _searchPageSize,
+          );
+      state = state.copyWith(
+        isLoadingMoreSearch: false,
+        hasMoreSearch: response.hasNext,
+        nextSearchPage: response.page + 1,
+        searchResults: <DiscoverUser>[
+          ...state.searchResults,
+          ..._normalizeUsers(response.items),
+        ],
+      );
+    } catch (_) {
+      state = state.copyWith(isLoadingMoreSearch: false);
+    }
+  }
+
   Future<void> toggleFollow(DiscoverUser user) async {
     await _runBusyAction(user.id, () async {
-      await ref.read(postRepositoryProvider).toggleFollow(user.id);
+      final response = await ref.read(postRepositoryProvider).toggleFollow(user.id);
       _replaceUser(
         user.copyWith(
-          isFollowing: !user.isFollowing,
-          followersCount:
-              user.isFollowing
-                  ? user.followersCount - 1
-                  : user.followersCount + 1,
+          isFollowing: response.isFollowing,
+          followersCount: response.followersCount,
+          hasPendingFollowRequest: response.isRequested,
+          outgoingFriendRequestId:
+              response.isRequested ? (user.outgoingFriendRequestId ?? -user.id) : null,
+          clearOutgoingFriendRequestId: !response.isRequested,
         ),
       );
     });
@@ -255,5 +348,16 @@ class PeopleScreenController extends Notifier<PeopleScreenState> {
       directoryUsers: nextDirectory,
       searchResults: nextSearchResults,
     );
+  }
+
+  List<DiscoverUser> _normalizeUsers(List<DiscoverUser> users) {
+    return users.map(_normalizeUser).toList(growable: false);
+  }
+
+  DiscoverUser _normalizeUser(DiscoverUser user) {
+    if (user.hasPendingFollowRequest && user.outgoingFriendRequestId == null) {
+      return user.copyWith(outgoingFriendRequestId: -user.id);
+    }
+    return user;
   }
 }

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:mishon_app/core/theme/app_tokens.dart';
 
 /// Поле ввода текста с иконкой и опциональной кнопкой очистки
 class AppTextField extends StatefulWidget {
@@ -59,24 +60,31 @@ class _AppTextFieldState extends State<AppTextField> {
       textInputAction: widget.textInputAction,
       readOnly: widget.readOnly,
       onFieldSubmitted: widget.onFieldSubmitted,
-      inputFormatters: widget.keyboardType == TextInputType.emailAddress
-          ? [FilteringTextInputFormatter.allow(RegExp(r'[^\s]'))]
-          : null,
+      inputFormatters:
+          widget.keyboardType == TextInputType.emailAddress
+              ? [FilteringTextInputFormatter.allow(RegExp(r'[^\s]'))]
+              : null,
       style: Theme.of(context).textTheme.bodyLarge,
       decoration: InputDecoration(
         labelText: widget.labelText,
         hintText: widget.hintText,
         helperText: widget.helperText,
-        prefixIcon: widget.prefixIcon != null
-            ? Icon(widget.prefixIcon, size: 22)
-            : null,
-        suffixIcon: widget.suffixWidget ??
+        prefixIcon:
+            widget.prefixIcon != null
+                ? Icon(widget.prefixIcon, size: 22)
+                : null,
+        suffixIcon:
+            widget.suffixWidget ??
             (widget.controller.text.isNotEmpty
                 ? IconButton(
-                    icon: const Icon(Icons.clear, size: 20),
-                    onPressed: () => widget.controller.clear(),
-                  )
+                  icon: const Icon(Icons.clear, size: 20),
+                  onPressed: () => widget.controller.clear(),
+                )
                 : null),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.md,
+          vertical: AppSpacing.md,
+        ),
       ),
     );
   }
@@ -126,10 +134,16 @@ class _AppPasswordFieldState extends State<AppPasswordField> {
         prefixIcon: const Icon(Icons.lock_outline, size: 22),
         suffixIcon: IconButton(
           icon: Icon(
-            _obscureText ? Icons.visibility_outlined : Icons.visibility_off_outlined,
+            _obscureText
+                ? Icons.visibility_outlined
+                : Icons.visibility_off_outlined,
             size: 22,
           ),
           onPressed: () => setState(() => _obscureText = !_obscureText),
+        ),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.md,
+          vertical: AppSpacing.md,
         ),
       ),
     );

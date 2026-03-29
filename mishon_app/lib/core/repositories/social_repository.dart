@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:logger/logger.dart';
@@ -16,13 +17,22 @@ class SocialRepository {
   static const _cacheTtl = Duration(minutes: 2);
   static final Map<String, MemoryCacheEntry<List<DiscoverUser>>>
   _discoverUsersCache = <String, MemoryCacheEntry<List<DiscoverUser>>>{};
+  static final Map<String, MemoryCacheEntry<PagedResponse<DiscoverUser>>>
+  _discoverUserPagesCache =
+      <String, MemoryCacheEntry<PagedResponse<DiscoverUser>>>{};
   static MemoryCacheEntry<List<FriendUser>>? _friendsCache;
   static MemoryCacheEntry<List<BlockedUserModel>>? _blockedUsersCache;
   static MemoryCacheEntry<List<FriendRequestModel>>? _incomingRequestsCache;
   static MemoryCacheEntry<List<FriendRequestModel>>? _outgoingRequestsCache;
+  static MemoryCacheEntry<List<FriendRequestModel>>? _incomingFollowRequestsCache;
   static MemoryCacheEntry<List<ConversationModel>>? _conversationsCache;
   static MemoryCacheEntry<List<NotificationItemModel>>? _notificationsCache;
+  static final Map<String, MemoryCacheEntry<PagedResponse<NotificationItemModel>>>
+  _notificationPagesCache =
+      <String, MemoryCacheEntry<PagedResponse<NotificationItemModel>>>{};
   static MemoryCacheEntry<NotificationSummaryModel>? _notificationSummaryCache;
+  static final Map<String, MemoryCacheEntry<PagedResponse<ReportItemModel>>>
+  _reportPagesCache = <String, MemoryCacheEntry<PagedResponse<ReportItemModel>>>{};
 
   final ApiService _apiService;
   final _logger = Logger();
@@ -105,6 +115,19 @@ class SocialRepository {
     return getUsers(limit: limit, forceRefresh: true);
   }
 
+  PagedResponse<DiscoverUser>? peekUsersPage({
+    String? query,
+    int page = 1,
+    int pageSize = 24,
+  }) {
+    final cache = _discoverUserPagesCache[_discoverPageKey(query, page, pageSize)];
+    if (cache == null || !cache.isFresh(_cacheTtl)) {
+      return null;
+    }
+
+    return cache.value;
+  }
+
   Future<void> prefetchFriendsBundle() async {
     await Future.wait<Object?>([
       getFriends(forceRefresh: true),
@@ -133,7 +156,13 @@ class SocialRepository {
     }
 
     try {
-      final users = await _apiService.getUsers(query: query, limit: limit);
+      final response = await getUsersPage(
+        query: query,
+        pageSize: limit,
+        forceRefresh: forceRefresh,
+        limit: limit,
+      );
+      final users = response.items;
       _discoverUsersCache[_discoverKey(
         query,
         limit,
@@ -146,6 +175,48 @@ class SocialRepository {
       rethrow;
     } on OfflineException {
       _logger.w('No connection getting users');
+      rethrow;
+    }
+  }
+
+  Future<PagedResponse<DiscoverUser>> getUsersPage({
+    String? query,
+    int page = 1,
+    int pageSize = 24,
+    int? limit,
+    bool forceRefresh = false,
+  }) async {
+    final effectivePageSize = limit ?? pageSize;
+    final cachedPage =
+        !forceRefresh
+            ? peekUsersPage(
+              query: query,
+              page: page,
+              pageSize: effectivePageSize,
+            )
+            : null;
+    if (cachedPage != null) {
+      return cachedPage;
+    }
+
+    try {
+      final response = await _apiService.getUsers(
+        query: query,
+        page: page,
+        pageSize: effectivePageSize,
+        limit: limit,
+      );
+      _discoverUserPagesCache[_discoverPageKey(
+        query,
+        page,
+        effectivePageSize,
+      )] = MemoryCacheEntry<PagedResponse<DiscoverUser>>.now(response);
+      return response;
+    } on ApiException catch (e) {
+      _logger.e('Get users page failed: ${e.apiError.message}');
+      rethrow;
+    } on OfflineException {
+      _logger.w('No connection getting users page');
       rethrow;
     }
   }
@@ -577,26 +648,75 @@ class SocialRepository {
     }
   }
 
+  PagedResponse<NotificationItemModel>? peekNotificationsPage({
+    int page = 1,
+    int pageSize = 30,
+  }) {
+    final cache = _notificationPagesCache[_notificationPageKey(page, pageSize)];
+    if (cache == null || !cache.isFresh(_cacheTtl)) {
+      return null;
+    }
+
+    return cache.value;
+  }
+
   Future<List<NotificationItemModel>> getNotifications({
     bool forceRefresh = false,
+    int page = 1,
+    int pageSize = 30,
   }) async {
-    final cachedNotifications = !forceRefresh ? peekNotifications() : null;
+    final cachedNotifications =
+        !forceRefresh && page == 1 && pageSize == 30 ? peekNotifications() : null;
     if (cachedNotifications != null) {
       return cachedNotifications;
     }
 
-    try {
-      final notifications = await _apiService.getNotifications();
+    final response = await getNotificationsPage(
+      page: page,
+      pageSize: pageSize,
+      forceRefresh: forceRefresh,
+    );
+    if (page == 1) {
       _notificationsCache = MemoryCacheEntry<List<NotificationItemModel>>.now(
-        List<NotificationItemModel>.unmodifiable(notifications),
+        List<NotificationItemModel>.unmodifiable(response.items),
       );
-      return notifications;
+    }
+    return response.items;
+  }
+
+  Future<PagedResponse<NotificationItemModel>> getNotificationsPage({
+    int page = 1,
+    int pageSize = 30,
+    bool forceRefresh = false,
+  }) async {
+    final cachedPage =
+        !forceRefresh ? peekNotificationsPage(page: page, pageSize: pageSize) : null;
+    if (cachedPage != null) {
+      return cachedPage;
+    }
+
+    try {
+      final response = await _apiService.getNotifications(
+        page: page,
+        pageSize: pageSize,
+      );
+      _notificationPagesCache[_notificationPageKey(page, pageSize)] =
+          MemoryCacheEntry<PagedResponse<NotificationItemModel>>.now(response);
+      return response;
     } on ApiException catch (e) {
       if (_isNotificationsEndpointMissing(e)) {
         _logger.w(
           'Notifications endpoint is unavailable on the current backend build',
         );
-        return const [];
+        return const PagedResponse(
+          items: <NotificationItemModel>[],
+          page: 1,
+          pageSize: 30,
+          totalCount: 0,
+          totalPages: 0,
+          hasPrevious: false,
+          hasNext: false,
+        );
       }
       _logger.e('Get notifications failed: ${e.apiError.message}');
       rethrow;
@@ -605,7 +725,15 @@ class SocialRepository {
         _logger.w(
           'Notifications endpoint is unavailable on the current backend build',
         );
-        return const [];
+        return const PagedResponse(
+          items: <NotificationItemModel>[],
+          page: 1,
+          pageSize: 30,
+          totalCount: 0,
+          totalPages: 0,
+          hasPrevious: false,
+          hasNext: false,
+        );
       }
       rethrow;
     } on OfflineException {
@@ -654,6 +782,7 @@ class SocialRepository {
     try {
       await _apiService.markNotificationRead(notificationId);
       _notificationsCache = null;
+      _notificationPagesCache.clear();
       _notificationSummaryCache = null;
     } on ApiException catch (e) {
       if (_isNotificationsEndpointMissing(e)) {
@@ -682,6 +811,7 @@ class SocialRepository {
     try {
       await _apiService.markAllNotificationsRead();
       _notificationsCache = null;
+      _notificationPagesCache.clear();
       _notificationSummaryCache = null;
     } on ApiException catch (e) {
       if (_isNotificationsEndpointMissing(e)) {
@@ -706,6 +836,179 @@ class SocialRepository {
     }
   }
 
+  Future<List<FriendRequestModel>> getIncomingFollowRequests({
+    bool forceRefresh = false,
+  }) async {
+    final cachedRequests =
+        !forceRefresh &&
+                _incomingFollowRequestsCache != null &&
+                _incomingFollowRequestsCache!.isFresh(_cacheTtl)
+            ? _incomingFollowRequestsCache!.value
+            : null;
+    if (cachedRequests != null) {
+      return cachedRequests;
+    }
+
+    try {
+      final requests = await _apiService.getIncomingFollowRequests();
+      _incomingFollowRequestsCache =
+          MemoryCacheEntry<List<FriendRequestModel>>.now(
+        List<FriendRequestModel>.unmodifiable(requests),
+      );
+      return requests;
+    } on ApiException catch (e) {
+      _logger.e('Get incoming follow requests failed: ${e.apiError.message}');
+      rethrow;
+    } on OfflineException {
+      _logger.w('No connection getting incoming follow requests');
+      rethrow;
+    }
+  }
+
+  Future<void> approveFollowRequest(int requestId) async {
+    await _apiService.approveFollowRequest(requestId);
+    _incomingFollowRequestsCache = null;
+    _notificationSummaryCache = null;
+    _notificationPagesCache.clear();
+    _invalidatePeopleCaches();
+  }
+
+  Future<void> rejectFollowRequest(int requestId) async {
+    await _apiService.rejectFollowRequest(requestId);
+    _incomingFollowRequestsCache = null;
+    _notificationSummaryCache = null;
+    _notificationPagesCache.clear();
+    _invalidatePeopleCaches();
+  }
+
+  Future<void> registerPushToken({
+    required String deviceId,
+    required String token,
+    required String platform,
+    String? deviceName,
+    String? appVersion,
+  }) {
+    return _apiService.registerPushToken(
+      deviceId: deviceId,
+      token: token,
+      platform: platform,
+      deviceName: deviceName,
+      appVersion: appVersion,
+    );
+  }
+
+  Future<void> removePushToken(String deviceId) {
+    return _apiService.removePushToken(deviceId);
+  }
+
+  PagedResponse<ReportItemModel>? peekReportsPage({
+    int page = 1,
+    int pageSize = 30,
+  }) {
+    final cache = _reportPagesCache[_reportPageKey(page, pageSize)];
+    if (cache == null || !cache.isFresh(_cacheTtl)) {
+      return null;
+    }
+
+    return cache.value;
+  }
+
+  Future<PagedResponse<ReportItemModel>> getReportsPage({
+    int page = 1,
+    int pageSize = 30,
+    bool forceRefresh = false,
+  }) async {
+    final cachedPage =
+        !forceRefresh ? peekReportsPage(page: page, pageSize: pageSize) : null;
+    if (cachedPage != null) {
+      return cachedPage;
+    }
+
+    final response = await _apiService.getReports(page: page, pageSize: pageSize);
+    _reportPagesCache[_reportPageKey(page, pageSize)] =
+        MemoryCacheEntry<PagedResponse<ReportItemModel>>.now(response);
+    return response;
+  }
+
+  Future<ReportDetailModel> createReport({
+    required String targetType,
+    required int targetId,
+    required String reason,
+    String? customNote,
+  }) {
+    return _apiService.createReport(
+      targetType: targetType,
+      targetId: targetId,
+      reason: reason,
+      customNote: customNote,
+    );
+  }
+
+  Future<ReportDetailModel> getReport(int id) => _apiService.getReport(id);
+
+  Future<void> assignReport(int reportId, int moderatorUserId) async {
+    await _apiService.assignReport(reportId, moderatorUserId);
+    _reportPagesCache.clear();
+  }
+
+  Future<void> resolveReport(
+    int reportId, {
+    required String resolution,
+    String? resolutionNote,
+    DateTime? suspensionUntil,
+  }) async {
+    await _apiService.resolveReport(
+      reportId,
+      resolution: resolution,
+      resolutionNote: resolutionNote,
+      suspensionUntil: suspensionUntil,
+    );
+    _reportPagesCache.clear();
+  }
+
+  Future<ModerationActionModel> warnUser(
+    int userId,
+    String note, {
+    int? reportId,
+  }) {
+    return _apiService.warnUser(userId, note, reportId: reportId);
+  }
+
+  Future<ModerationActionModel> suspendUser(
+    int userId,
+    DateTime until,
+    String note, {
+    int? reportId,
+  }) {
+    return _apiService.suspendUser(userId, until, note, reportId: reportId);
+  }
+
+  Future<ModerationActionModel> banUser(
+    int userId,
+    String note, {
+    int? reportId,
+  }) {
+    return _apiService.banUser(userId, note, reportId: reportId);
+  }
+
+  Future<ModerationActionModel> unbanUser(
+    int userId, {
+    String? note,
+    int? reportId,
+  }) {
+    return _apiService.unbanUser(userId, note: note, reportId: reportId);
+  }
+
+  Future<void> assignModerator(int userId) async {
+    await _apiService.assignModerator(userId);
+    _reportPagesCache.clear();
+  }
+
+  Future<void> removeModerator(int userId) async {
+    await _apiService.removeModerator(userId);
+    _reportPagesCache.clear();
+  }
+
   static const _emptyNotificationSummary = NotificationSummaryModel(
     unreadNotifications: 0,
     unreadChats: 0,
@@ -728,7 +1031,36 @@ class SocialRepository {
     return '${query ?? ''}|$limit';
   }
 
+  static String _discoverPageKey(String? query, int page, int pageSize) {
+    return '${query ?? ''}|$page|$pageSize';
+  }
+
+  static String _notificationPageKey(int page, int pageSize) {
+    return '$page|$pageSize';
+  }
+
+  static String _reportPageKey(int page, int pageSize) {
+    return '$page|$pageSize';
+  }
+
   void _invalidatePeopleCaches() {
     _discoverUsersCache.clear();
+    _discoverUserPagesCache.clear();
+  }
+
+  @visibleForTesting
+  static void resetCachesForTest() {
+    _discoverUsersCache.clear();
+    _discoverUserPagesCache.clear();
+    _friendsCache = null;
+    _blockedUsersCache = null;
+    _incomingRequestsCache = null;
+    _outgoingRequestsCache = null;
+    _incomingFollowRequestsCache = null;
+    _conversationsCache = null;
+    _notificationsCache = null;
+    _notificationPagesCache.clear();
+    _notificationSummaryCache = null;
+    _reportPagesCache.clear();
   }
 }

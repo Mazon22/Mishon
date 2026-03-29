@@ -1,8 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:mishon_app/core/constants/api_constants.dart';
+import 'package:mishon_app/core/localization/app_strings.dart';
+import 'package:mishon_app/core/repositories/auth_repository.dart';
 import 'package:mishon_app/features/auth/widgets/auth_shell.dart';
 
+import '../auth_flow_destination.dart';
 import '../providers/auth_provider.dart';
 
 class LoginScreen extends ConsumerStatefulWidget {
@@ -41,6 +45,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   }
 
   Future<void> _login() async {
+    final strings = AppStrings.of(context);
     final currentState = _formKey.currentState;
     if (currentState == null || !currentState.validate()) {
       return;
@@ -58,6 +63,27 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     }
 
     if (success) {
+      final response = ref.read(authNotifierProvider).valueOrNull;
+      if (response != null) {
+        final onboardingCompleted =
+            ApiConstants.enableEmailVerificationFlow &&
+                    (response.requiresEmailVerification ||
+                        !response.emailVerified)
+                ? false
+                : await ref
+                    .read(authRepositoryProvider)
+                    .isOnboardingCompleted(response.userId);
+        if (!mounted) {
+          return;
+        }
+        context.go(
+          resolvePostAuthDestination(
+            response: response,
+            onboardingCompleted: onboardingCompleted,
+          ),
+        );
+        return;
+      }
       context.go('/feed');
       return;
     }
@@ -66,10 +92,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     final message = state.when<String?>(
       data: (_) => null,
       error:
-          (error, _) => formatAuthErrorMessage(
-            error,
-            fallback: 'Unable to sign in right now. Please try again.',
-          ),
+          (error, _) =>
+              formatAuthErrorMessage(error, fallback: strings.operationError),
       loading: () => null,
     );
 
@@ -78,12 +102,13 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final strings = AppStrings.of(context);
     final authState = ref.watch(authNotifierProvider);
     final isLoading = authState.isLoading;
 
     return AuthScreenShell(
-      title: 'Sign in to Mishon',
-      subtitle: 'Continue to your account',
+      title: strings.signInTitle,
+      subtitle: strings.signInSubtitle,
       children: [
         Form(
           key: _formKey,
@@ -106,7 +131,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
               ),
               AuthTextField(
                 controller: _emailController,
-                labelText: 'Email',
+                labelText: strings.emailAddress,
                 hintText: 'you@example.com',
                 prefixIcon: Icons.alternate_email_rounded,
                 keyboardType: TextInputType.emailAddress,
@@ -114,10 +139,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                 validator: (value) {
                   final email = value?.trim() ?? '';
                   if (email.isEmpty) {
-                    return 'Enter your email.';
+                    return strings.enterEmailValidation;
                   }
                   if (!RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(email)) {
-                    return 'Enter a valid email address.';
+                    return strings.emailInvalidValidation;
                   }
                   return null;
                 },
@@ -125,29 +150,38 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
               const SizedBox(height: 16),
               AuthTextField(
                 controller: _passwordController,
-                labelText: 'Password',
-                hintText: 'Enter your password',
+                labelText: strings.passwordLabel,
+                hintText: strings.passwordHint,
                 prefixIcon: Icons.lock_outline_rounded,
                 obscureText: true,
                 textInputAction: TextInputAction.done,
                 onFieldSubmitted: (_) => _login(),
                 validator: (value) {
                   if ((value ?? '').isEmpty) {
-                    return 'Enter your password.';
+                    return strings.enterPasswordValidation;
                   }
                   return null;
                 },
               ),
+              const SizedBox(height: 14),
+              Align(
+                alignment: Alignment.centerRight,
+                child: TextButton(
+                  onPressed:
+                      isLoading ? null : () => context.push('/forgot-password'),
+                  child: Text(strings.forgotPasswordAction),
+                ),
+              ),
               const SizedBox(height: 24),
               AuthPrimaryButton(
-                text: 'Sign In',
+                text: strings.signInAction,
                 onPressed: _login,
                 isLoading: isLoading,
               ),
               const SizedBox(height: 24),
               AuthFooter(
-                label: 'Don\'t have an account?',
-                action: 'Sign up',
+                label: strings.noAccountLabel,
+                action: strings.signUpAction,
                 onTap: isLoading ? null : () => context.go('/register'),
               ),
             ],

@@ -13,8 +13,10 @@ import 'package:mishon_app/core/providers/app_bootstrap_provider.dart';
 import 'package:mishon_app/core/repositories/auth_repository.dart';
 import 'package:mishon_app/core/repositories/social_repository.dart';
 import 'package:mishon_app/core/settings/app_settings_provider.dart';
+import 'package:mishon_app/core/theme/app_theme.dart';
 import 'package:mishon_app/core/widgets/app_shell.dart';
 import 'package:mishon_app/core/widgets/app_toast.dart';
+import 'package:mishon_app/core/widgets/minimal_components.dart';
 import 'package:mishon_app/core/widgets/profile_media.dart';
 import 'package:mishon_app/core/widgets/states.dart';
 import 'package:mishon_app/core/utils/chat_share_content.dart';
@@ -136,6 +138,8 @@ class _ChatsScreenState extends ConsumerState<ChatsScreen> {
   String _searchQuery = '';
   bool _showArchived = false;
   List<ConversationModel> _conversations = const [];
+  ProviderSubscription<Map<int, ConversationPreviewOverride>>?
+  _previewOverridesSubscription;
 
   @override
   void initState() {
@@ -159,6 +163,16 @@ class _ChatsScreenState extends ConsumerState<ChatsScreen> {
       _isLoading = false;
     }
     _searchController.addListener(_handleSearchChanged);
+    _previewOverridesSubscription = ref.listenManual(
+      chatConversationPreviewOverridesProvider,
+      (previous, next) {
+        if (!mounted || previous == next) {
+          return;
+        }
+
+        unawaited(_loadConversations(silent: true));
+      },
+    );
     unawaited(_loadConversations(silent: cachedConversations != null));
     _poller = Timer.periodic(
       const Duration(seconds: 5),
@@ -169,6 +183,7 @@ class _ChatsScreenState extends ConsumerState<ChatsScreen> {
   @override
   void dispose() {
     _poller?.cancel();
+    _previewOverridesSubscription?.close();
     _searchController
       ..removeListener(_handleSearchChanged)
       ..dispose();
@@ -449,6 +464,11 @@ class _ChatsScreenState extends ConsumerState<ChatsScreen> {
 
   Future<void> _blockUser(ConversationModel conversation) async {
     final strings = AppStrings.of(context);
+    final currentUserId = ref.read(currentUserIdProvider);
+    if (currentUserId != null && conversation.peerId == currentUserId) {
+      return;
+    }
+
     final confirmed =
         await showDialog<bool>(
           context: context,
@@ -504,6 +524,9 @@ class _ChatsScreenState extends ConsumerState<ChatsScreen> {
 
   Future<void> _showChatActions(ConversationModel conversation) async {
     final strings = AppStrings.of(context);
+    final currentUserId = ref.read(currentUserIdProvider);
+    final isSelfConversation =
+        currentUserId != null && conversation.peerId == currentUserId;
     await showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
@@ -566,16 +589,19 @@ class _ChatsScreenState extends ConsumerState<ChatsScreen> {
                     _toggleMute(conversation);
                   },
                 ),
-                ListTile(
-                  leading: const Icon(Icons.block_outlined),
-                  title: Text(
-                    strings.isRu ? 'Заблокировать пользователя' : 'Block user',
+                if (!isSelfConversation)
+                  ListTile(
+                    leading: const Icon(Icons.block_outlined),
+                    title: Text(
+                      strings.isRu
+                          ? 'Заблокировать пользователя'
+                          : 'Block user',
+                    ),
+                    onTap: () {
+                      Navigator.of(context).pop();
+                      _blockUser(conversation);
+                    },
                   ),
-                  onTap: () {
-                    Navigator.of(context).pop();
-                    _blockUser(conversation);
-                  },
-                ),
                 ListTile(
                   leading: const Icon(Icons.delete_outline_rounded),
                   title: Text(strings.isRu ? 'Удалить чат' : 'Delete chat'),
@@ -806,6 +832,14 @@ class _ChatsScreenState extends ConsumerState<ChatsScreen> {
       currentUserId,
       visibleConversations,
     );
+    final unreadTotal = visibleConversations.fold<int>(
+      0,
+      (sum, conversation) => sum + conversation.unreadCount,
+    );
+    final pinnedCount =
+        visibleConversations
+            .where((conversation) => conversation.isPinned)
+            .length;
     final showEmptyState =
         mainConversations.isEmpty &&
         (!_showArchived || archivedConversations.isEmpty);
@@ -818,6 +852,22 @@ class _ChatsScreenState extends ConsumerState<ChatsScreen> {
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
         child: Column(
           children: [
+            _ChatsHeroPanel(
+              totalChats: mainConversations.length,
+              unreadCount: unreadTotal,
+              pinnedCount: pinnedCount,
+              archivedCount: archivedConversations.length,
+              isArchiveVisible: _showArchived,
+              onToggleArchive:
+                  archivedConversations.isEmpty
+                      ? null
+                      : () {
+                        setState(() {
+                          _showArchived = !_showArchived;
+                        });
+                      },
+            ),
+            const SizedBox(height: 12),
             _ChatsSearchBar(
               controller: _searchController,
               hintText: strings.isRu ? 'Поиск по чатам' : 'Search chats',
@@ -872,11 +922,10 @@ class _ChatsScreenState extends ConsumerState<ChatsScreen> {
                             ? (strings.isRu ? 'Скрыть архив' : 'Hide archive')
                             : '${strings.isRu ? 'Архив' : 'Archive'} (${archivedConversations.length})',
                     isActive: _showArchived,
-                    onTap: () {
-                      setState(() {
-                        _showArchived = !_showArchived;
-                      });
-                    },
+                    onTap:
+                        () => setState(() {
+                          _showArchived = !_showArchived;
+                        }),
                   ),
                 ],
               ],
@@ -1015,6 +1064,236 @@ class _ChatsScreenState extends ConsumerState<ChatsScreen> {
   }
 }
 
+class _ChatsHeroPanel extends StatelessWidget {
+  final int totalChats;
+  final int unreadCount;
+  final int pinnedCount;
+  final int archivedCount;
+  final bool isArchiveVisible;
+  final VoidCallback? onToggleArchive;
+
+  const _ChatsHeroPanel({
+    required this.totalChats,
+    required this.unreadCount,
+    required this.pinnedCount,
+    required this.archivedCount,
+    required this.isArchiveVisible,
+    required this.onToggleArchive,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final strings = AppStrings.of(context);
+    final stats = [
+      (
+        value: '$totalChats',
+        label: strings.isRu ? 'активных' : 'active',
+        color: AppColors.chats,
+      ),
+      (
+        value: '$unreadCount',
+        label: strings.isRu ? 'непрочитанных' : 'unread',
+        color: AppColors.feed,
+      ),
+      (
+        value: '$pinnedCount',
+        label: strings.isRu ? 'закреплено' : 'pinned',
+        color: AppColors.profile,
+      ),
+    ];
+
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.96),
+        borderRadius: BorderRadius.circular(28),
+        border: Border.all(color: const Color(0xFFE1EAF8)),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x10162033),
+            blurRadius: 24,
+            offset: Offset(0, 16),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 48,
+                height: 48,
+                decoration: BoxDecoration(
+                  color: AppColors.chats.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(18),
+                ),
+                child: const Icon(
+                  Icons.chat_bubble_rounded,
+                  color: AppColors.chats,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      strings.isRu ? 'Ваши разговоры' : 'Your conversations',
+                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                        color: const Color(0xFF18243C),
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      strings.isRu
+                          ? 'Быстрый вход в активные диалоги, Saved Messages и архив.'
+                          : 'Fast access to active chats, Saved Messages, and archive.',
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        color: const Color(0xFF65748B),
+                        height: 1.35,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (onToggleArchive != null)
+                TextButton.icon(
+                  onPressed: onToggleArchive,
+                  icon: Icon(
+                    isArchiveVisible
+                        ? Icons.unarchive_outlined
+                        : Icons.archive_outlined,
+                    size: 18,
+                  ),
+                  label: Text(
+                    isArchiveVisible
+                        ? (strings.isRu ? 'Скрыть' : 'Hide')
+                        : (strings.isRu ? 'Архив' : 'Archive'),
+                  ),
+                  style: TextButton.styleFrom(
+                    backgroundColor: AppColors.surfaceVariant,
+                    foregroundColor: AppColors.chats,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 12,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 18),
+          Row(
+            children: stats
+                .asMap()
+                .entries
+                .map(
+                  (entry) => Expanded(
+                    child: Padding(
+                      padding: EdgeInsets.only(
+                        right: entry.key == stats.length - 1 ? 0 : 10,
+                      ),
+                      child: _ChatsStatTile(
+                        value: entry.value.value,
+                        label: entry.value.label,
+                        accent: entry.value.color,
+                      ),
+                    ),
+                  ),
+                )
+                .toList(growable: false),
+          ),
+          if (archivedCount > 0) ...[
+            const SizedBox(height: 14),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.72),
+                borderRadius: BorderRadius.circular(18),
+                border: Border.all(color: const Color(0xFFD9E4F6)),
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    width: 32,
+                    height: 32,
+                    decoration: BoxDecoration(
+                      color: AppColors.chatsSoft,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Icon(
+                      Icons.archive_outlined,
+                      size: 18,
+                      color: AppColors.chats,
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      strings.isRu
+                          ? 'В архиве $archivedCount чатов'
+                          : '$archivedCount chats in archive',
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        color: const Color(0xFF3A4A66),
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _ChatsStatTile extends StatelessWidget {
+  final String value;
+  final String label;
+  final Color accent;
+
+  const _ChatsStatTile({
+    required this.value,
+    required this.label,
+    required this.accent,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.72),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: const Color(0xFFD9E4F6)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            value,
+            style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+              color: accent,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            label,
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: const Color(0xFF66758B),
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _ChatsSearchBar extends StatelessWidget {
   final TextEditingController controller;
   final String hintText;
@@ -1028,30 +1307,21 @@ class _ChatsSearchBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.82),
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.86)),
-        boxShadow: [
-          BoxShadow(
-            color: const Color(0xFF132443).withValues(alpha: 0.06),
-            blurRadius: 24,
-            offset: const Offset(0, 14),
-          ),
-        ],
-      ),
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+    return AppSurfaceCard(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+      color: Colors.white.withValues(alpha: 0.96),
+      borderColor: const Color(0xFFDCE6F7),
+      boxShadow: const [],
       child: Row(
         children: [
           Container(
             width: 38,
             height: 38,
             decoration: BoxDecoration(
-              color: const Color(0xFFEAF0FF),
+              color: AppColors.chats.withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(14),
             ),
-            child: const Icon(Icons.search_rounded, color: Color(0xFF39538D)),
+            child: const Icon(Icons.search_rounded, color: AppColors.chats),
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -1116,15 +1386,7 @@ class _SavedMessagesShortcutCard extends StatelessWidget {
             height: 82,
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(24),
-              gradient: const LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: <Color>[
-                  Color(0xFFF7FBFF),
-                  Color(0xFFEAF2FF),
-                  Color(0xFFE7FFF5),
-                ],
-              ),
+              color: Colors.white.withValues(alpha: 0.96),
               border: Border.all(color: Colors.white.withValues(alpha: 0.9)),
               boxShadow: <BoxShadow>[
                 BoxShadow(
@@ -1259,21 +1521,22 @@ class _ChatsActionPill extends StatelessWidget {
           decoration: BoxDecoration(
             color:
                 isActive
-                    ? const Color(0xFF213F82)
-                    : Colors.white.withValues(alpha: 0.86),
+                    ? AppColors.chats.withValues(alpha: 0.1)
+                    : Colors.white.withValues(alpha: 0.92),
             borderRadius: BorderRadius.circular(22),
             border: Border.all(
               color:
                   isActive
-                      ? const Color(0xFF213F82)
-                      : Colors.white.withValues(alpha: 0.9),
+                      ? AppColors.chats.withValues(alpha: 0.24)
+                      : const Color(0xFFE4EBF2),
             ),
             boxShadow: <BoxShadow>[
-              BoxShadow(
-                color: const Color(0xFF13294F).withValues(alpha: 0.08),
-                blurRadius: 20,
-                offset: const Offset(0, 12),
-              ),
+              if (isActive)
+                BoxShadow(
+                  color: AppColors.chats.withValues(alpha: 0.10),
+                  blurRadius: 16,
+                  offset: const Offset(0, 10),
+                ),
             ],
           ),
           child: Row(
@@ -1282,13 +1545,13 @@ class _ChatsActionPill extends StatelessWidget {
               Icon(
                 icon,
                 size: 18,
-                color: isActive ? Colors.white : const Color(0xFF314B82),
+                color: isActive ? AppColors.chats : const Color(0xFF314B82),
               ),
               const SizedBox(width: 8),
               Text(
                 label,
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: isActive ? Colors.white : const Color(0xFF233A69),
+                  color: isActive ? AppColors.chats : const Color(0xFF233A69),
                   fontWeight: FontWeight.w700,
                 ),
               ),
@@ -1537,7 +1800,7 @@ class _ConversationTileState extends State<_ConversationTile> {
       onEnter: (_) => setState(() => _isHovered = true),
       onExit: (_) => setState(() => _isHovered = false),
       child: AnimatedContainer(
-        margin: const EdgeInsets.only(bottom: 8),
+        margin: const EdgeInsets.only(bottom: 7),
         duration: const Duration(milliseconds: 180),
         curve: Curves.easeOutCubic,
         decoration: BoxDecoration(
@@ -1567,9 +1830,9 @@ class _ConversationTileState extends State<_ConversationTile> {
             onLongPress: widget.onLongPress,
             borderRadius: BorderRadius.circular(22),
             child: SizedBox(
-              height: 78,
+              height: 76,
               child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 12),
+                padding: const EdgeInsets.symmetric(horizontal: 11),
                 child: Row(
                   children: [
                     Stack(
@@ -1578,7 +1841,7 @@ class _ConversationTileState extends State<_ConversationTile> {
                         AppAvatar(
                           username: conversation.username,
                           imageUrl: conversation.avatarUrl,
-                          size: 52,
+                          size: 50,
                           scale: conversation.avatarScale,
                           offsetX: conversation.avatarOffsetX,
                           offsetY: conversation.avatarOffsetY,
@@ -1602,7 +1865,7 @@ class _ConversationTileState extends State<_ConversationTile> {
                         ),
                       ],
                     ),
-                    const SizedBox(width: 12),
+                    const SizedBox(width: 11),
                     Expanded(
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
@@ -1629,17 +1892,17 @@ class _ConversationTileState extends State<_ConversationTile> {
                               if (statusIcons.isNotEmpty)
                                 ...statusIcons.map(
                                   (icon) => Padding(
-                                    padding: const EdgeInsets.only(left: 6),
+                                    padding: const EdgeInsets.only(left: 5),
                                     child: Icon(
                                       icon,
-                                      size: 14,
+                                      size: 13,
                                       color: const Color(0xFF65748C),
                                     ),
                                   ),
                                 ),
                             ],
                           ),
-                          const SizedBox(height: 4),
+                          const SizedBox(height: 3),
                           Row(
                             children: [
                               Expanded(
@@ -1661,7 +1924,7 @@ class _ConversationTileState extends State<_ConversationTile> {
                                         hasUnread
                                             ? FontWeight.w600
                                             : FontWeight.w500,
-                                    height: 1.2,
+                                    height: 1.18,
                                   ),
                                 ),
                               ),
@@ -1670,7 +1933,7 @@ class _ConversationTileState extends State<_ConversationTile> {
                         ],
                       ),
                     ),
-                    const SizedBox(width: 12),
+                    const SizedBox(width: 10),
                     Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       crossAxisAlignment: CrossAxisAlignment.end,
@@ -1688,7 +1951,6 @@ class _ConversationTileState extends State<_ConversationTile> {
                               _formatConversationTime(
                                 context,
                                 conversation.lastMessageAt,
-                                conversation.lastSeenAt,
                               ),
                               style: Theme.of(
                                 context,
@@ -1705,12 +1967,12 @@ class _ConversationTileState extends State<_ConversationTile> {
                             ),
                           ],
                         ),
-                        const SizedBox(height: 8),
+                        const SizedBox(height: 6),
                         if (hasUnread)
                           Container(
                             padding: const EdgeInsets.symmetric(
                               horizontal: 8,
-                              vertical: 3,
+                              vertical: 2.5,
                             ),
                             constraints: const BoxConstraints(minWidth: 24),
                             decoration: BoxDecoration(
@@ -1746,10 +2008,13 @@ class _ConversationTileState extends State<_ConversationTile> {
   String _formatConversationTime(
     BuildContext context,
     DateTime? lastMessageAt,
-    DateTime fallbackDate,
   ) {
+    if (lastMessageAt == null) {
+      return '';
+    }
+
     final strings = AppStrings.of(context);
-    final local = (lastMessageAt ?? fallbackDate).toLocal();
+    final local = lastMessageAt.toLocal();
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
     final thatDay = DateTime(local.year, local.month, local.day);

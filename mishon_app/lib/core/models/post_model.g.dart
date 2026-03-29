@@ -21,6 +21,9 @@ Post _$PostFromJson(Map<String, dynamic> json) => Post(
   commentsCount: (json['commentsCount'] as num?)?.toInt() ?? 0,
   isLiked: json['isLiked'] as bool,
   isFollowingAuthor: json['isFollowingAuthor'] as bool,
+  canComment: json['canComment'] as bool? ?? true,
+  isHidden: json['isHidden'] as bool? ?? false,
+  isRemoved: json['isRemoved'] as bool? ?? false,
 );
 
 Map<String, dynamic> _$PostToJson(Post instance) => <String, dynamic>{
@@ -38,6 +41,9 @@ Map<String, dynamic> _$PostToJson(Post instance) => <String, dynamic>{
   'commentsCount': instance.commentsCount,
   'isLiked': instance.isLiked,
   'isFollowingAuthor': instance.isFollowingAuthor,
+  'canComment': instance.canComment,
+  'isHidden': instance.isHidden,
+  'isRemoved': instance.isRemoved,
 };
 
 Comment _$CommentFromJson(Map<String, dynamic> json) => Comment(
@@ -56,6 +62,8 @@ Comment _$CommentFromJson(Map<String, dynamic> json) => Comment(
           : DateTime.parse(json['editedAt'] as String),
   parentCommentId: (json['parentCommentId'] as num?)?.toInt(),
   replyToUsername: json['replyToUsername'] as String?,
+  isHidden: json['isHidden'] as bool? ?? false,
+  isRemoved: json['isRemoved'] as bool? ?? false,
 );
 
 Map<String, dynamic> _$CommentToJson(Comment instance) => <String, dynamic>{
@@ -71,6 +79,8 @@ Map<String, dynamic> _$CommentToJson(Comment instance) => <String, dynamic>{
   'editedAt': instance.editedAt?.toIso8601String(),
   'parentCommentId': instance.parentCommentId,
   'replyToUsername': instance.replyToUsername,
+  'isHidden': instance.isHidden,
+  'isRemoved': instance.isRemoved,
 };
 
 Follow _$FollowFromJson(Map<String, dynamic> json) => Follow(
@@ -81,6 +91,7 @@ Follow _$FollowFromJson(Map<String, dynamic> json) => Follow(
   avatarOffsetX: (json['avatarOffsetX'] as num?)?.toDouble() ?? 0.0,
   avatarOffsetY: (json['avatarOffsetY'] as num?)?.toDouble() ?? 0.0,
   isFollowing: json['isFollowing'] as bool? ?? false,
+  isPrivateAccount: json['isPrivateAccount'] as bool? ?? false,
 );
 
 Map<String, dynamic> _$FollowToJson(Follow instance) => <String, dynamic>{
@@ -91,6 +102,7 @@ Map<String, dynamic> _$FollowToJson(Follow instance) => <String, dynamic>{
   'avatarOffsetX': instance.avatarOffsetX,
   'avatarOffsetY': instance.avatarOffsetY,
   'isFollowing': instance.isFollowing,
+  'isPrivateAccount': instance.isPrivateAccount,
 };
 
 ToggleFollowResponse _$ToggleFollowResponseFromJson(
@@ -98,6 +110,8 @@ ToggleFollowResponse _$ToggleFollowResponseFromJson(
 ) => ToggleFollowResponse(
   isFollowing: json['isFollowing'] as bool,
   followersCount: (json['followersCount'] as num).toInt(),
+  isRequested: json['isRequested'] as bool? ?? false,
+  requestId: (json['requestId'] as num?)?.toInt(),
 );
 
 Map<String, dynamic> _$ToggleFollowResponseToJson(
@@ -105,4 +119,6 @@ Map<String, dynamic> _$ToggleFollowResponseToJson(
 ) => <String, dynamic>{
   'isFollowing': instance.isFollowing,
   'followersCount': instance.followersCount,
+  'isRequested': instance.isRequested,
+  'requestId': instance.requestId,
 };

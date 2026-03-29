@@ -5,9 +5,29 @@ class SecureStorage {
   static const _jwtTokenKey = 'jwt_token';
   static const _refreshTokenKey = 'refresh_token';
   static const _userIdKey = 'user_id';
+  static const _sessionIdKey = 'session_id';
+  static const _usernameKey = 'username';
+  static const _userEmailKey = 'user_email';
+  static const _emailVerifiedKey = 'email_verified';
+  static const _roleKey = 'user_role';
   static const _accessTokenExpiryKey = 'access_token_expiry';
   static const _refreshTokenExpiryKey = 'refresh_token_expiry';
   static const _appLanguageKey = 'app_language';
+  static const _onboardingCompletedPrefix = 'onboarding_completed_';
+  static const deviceIdKey = 'device_id';
+
+  static const _authKeys = <String>{
+    _jwtTokenKey,
+    _refreshTokenKey,
+    _userIdKey,
+    _sessionIdKey,
+    _usernameKey,
+    _userEmailKey,
+    _emailVerifiedKey,
+    _roleKey,
+    _accessTokenExpiryKey,
+    _refreshTokenExpiryKey,
+  };
 
   final _storage = const FlutterSecureStorage(
     aOptions: AndroidOptions(encryptedSharedPreferences: true),
@@ -24,6 +44,11 @@ class SecureStorage {
   String? get cachedToken => _memoryCache[_jwtTokenKey];
   String? get cachedRefreshToken => _memoryCache[_refreshTokenKey];
   int? get cachedUserId => _parseInt(_memoryCache[_userIdKey]);
+  String? get cachedSessionId => _memoryCache[_sessionIdKey];
+  String? get cachedUsername => _memoryCache[_usernameKey];
+  String? get cachedUserEmail => _memoryCache[_userEmailKey];
+  bool get cachedEmailVerified => _parseBool(_memoryCache[_emailVerifiedKey]);
+  String? get cachedRole => _memoryCache[_roleKey];
   DateTime? get cachedAccessTokenExpiry =>
       _parseDate(_memoryCache[_accessTokenExpiryKey]);
   DateTime? get cachedRefreshTokenExpiry =>
@@ -81,6 +106,54 @@ class SecureStorage {
   Future<int?> readUserId() async {
     final value = await _readValue(_userIdKey, label: 'user ID');
     return _parseInt(value);
+  }
+
+  Future<void> writeSessionId(String sessionId) async {
+    await _writeValue(_sessionIdKey, sessionId, label: 'session ID');
+  }
+
+  Future<String?> readSessionId() async {
+    return _readValue(_sessionIdKey, label: 'session ID');
+  }
+
+  Future<void> writeUsername(String username) async {
+    await _writeValue(_usernameKey, username, label: 'username');
+  }
+
+  Future<String?> readUsername() async {
+    return _readValue(_usernameKey, label: 'username');
+  }
+
+  Future<void> writeUserEmail(String email) async {
+    await _writeValue(_userEmailKey, email, label: 'user email');
+  }
+
+  Future<String?> readUserEmail() async {
+    return _readValue(_userEmailKey, label: 'user email');
+  }
+
+  Future<void> writeEmailVerified(bool value) async {
+    await _writeValue(
+      _emailVerifiedKey,
+      value ? 'true' : 'false',
+      label: 'email verification status',
+    );
+  }
+
+  Future<bool> readEmailVerified() async {
+    final value = await _readValue(
+      _emailVerifiedKey,
+      label: 'email verification status',
+    );
+    return _parseBool(value);
+  }
+
+  Future<void> writeRole(String role) async {
+    await _writeValue(_roleKey, role, label: 'role');
+  }
+
+  Future<String?> readRole() async {
+    return _readValue(_roleKey, label: 'role');
   }
 
   Future<void> writeAccessTokenExpiry(DateTime expiry) async {
@@ -153,13 +226,15 @@ class SecureStorage {
     return DateTime.now().isAfter(expiry);
   }
 
-  Future<void> clear() async {
+  Future<void> clearAuthState() async {
     try {
-      await _storage.deleteAll();
-      _memoryCache.clear();
+      for (final key in _authKeys) {
+        await _storage.delete(key: key);
+        _memoryCache.remove(key);
+      }
       _isCacheHydrated = true;
     } catch (e, st) {
-      _logger.e('Failed to clear storage', error: e, stackTrace: st);
+      _logger.e('Failed to clear auth state', error: e, stackTrace: st);
       rethrow;
     }
   }
@@ -170,6 +245,26 @@ class SecureStorage {
 
   Future<String?> readAppLanguage() async {
     return _readValue(_appLanguageKey, label: 'app language');
+  }
+
+  Future<void> writeOnboardingCompleted(int userId, bool value) async {
+    await _writeValue(
+      '$_onboardingCompletedPrefix$userId',
+      value ? 'true' : 'false',
+      label: 'onboarding completion',
+    );
+  }
+
+  Future<bool> readOnboardingCompleted(int userId) async {
+    final value = await _readValue(
+      '$_onboardingCompletedPrefix$userId',
+      label: 'onboarding completion',
+    );
+    return _parseBool(value);
+  }
+
+  bool readOnboardingCompletedSync(int userId) {
+    return _parseBool(_memoryCache['$_onboardingCompletedPrefix$userId']);
   }
 
   Future<void> writeBooleanSetting(String key, bool value) async {
@@ -262,5 +357,9 @@ class SecureStorage {
     }
 
     return int.tryParse(value);
+  }
+
+  static bool _parseBool(String? value) {
+    return value?.toLowerCase() == 'true';
   }
 }

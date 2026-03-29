@@ -9,6 +9,7 @@ import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:mishon_app/core/localization/app_strings.dart';
 import 'package:mishon_app/core/widgets/app_toast.dart';
+import 'package:mishon_app/core/widgets/minimal_components.dart';
 import 'package:mishon_app/core/widgets/profile_media.dart';
 import 'package:mishon_app/features/feed/providers/feed_provider.dart';
 import 'package:mishon_app/features/profile/providers/profile_provider.dart';
@@ -507,13 +508,22 @@ class _CreatePostProfileCard extends StatelessWidget {
                   background: const Color(0xFFEAF1FF),
                 ),
                 const SizedBox(height: 10),
-                Text(
-                  currentProfile?.username ??
-                      (strings.isRu ? 'Ваш пост' : 'Your post'),
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w800,
-                    color: const Color(0xFF18243C),
-                  ),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      currentProfile?.username ??
+                          (strings.isRu ? 'Ваш пост' : 'Your post'),
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w800,
+                        color: const Color(0xFF18243C),
+                      ),
+                    ),
+                    if (currentProfile != null) ...[
+                      const SizedBox(width: 6),
+                      const AppVerifiedBadge(size: 16),
+                    ],
+                  ],
                 ),
                 const SizedBox(height: 4),
                 Text(

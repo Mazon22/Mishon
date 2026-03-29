@@ -1,8 +1,12 @@
+import 'dart:async';
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'core/firebase/firebase_service.dart';
 import 'core/localization/app_strings.dart';
 import 'core/providers/app_bootstrap_provider.dart';
 import 'core/router/app_router.dart';
@@ -13,7 +17,6 @@ import 'core/widgets/app_security_shell.dart';
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Устанавливаем статус бар для Web
   SystemChrome.setSystemUIOverlayStyle(
     const SystemUiOverlayStyle(
       statusBarColor: Colors.transparent,
@@ -21,23 +24,66 @@ void main() {
     ),
   );
 
-  // Firebase отключён для MVP
   runApp(const ProviderScope(child: MishonApp()));
 }
 
-class MishonApp extends ConsumerWidget {
+class MishonApp extends ConsumerStatefulWidget {
   const MishonApp({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<MishonApp> createState() => _MishonAppState();
+}
+
+class _MishonAppState extends ConsumerState<MishonApp> {
+  bool _didInitFirebase = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_didInitFirebase) {
+        return;
+      }
+      _didInitFirebase = true;
+      final firebaseService = ref.read(firebaseServiceProvider);
+      if (kIsWeb && !FirebaseService.hasWebFirebaseOptions) {
+        return;
+      }
+      unawaited(firebaseService.initialize());
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final settings = ref.watch(appSettingsProvider);
     final bootstrapState = ref.watch(appBootstrapProvider);
+    final router = ref.watch(goRouterProvider);
+
+    ref.listen<AsyncValue<PushRouteIntent>>(pushRouteIntentProvider, (
+      _,
+      next,
+    ) {
+      next.whenData((intent) {
+        if (!ref.read(appBootstrapProvider).allowsInteraction) {
+          return;
+        }
+        router.go(intent.location);
+      });
+    });
+
+    ref.listen<bool>(
+      appBootstrapProvider.select((state) => state.isAuthenticated),
+      (previous, next) {
+        if (next && previous != next) {
+          unawaited(ref.read(firebaseServiceProvider).syncTokenIfPossible());
+        }
+      },
+    );
 
     if (!bootstrapState.allowsInteraction) {
       return _buildBootstrapApp(settings, bootstrapState);
     }
 
-    final router = ref.watch(goRouterProvider);
     return MaterialApp.router(
       onGenerateTitle: (context) => AppStrings.of(context).appName,
       debugShowCheckedModeBanner: false,

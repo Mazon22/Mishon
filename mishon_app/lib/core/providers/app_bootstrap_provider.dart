@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:mishon_app/core/repositories/auth_repository.dart';
+import 'package:mishon_app/core/providers/auth_session_events.dart';
 import 'package:mishon_app/core/repositories/post_repository.dart';
 import 'package:mishon_app/core/repositories/social_repository.dart';
 import 'package:mishon_app/features/notifications/providers/notification_summary_provider.dart';
@@ -97,6 +98,7 @@ class AppBootstrapNotifier extends Notifier<AppBootstrapState> {
   final Connectivity _connectivity = Connectivity();
 
   StreamSubscription<Object>? _connectivitySubscription;
+  StreamSubscription<AuthSessionEvent>? _authSessionSubscription;
   bool _isBootstrapping = false;
   bool _didStart = false;
 
@@ -104,11 +106,20 @@ class AppBootstrapNotifier extends Notifier<AppBootstrapState> {
   AppBootstrapState build() {
     ref.onDispose(() {
       _connectivitySubscription?.cancel();
+      _authSessionSubscription?.cancel();
     });
 
     _connectivitySubscription ??= _connectivity.onConnectivityChanged.listen(
       _handleConnectivityChanged,
     );
+    _authSessionSubscription ??= ref
+        .read(authSessionEventsProvider)
+        .stream
+        .listen((event) {
+          if (event.type == AuthSessionEventType.invalidated) {
+            handleLoggedOut();
+          }
+        });
 
     if (!_didStart) {
       _didStart = true;

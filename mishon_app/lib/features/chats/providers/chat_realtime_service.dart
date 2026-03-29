@@ -31,15 +31,13 @@ sealed class ChatRealtimeEvent {
 class ChatTypingStartedRealtimeEvent extends ChatRealtimeEvent {
   final ChatTypingEventModel payload;
 
-  ChatTypingStartedRealtimeEvent(this.payload)
-    : super(payload.conversationId);
+  ChatTypingStartedRealtimeEvent(this.payload) : super(payload.conversationId);
 }
 
 class ChatTypingStoppedRealtimeEvent extends ChatRealtimeEvent {
   final ChatTypingEventModel payload;
 
-  ChatTypingStoppedRealtimeEvent(this.payload)
-    : super(payload.conversationId);
+  ChatTypingStoppedRealtimeEvent(this.payload) : super(payload.conversationId);
 }
 
 class ChatMessageSentRealtimeEvent extends ChatRealtimeEvent {
@@ -51,8 +49,7 @@ class ChatMessageSentRealtimeEvent extends ChatRealtimeEvent {
 class ChatMessageReadRealtimeEvent extends ChatRealtimeEvent {
   final ChatMessageReadEventModel payload;
 
-  ChatMessageReadRealtimeEvent(this.payload)
-    : super(payload.conversationId);
+  ChatMessageReadRealtimeEvent(this.payload) : super(payload.conversationId);
 }
 
 class ChatMessageDeliveredRealtimeEvent extends ChatRealtimeEvent {
@@ -82,13 +79,14 @@ class ChatRealtimeService {
   HubConnection? _connection;
   Future<void>? _startOperation;
   bool _disposed = false;
+  bool _realtimeUnavailable = false;
 
   Stream<ChatRealtimeEvent> get events => _eventsController.stream;
   Stream<HubConnectionState> get connectionStates =>
       _connectionStatesController.stream;
 
   Future<void> ensureConnected() async {
-    if (_disposed) {
+    if (_disposed || _realtimeUnavailable) {
       return;
     }
 
@@ -102,6 +100,9 @@ class ChatRealtimeService {
     _startOperation ??= _startConnection();
     try {
       await _startOperation;
+    } catch (_) {
+      _realtimeUnavailable = true;
+      _connectionStatesController.add(HubConnectionState.Disconnected);
     } finally {
       _startOperation = null;
     }
@@ -190,48 +191,46 @@ class ChatRealtimeService {
     }
 
     await connection.start();
-    _connectionStatesController.add(connection.state ?? HubConnectionState.Connected);
+    _connectionStatesController.add(
+      connection.state ?? HubConnectionState.Connected,
+    );
   }
 
   HubConnection _buildConnection() {
-    final connection = HubConnectionBuilder()
-        .withUrl(
-          _buildHubUrl(),
-          options: HttpConnectionOptions(
-            accessTokenFactory: () async => await _storage.readToken() ?? '',
-            transport:
-                kIsWeb
-                    ? HttpTransportType.LongPolling
-                    : HttpTransportType.WebSockets,
-          ),
-        )
-        .withAutomaticReconnect()
-        .build();
+    final connection =
+        HubConnectionBuilder()
+            .withUrl(
+              _buildHubUrl(),
+              options: HttpConnectionOptions(
+                accessTokenFactory:
+                    () async => await _storage.readToken() ?? '',
+                transport:
+                    kIsWeb
+                        ? HttpTransportType.LongPolling
+                        : HttpTransportType.WebSockets,
+              ),
+            )
+            .withAutomaticReconnect()
+            .build();
 
     connection.on('typing_started', _handleTypingStarted);
     connection.on('typing_stopped', _handleTypingStopped);
     connection.on('message_sent', _handleMessageSent);
     connection.on('message_read', _handleMessageRead);
     connection.on('message_delivered', _handleMessageDelivered);
-    connection.onclose(({
-      Object? error,
-    }) {
+    connection.onclose(({Object? error}) {
       if (_disposed) {
         return;
       }
       _connectionStatesController.add(HubConnectionState.Disconnected);
     });
-    connection.onreconnecting(({
-      Object? error,
-    }) {
+    connection.onreconnecting(({Object? error}) {
       if (_disposed) {
         return;
       }
       _connectionStatesController.add(HubConnectionState.Reconnecting);
     });
-    connection.onreconnected(({
-      String? connectionId,
-    }) {
+    connection.onreconnected(({String? connectionId}) {
       if (_disposed) {
         return;
       }
@@ -309,9 +308,7 @@ class ChatRealtimeService {
     }
 
     if (raw is Map) {
-      return raw.map(
-        (key, value) => MapEntry(key.toString(), value),
-      );
+      return raw.map((key, value) => MapEntry(key.toString(), value));
     }
 
     if (raw is String) {
@@ -320,9 +317,7 @@ class ChatRealtimeService {
         return decoded;
       }
       if (decoded is Map) {
-        return decoded.map(
-          (key, value) => MapEntry(key.toString(), value),
-        );
+        return decoded.map((key, value) => MapEntry(key.toString(), value));
       }
     }
 
@@ -339,6 +334,8 @@ class ChatRealtimeService {
       pathSegments.removeLast();
     }
 
-    return apiUri.replace(pathSegments: [...pathSegments, 'hubs', 'chat']).toString();
+    return apiUri
+        .replace(pathSegments: [...pathSegments, 'hubs', 'chat'])
+        .toString();
   }
 }

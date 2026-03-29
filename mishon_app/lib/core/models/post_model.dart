@@ -22,6 +22,12 @@ class Post {
   final int commentsCount;
   final bool isLiked;
   final bool isFollowingAuthor;
+  @JsonKey(defaultValue: true)
+  final bool canComment;
+  @JsonKey(defaultValue: false)
+  final bool isHidden;
+  @JsonKey(defaultValue: false)
+  final bool isRemoved;
 
   Post({
     required this.id,
@@ -38,6 +44,9 @@ class Post {
     this.commentsCount = 0,
     required this.isLiked,
     required this.isFollowingAuthor,
+    this.canComment = true,
+    this.isHidden = false,
+    this.isRemoved = false,
   });
 
   factory Post.fromJson(Map<String, dynamic> json) => _$PostFromJson(json);
@@ -59,6 +68,9 @@ class Post {
     int? commentsCount,
     bool? isLiked,
     bool? isFollowingAuthor,
+    bool? canComment,
+    bool? isHidden,
+    bool? isRemoved,
   }) {
     return Post(
       id: id ?? this.id,
@@ -75,6 +87,9 @@ class Post {
       commentsCount: commentsCount ?? this.commentsCount,
       isLiked: isLiked ?? this.isLiked,
       isFollowingAuthor: isFollowingAuthor ?? this.isFollowingAuthor,
+      canComment: canComment ?? this.canComment,
+      isHidden: isHidden ?? this.isHidden,
+      isRemoved: isRemoved ?? this.isRemoved,
     );
   }
 }
@@ -96,6 +111,10 @@ class Comment {
   final DateTime? editedAt;
   final int? parentCommentId;
   final String? replyToUsername;
+  @JsonKey(defaultValue: false)
+  final bool isHidden;
+  @JsonKey(defaultValue: false)
+  final bool isRemoved;
 
   Comment({
     required this.id,
@@ -110,6 +129,8 @@ class Comment {
     this.editedAt,
     this.parentCommentId,
     this.replyToUsername,
+    this.isHidden = false,
+    this.isRemoved = false,
   });
 
   factory Comment.fromJson(Map<String, dynamic> json) =>
@@ -130,6 +151,8 @@ class Follow {
   @JsonKey(defaultValue: 0.0)
   final double avatarOffsetY;
   final bool isFollowing;
+  @JsonKey(defaultValue: false)
+  final bool isPrivateAccount;
 
   Follow({
     required this.id,
@@ -139,6 +162,7 @@ class Follow {
     this.avatarOffsetX = 0.0,
     this.avatarOffsetY = 0.0,
     this.isFollowing = false,
+    this.isPrivateAccount = false,
   });
 
   factory Follow.fromJson(Map<String, dynamic> json) => _$FollowFromJson(json);
@@ -153,6 +177,7 @@ class Follow {
     double? avatarOffsetX,
     double? avatarOffsetY,
     bool? isFollowing,
+    bool? isPrivateAccount,
   }) {
     return Follow(
       id: id ?? this.id,
@@ -162,6 +187,7 @@ class Follow {
       avatarOffsetX: avatarOffsetX ?? this.avatarOffsetX,
       avatarOffsetY: avatarOffsetY ?? this.avatarOffsetY,
       isFollowing: isFollowing ?? this.isFollowing,
+      isPrivateAccount: isPrivateAccount ?? this.isPrivateAccount,
     );
   }
 }
@@ -170,10 +196,15 @@ class Follow {
 class ToggleFollowResponse {
   final bool isFollowing;
   final int followersCount;
+  @JsonKey(defaultValue: false)
+  final bool isRequested;
+  final int? requestId;
 
   ToggleFollowResponse({
     required this.isFollowing,
     required this.followersCount,
+    this.isRequested = false,
+    this.requestId,
   });
 
   factory ToggleFollowResponse.fromJson(Map<String, dynamic> json) =>

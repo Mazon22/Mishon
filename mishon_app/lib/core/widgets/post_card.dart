@@ -4,6 +4,7 @@ import 'package:mishon_app/core/constants/api_constants.dart';
 import 'package:mishon_app/core/localization/app_strings.dart';
 import 'package:mishon_app/core/models/post_model.dart';
 import 'package:mishon_app/core/widgets/fullscreen_image_screen.dart';
+import 'package:mishon_app/core/widgets/minimal_components.dart';
 import 'package:mishon_app/core/widgets/profile_media.dart';
 
 class PostCard extends StatelessWidget {
@@ -12,6 +13,7 @@ class PostCard extends StatelessWidget {
   final VoidCallback? onLike;
   final VoidCallback? onFollow;
   final VoidCallback? onDelete;
+  final VoidCallback? onReport;
   final VoidCallback? onComment;
   final VoidCallback? onOpenProfile;
   final VoidCallback? onShare;
@@ -24,6 +26,7 @@ class PostCard extends StatelessWidget {
     this.onLike,
     this.onFollow,
     this.onDelete,
+    this.onReport,
     this.onComment,
     this.onOpenProfile,
     this.onShare,
@@ -38,12 +41,15 @@ class PostCard extends StatelessWidget {
     final dateLabel = _formatRelativeDate(context, post.createdAt.toLocal());
     final resolvedAvatarUrl = _resolveOptionalMediaUrl(post.userAvatarUrl);
     final hasMenu =
-        (isOwnPost && onDelete != null) || onFollow != null || onShare != null;
+        (isOwnPost && onDelete != null) ||
+        onFollow != null ||
+        onShare != null ||
+        (!isOwnPost && onReport != null);
 
     return DecoratedBox(
       decoration: BoxDecoration(
         color: Colors.white.withValues(alpha: 0.94),
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(18),
         border: Border.all(color: const Color(0xFFE4EBF7)),
         boxShadow: const [
           BoxShadow(
@@ -54,7 +60,7 @@ class PostCard extends StatelessWidget {
         ],
       ),
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 16, 16, 14),
+        padding: const EdgeInsets.fromLTRB(15, 15, 15, 13),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -64,38 +70,49 @@ class PostCard extends StatelessWidget {
                 AppAvatar(
                   username: post.username,
                   imageUrl: resolvedAvatarUrl,
-                  size: 48,
+                  size: 46,
                   scale: post.userAvatarScale,
                   offsetX: post.userAvatarOffsetX,
                   offsetY: post.userAvatarOffsetY,
                   onTap: onOpenProfile,
                 ),
-                const SizedBox(width: 12),
+                const SizedBox(width: 11),
                 Expanded(
                   child: InkWell(
                     onTap: onOpenProfile,
                     borderRadius: BorderRadius.circular(14),
                     child: Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 2),
+                      padding: const EdgeInsets.only(top: 1),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(
-                            post.username,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: Theme.of(
-                              context,
-                            ).textTheme.titleMedium?.copyWith(
-                              fontWeight: FontWeight.w800,
-                              letterSpacing: -0.2,
-                              color: const Color(0xFF18243C),
-                            ),
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Flexible(
+                                child: Text(
+                                  post.username,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: Theme.of(
+                                    context,
+                                  ).textTheme.titleMedium?.copyWith(
+                                    fontWeight: FontWeight.w800,
+                                    letterSpacing: -0.3,
+                                    color: const Color(0xFF18243C),
+                                  ),
+                                ),
+                              ),
+                              if (isOwnPost) ...[
+                                const SizedBox(width: 6),
+                                const AppVerifiedBadge(size: 16),
+                              ],
+                            ],
                           ),
-                          const SizedBox(height: 4),
+                          const SizedBox(height: 3),
                           Wrap(
                             crossAxisAlignment: WrapCrossAlignment.center,
-                            spacing: 6,
+                            spacing: 5,
                             runSpacing: 4,
                             children: [
                               Text(
@@ -105,6 +122,7 @@ class PostCard extends StatelessWidget {
                                 ).textTheme.bodyMedium?.copyWith(
                                   color: const Color(0xFF64748B),
                                   fontWeight: FontWeight.w600,
+                                  fontSize: 13.5,
                                 ),
                               ),
                               const Text(
@@ -121,6 +139,7 @@ class PostCard extends StatelessWidget {
                                 ).textTheme.bodyMedium?.copyWith(
                                   color: const Color(0xFF64748B),
                                   fontWeight: FontWeight.w600,
+                                  fontSize: 13.5,
                                 ),
                               ),
                             ],
@@ -136,28 +155,29 @@ class PostCard extends StatelessWidget {
                     isFollowingAuthor: post.isFollowingAuthor,
                     onFollow: onFollow,
                     onDelete: onDelete,
+                    onReport: onReport,
                     onShare: onShare,
                   ),
               ],
             ),
             if (post.content.trim().isNotEmpty) ...[
-              const SizedBox(height: 12),
+              const SizedBox(height: 11),
               Text(
                 post.content.trim(),
                 style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                  height: 1.55,
+                  height: 1.48,
                   color: const Color(0xFF1E293B),
                 ),
               ),
             ],
             if (mediaUrls.isNotEmpty) ...[
-              const SizedBox(height: 14),
+              const SizedBox(height: 12),
               _PostMediaGallery(postId: post.id, imageUrls: mediaUrls),
             ],
             if (showActions) ...[
-              const SizedBox(height: 14),
+              const SizedBox(height: 12),
               const Divider(color: Color(0xFFE8EEF8), height: 1, thickness: 1),
-              const SizedBox(height: 6),
+              const SizedBox(height: 5),
               Row(
                 children: [
                   Expanded(
@@ -208,6 +228,7 @@ class _PostMenuButton extends StatelessWidget {
   final bool isFollowingAuthor;
   final VoidCallback? onFollow;
   final VoidCallback? onDelete;
+  final VoidCallback? onReport;
   final VoidCallback? onShare;
 
   const _PostMenuButton({
@@ -215,6 +236,7 @@ class _PostMenuButton extends StatelessWidget {
     required this.isFollowingAuthor,
     required this.onFollow,
     required this.onDelete,
+    required this.onReport,
     required this.onShare,
   });
 
@@ -229,6 +251,11 @@ class _PostMenuButton extends StatelessWidget {
         ),
       if (onShare != null)
         PopupMenuItem<String>(value: 'share', child: Text(strings.share)),
+      if (!isOwnPost && onReport != null)
+        PopupMenuItem<String>(
+          value: 'report',
+          child: Text(strings.reportPostAction),
+        ),
       if (isOwnPost && onDelete != null)
         PopupMenuItem<String>(value: 'delete', child: Text(strings.deletePost)),
     ];
@@ -244,6 +271,8 @@ class _PostMenuButton extends StatelessWidget {
             onFollow?.call();
           case 'share':
             onShare?.call();
+          case 'report':
+            onReport?.call();
           case 'delete':
             onDelete?.call();
         }

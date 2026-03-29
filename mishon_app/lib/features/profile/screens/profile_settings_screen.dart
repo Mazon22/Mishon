@@ -1,11 +1,26 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:intl/intl.dart';
 import 'package:mishon_app/core/localization/app_strings.dart';
 import 'package:mishon_app/core/settings/app_settings_provider.dart';
 import 'package:mishon_app/core/widgets/app_toast.dart';
+import 'package:mishon_app/core/models/auth_model.dart';
+import 'package:mishon_app/core/models/social_models.dart';
+import 'package:mishon_app/core/repositories/auth_repository.dart';
+import 'package:mishon_app/core/repositories/social_repository.dart';
+import 'package:mishon_app/core/theme/app_theme.dart';
+import 'package:mishon_app/core/theme/app_tokens.dart';
+import 'package:mishon_app/core/widgets/minimal_components.dart';
+import 'package:mishon_app/core/widgets/states.dart';
+import 'package:mishon_app/features/notifications/providers/notification_summary_provider.dart';
 import 'package:mishon_app/features/profile/providers/profile_provider.dart';
+import 'package:mishon_app/features/profile/screens/follow_requests_screen.dart';
+import 'package:mishon_app/features/profile/screens/privacy_settings_screen.dart';
 import 'package:mishon_app/features/profile/screens/profile_security_screens.dart';
+import 'package:mishon_app/features/profile/screens/sessions_management_screen.dart';
+
+part 'moderation_report_screen.dart';
 
 class ProfileSettingsScreen extends ConsumerStatefulWidget {
   const ProfileSettingsScreen({super.key});
@@ -227,7 +242,27 @@ class _ProfileSettingsScreenState extends ConsumerState<ProfileSettingsScreen> {
 
   Future<void> _openActiveSessions() async {
     await Navigator.of(context).push(
-      MaterialPageRoute<void>(builder: (_) => const ActiveSessionsScreen()),
+      MaterialPageRoute<void>(builder: (_) => const SessionsManagementScreen()),
+    );
+  }
+
+  Future<void> _openPrivacy() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(builder: (_) => const PrivacySettingsScreen()),
+    );
+  }
+
+  Future<void> _openFollowRequests() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(builder: (_) => const FollowRequestsScreen()),
+    );
+  }
+
+  Future<void> _openModeration() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => const ModerationDashboardScreen(),
+      ),
     );
   }
 
@@ -251,6 +286,7 @@ class _ProfileSettingsScreenState extends ConsumerState<ProfileSettingsScreen> {
     final profile = ref.watch(profileNotifierProvider).valueOrNull;
     final blockedUsersAsync = ref.watch(blockedUsersProvider);
     final currentSessionAsync = ref.watch(currentSessionInfoProvider);
+    final notificationSummaryAsync = ref.watch(notificationSummaryProvider);
 
     final email =
         profile?.email.trim().isNotEmpty == true
@@ -263,6 +299,11 @@ class _ProfileSettingsScreenState extends ConsumerState<ProfileSettingsScreen> {
     );
     final sessionCount = currentSessionAsync.when(
       data: (_) => '1',
+      loading: () => '...',
+      error: (_, __) => '--',
+    );
+    final followRequestCount = notificationSummaryAsync.when(
+      data: (summary) => summary.pendingFollowRequests.toString(),
       loading: () => '...',
       error: (_, __) => '--',
     );
@@ -414,6 +455,33 @@ class _ProfileSettingsScreenState extends ConsumerState<ProfileSettingsScreen> {
                 ),
                 const SizedBox(height: 16),
                 _SettingsCard(
+                  title: strings.privacyTitle,
+                  subtitle: strings.privacyCardSubtitle,
+                  child: Column(
+                    children: [
+                      _SettingsActionTile(
+                        icon: Icons.lock_person_outlined,
+                        title: strings.privacyTitle,
+                        subtitle: strings.privacyCardSubtitle,
+                        value:
+                            profile?.isPrivateAccount == true
+                                ? strings.privateAccountShort
+                                : strings.publicAccountShort,
+                        onTap: _openPrivacy,
+                      ),
+                      const Divider(height: 18),
+                      _SettingsActionTile(
+                        icon: Icons.person_add_alt_1_outlined,
+                        title: strings.followRequestsTitle,
+                        subtitle: strings.followRequestsSubtitle,
+                        value: followRequestCount,
+                        onTap: _openFollowRequests,
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+                _SettingsCard(
                   title: strings.interfaceSection,
                   subtitle:
                       strings.isRu
@@ -447,6 +515,23 @@ class _ProfileSettingsScreenState extends ConsumerState<ProfileSettingsScreen> {
                     ],
                   ),
                 ),
+                if (profile?.isModerator == true) ...[
+                  const SizedBox(height: 16),
+                  _SettingsCard(
+                    title: strings.moderationTitle,
+                    subtitle: strings.moderationCardSubtitle,
+                    child: _SettingsActionTile(
+                      icon: Icons.admin_panel_settings_outlined,
+                      title: strings.moderationTitle,
+                      subtitle: strings.moderationCardSubtitle,
+                      value:
+                          profile!.isAdmin
+                              ? strings.adminShort
+                              : strings.moderatorShort,
+                      onTap: _openModeration,
+                    ),
+                  ),
+                ],
               ],
             ),
           ),
@@ -464,24 +549,11 @@ class _SettingsHero extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(24),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(30),
-        gradient: const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [Color(0xFF1F4DFF), Color(0xFF6A93FF), Color(0xFFEFF5FF)],
-          stops: [0, 0.48, 1],
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: const Color(0xFF1F4DFF).withValues(alpha: 0.18),
-            blurRadius: 30,
-            offset: const Offset(0, 16),
-          ),
-        ],
-      ),
+    return AppSurfaceCard(
+      padding: const EdgeInsets.all(22),
+      radius: AppRadii.xl,
+      color: Colors.white.withValues(alpha: 0.96),
+      boxShadow: AppShadows.soft(),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -489,16 +561,16 @@ class _SettingsHero extends StatelessWidget {
             width: 54,
             height: 54,
             decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.16),
-              borderRadius: BorderRadius.circular(18),
+              color: AppColors.primary.withValues(alpha: 0.10),
+              borderRadius: BorderRadius.circular(AppRadii.lg),
             ),
             child: const Icon(
               Icons.shield_outlined,
-              color: Colors.white,
+              color: AppColors.primary,
               size: 28,
             ),
           ),
-          const SizedBox(width: 16),
+          const SizedBox(width: AppSpacing.md),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -507,14 +579,13 @@ class _SettingsHero extends StatelessWidget {
                   title,
                   style: Theme.of(context).textTheme.headlineSmall?.copyWith(
                     fontWeight: FontWeight.w900,
-                    color: Colors.white,
                   ),
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: AppSpacing.xs),
                 Text(
                   subtitle,
                   style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                    color: Colors.white.withValues(alpha: 0.9),
+                    color: AppColors.textSecondary,
                     height: 1.45,
                   ),
                 ),
@@ -540,39 +611,29 @@ class _SettingsCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    return AppSurfaceCard(
       padding: const EdgeInsets.all(22),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.96),
-        borderRadius: BorderRadius.circular(28),
-        border: Border.all(color: const Color(0xFFDCE4F2)),
-        boxShadow: [
-          BoxShadow(
-            color: const Color(0xFF081226).withValues(alpha: 0.05),
-            blurRadius: 26,
-            offset: const Offset(0, 16),
-          ),
-        ],
-      ),
+      radius: AppRadii.xl,
+      color: Colors.white.withValues(alpha: 0.96),
+      boxShadow: AppShadows.soft(),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
             title,
-            style: Theme.of(context).textTheme.titleLarge?.copyWith(
-              fontWeight: FontWeight.w900,
-              color: const Color(0xFF18243C),
-            ),
+            style: Theme.of(
+              context,
+            ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: AppSpacing.xs),
           Text(
             subtitle,
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-              color: const Color(0xFF6C7A91),
+              color: AppColors.textSecondary,
               height: 1.45,
             ),
           ),
-          const SizedBox(height: 18),
+          const SizedBox(height: AppSpacing.lg),
           child,
         ],
       ),
@@ -603,97 +664,14 @@ class _SettingsActionTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final content = Row(
-      children: [
-        Container(
-          width: 44,
-          height: 44,
-          decoration: BoxDecoration(
-            color: enabled ? const Color(0xFFEAF0FF) : const Color(0xFFF2F4F8),
-            borderRadius: BorderRadius.circular(15),
-          ),
-          child: Icon(
-            icon,
-            color: enabled ? const Color(0xFF2F67FF) : const Color(0xFFA1ADBF),
-          ),
-        ),
-        const SizedBox(width: 14),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                title,
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.w800,
-                  color:
-                      enabled
-                          ? const Color(0xFF18243C)
-                          : const Color(0xFFA1ADBF),
-                ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                subtitle,
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color:
-                      enabled
-                          ? const Color(0xFF6C7A91)
-                          : const Color(0xFFADB8C8),
-                  height: 1.35,
-                ),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(width: 12),
-        ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 126),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Flexible(
-                child: Text(
-                  value,
-                  textAlign: TextAlign.end,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                    color:
-                        enabled
-                            ? const Color(0xFF4C5D78)
-                            : const Color(0xFFA8B3C4),
-                  ),
-                ),
-              ),
-              if (trailingIcon != null || showChevron) ...[
-                const SizedBox(width: 8),
-                Icon(
-                  trailingIcon ?? Icons.chevron_right_rounded,
-                  color:
-                      enabled
-                          ? const Color(0xFF8C98AB)
-                          : const Color(0xFFC0C8D6),
-                ),
-              ],
-            ],
-          ),
-        ),
-      ],
-    );
-
-    return Opacity(
-      opacity: enabled ? 1 : 0.74,
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          borderRadius: BorderRadius.circular(20),
-          onTap: enabled ? onTap : onTap,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 4),
-            child: content,
-          ),
-        ),
-      ),
+    return AppCompactActionTile(
+      icon: icon,
+      title: title,
+      subtitle: subtitle,
+      value: value,
+      onTap: enabled ? onTap : null,
+      enabled: enabled,
+      accentColor: AppColors.primary,
     );
   }
 }
@@ -722,12 +700,12 @@ class _SettingsToggleTile extends StatelessWidget {
           width: 44,
           height: 44,
           decoration: BoxDecoration(
-            color: const Color(0xFFEAF0FF),
-            borderRadius: BorderRadius.circular(15),
+            color: AppColors.primary.withValues(alpha: 0.10),
+            borderRadius: BorderRadius.circular(AppRadii.md),
           ),
-          child: Icon(icon, color: const Color(0xFF2F67FF)),
+          child: Icon(icon, color: AppColors.primary),
         ),
-        const SizedBox(width: 14),
+        const SizedBox(width: AppSpacing.md),
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -736,22 +714,26 @@ class _SettingsToggleTile extends StatelessWidget {
                 title,
                 style: Theme.of(context).textTheme.titleMedium?.copyWith(
                   fontWeight: FontWeight.w800,
-                  color: const Color(0xFF18243C),
+                  color: AppColors.textPrimary,
                 ),
               ),
               const SizedBox(height: 4),
               Text(
                 subtitle,
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: const Color(0xFF6C7A91),
+                  color: AppColors.textSecondary,
                   height: 1.35,
                 ),
               ),
             ],
           ),
         ),
-        const SizedBox(width: 12),
-        Switch.adaptive(value: value, onChanged: onChanged),
+        const SizedBox(width: AppSpacing.md),
+        Switch.adaptive(
+          value: value,
+          onChanged: onChanged,
+          activeThumbColor: AppColors.primary,
+        ),
       ],
     );
   }

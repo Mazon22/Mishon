@@ -1,6 +1,4 @@
 import 'dart:async';
-import 'dart:ui';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -9,8 +7,14 @@ import 'package:mishon_app/core/models/post_model.dart';
 import 'package:mishon_app/core/models/social_models.dart';
 import 'package:mishon_app/core/network/exceptions.dart';
 import 'package:mishon_app/core/providers/app_bootstrap_provider.dart';
+import 'package:mishon_app/core/repositories/social_repository.dart';
+import 'package:mishon_app/core/theme/app_tokens.dart';
+import 'package:mishon_app/core/theme/app_theme.dart';
 import 'package:mishon_app/core/widgets/app_shell.dart';
+import 'package:mishon_app/core/widgets/app_toast.dart';
+import 'package:mishon_app/core/widgets/minimal_components.dart';
 import 'package:mishon_app/core/widgets/post_card.dart';
+import 'package:mishon_app/core/widgets/report_dialog.dart';
 import 'package:mishon_app/features/chats/utils/chat_post_share.dart';
 import 'package:mishon_app/features/comments/screens/comments_screen_args.dart';
 import 'package:mishon_app/features/feed/providers/feed_provider.dart';
@@ -23,6 +27,51 @@ class FeedScreen extends ConsumerStatefulWidget {
 
   @override
   ConsumerState<FeedScreen> createState() => _FeedScreenState();
+}
+
+Future<void> _reportPostFromFeed(
+  BuildContext context,
+  WidgetRef ref,
+  Post post,
+) async {
+  final strings = AppStrings.of(context);
+  final draft = await showReportDialog(
+    context,
+    title: strings.reportTargetPostTitle,
+  );
+  if (draft == null) {
+    return;
+  }
+
+  try {
+    await ref
+        .read(socialRepositoryProvider)
+        .createReport(
+          targetType: 'Post',
+          targetId: post.id,
+          reason: draft.reason,
+          customNote: draft.note,
+        );
+    if (!context.mounted) {
+      return;
+    }
+    showAppToast(context, message: strings.reportSubmitted);
+  } on ApiException catch (error) {
+    if (!context.mounted) {
+      return;
+    }
+    showAppToast(context, message: error.apiError.message, isError: true);
+  } on OfflineException catch (error) {
+    if (!context.mounted) {
+      return;
+    }
+    showAppToast(context, message: error.message, isError: true);
+  } catch (_) {
+    if (!context.mounted) {
+      return;
+    }
+    showAppToast(context, message: strings.operationError, isError: true);
+  }
 }
 
 class _FeedScreenState extends ConsumerState<FeedScreen>
@@ -93,39 +142,8 @@ class _FeedScreenState extends ConsumerState<FeedScreen>
       showAppBar: false,
       showSectionNavigation: !widget.embeddedInNavigationShell,
       maxContentWidth: 760,
-      bodyDecoration: const BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [Color(0xFFF5F8FF), Color(0xFFF0EEFF), Color(0xFFEAF4FF)],
-        ),
-      ),
-      backgroundLayers: const [
-        Positioned(
-          top: -120,
-          left: -80,
-          child: _FeedGlowOrb(
-            size: 260,
-            colors: [Color(0xFFB5D8FF), Color(0x33B5D8FF)],
-          ),
-        ),
-        Positioned(
-          bottom: -140,
-          right: -60,
-          child: _FeedGlowOrb(
-            size: 280,
-            colors: [Color(0xFFD4C4FF), Color(0x33D4C4FF)],
-          ),
-        ),
-        Positioned(
-          top: 120,
-          right: -40,
-          child: _FeedGlowOrb(
-            size: 180,
-            colors: [Color(0xFFF4D8FF), Color(0x22F4D8FF)],
-          ),
-        ),
-      ],
+      bodyDecoration: const BoxDecoration(color: AppColors.background),
+      backgroundLayers: const [],
       floatingActionButton: Padding(
         padding: EdgeInsets.only(bottom: shellBottomInset),
         child: FloatingActionButton.extended(
@@ -220,105 +238,78 @@ class _FeedGlassHeader extends StatelessWidget {
     final strings = AppStrings.of(context);
     final theme = Theme.of(context);
 
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(28),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
-        child: Container(
-          padding: const EdgeInsets.fromLTRB(18, 18, 18, 16),
-          decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.78),
-            borderRadius: BorderRadius.circular(28),
-            border: Border.all(color: const Color(0xFFE5ECF7)),
-            boxShadow: const [
-              BoxShadow(
-                color: Color(0x12162033),
-                blurRadius: 20,
-                offset: Offset(0, 8),
-              ),
-            ],
-          ),
-          child: Column(
+    return AppSurfaceCard(
+      padding: const EdgeInsets.fromLTRB(18, 18, 18, 16),
+      radius: AppRadii.xl,
+      child: Column(
+        children: [
+          Row(
             children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          strings.feed,
-                          style: theme.textTheme.headlineSmall?.copyWith(
-                            fontWeight: FontWeight.w800,
-                            color: const Color(0xFF18243C),
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          strings.feedSubtitle,
-                          style: theme.textTheme.bodyMedium?.copyWith(
-                            color: const Color(0xFF64748B),
-                            height: 1.35,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(width: 16),
-                  _FeedNotificationButton(
-                    count: notificationCount,
-                    onTap: onOpenNotifications,
-                  ),
-                ],
-              ),
-              const SizedBox(height: 18),
-              Container(
-                padding: const EdgeInsets.all(4),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFF1F5FF),
-                  borderRadius: BorderRadius.circular(18),
-                  border: Border.all(color: const Color(0xFFDCE5F5)),
-                ),
-                child: TabBar(
-                  controller: tabController,
-                  dividerColor: Colors.transparent,
-                  indicatorSize: TabBarIndicatorSize.tab,
-                  indicator: BoxDecoration(
-                    borderRadius: BorderRadius.circular(14),
-                    gradient: const LinearGradient(
-                      colors: [Color(0xFF4A8DFF), Color(0xFF7468FF)],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                    ),
-                    boxShadow: const [
-                      BoxShadow(
-                        color: Color(0x1F4A67FF),
-                        blurRadius: 12,
-                        offset: Offset(0, 8),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      strings.feed,
+                      style: theme.textTheme.headlineSmall?.copyWith(
+                        fontWeight: FontWeight.w900,
+                        color: AppColors.textPrimary,
                       ),
-                    ],
-                  ),
-                  labelColor: Colors.white,
-                  unselectedLabelColor: const Color(0xFF64748B),
-                  labelStyle: theme.textTheme.labelLarge?.copyWith(
-                    fontWeight: FontWeight.w800,
-                  ),
-                  unselectedLabelStyle: theme.textTheme.labelLarge?.copyWith(
-                    fontWeight: FontWeight.w700,
-                  ),
-                  tabs:
-                      FeedTabType.values.map((feedType) {
-                        final label =
-                            feedType == FeedTabType.forYou
-                                ? strings.forYou
-                                : strings.following;
-                        return Tab(text: label);
-                      }).toList(),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      strings.feedSubtitle,
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: AppColors.textSecondary,
+                        height: 1.45,
+                      ),
+                    ),
+                  ],
                 ),
+              ),
+              const SizedBox(width: 12),
+              _FeedNotificationButton(
+                count: notificationCount,
+                onTap: onOpenNotifications,
               ),
             ],
           ),
-        ),
+          const SizedBox(height: AppSpacing.lg),
+          Container(
+            padding: const EdgeInsets.all(4),
+            decoration: BoxDecoration(
+              color: AppColors.surfaceVariant,
+              borderRadius: BorderRadius.circular(AppRadii.lg),
+              border: Border.all(color: AppColors.divider),
+            ),
+            child: TabBar(
+              controller: tabController,
+              dividerColor: Colors.transparent,
+              indicatorSize: TabBarIndicatorSize.tab,
+              indicator: BoxDecoration(
+                borderRadius: BorderRadius.circular(AppRadii.md),
+                gradient: AppGradients.profile,
+                boxShadow: AppShadows.soft(color: AppColors.profile),
+              ),
+              labelColor: Colors.white,
+              unselectedLabelColor: AppColors.textSecondary,
+              labelStyle: theme.textTheme.labelLarge?.copyWith(
+                fontWeight: FontWeight.w800,
+              ),
+              unselectedLabelStyle: theme.textTheme.labelLarge?.copyWith(
+                fontWeight: FontWeight.w700,
+              ),
+              tabs:
+                  FeedTabType.values.map((feedType) {
+                    final label =
+                        feedType == FeedTabType.forYou
+                            ? strings.forYou
+                            : strings.following;
+                    return Tab(text: label);
+                  }).toList(),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -378,6 +369,13 @@ class _FeedTimeline extends ConsumerWidget {
               ),
             ),
           ),
+          if (!blockingError)
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                child: _FeedDiscoveryPanel(feedType: feedType, posts: posts),
+              ),
+            ),
           if (isInitialLoading) const _FeedSkeletonSliver(),
           if (blockingError)
             SliverFillRemaining(
@@ -477,6 +475,10 @@ class _FeedTimeline extends ConsumerWidget {
                               post: post,
                             ),
                           ),
+                      onReport:
+                          isOwnPost
+                              ? null
+                              : () => _reportPostFromFeed(context, ref, post),
                     ),
                   );
                 }, childCount: posts.length),
@@ -484,27 +486,6 @@ class _FeedTimeline extends ConsumerWidget {
             ),
           ],
         ],
-      ),
-    );
-  }
-}
-
-class _FeedGlowOrb extends StatelessWidget {
-  final double size;
-  final List<Color> colors;
-
-  const _FeedGlowOrb({required this.size, required this.colors});
-
-  @override
-  Widget build(BuildContext context) {
-    return IgnorePointer(
-      child: Container(
-        width: size,
-        height: size,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          gradient: RadialGradient(colors: colors),
-        ),
       ),
     );
   }
@@ -587,13 +568,11 @@ class _FeedSectionHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    return AppSurfaceCard(
       padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.72),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: const Color(0xFFE4EBF7)),
-      ),
+      color: Colors.white.withValues(alpha: 0.92),
+      borderColor: AppColors.divider,
+      boxShadow: const [],
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -621,15 +600,15 @@ class _FeedSectionHeader extends StatelessWidget {
                   title,
                   style: Theme.of(context).textTheme.titleMedium?.copyWith(
                     fontWeight: FontWeight.w800,
-                    color: const Color(0xFF18243C),
+                    color: AppColors.textPrimary,
                   ),
                 ),
                 const SizedBox(height: 4),
                 Text(
                   subtitle,
                   style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: const Color(0xFF64748B),
-                    height: 1.4,
+                    color: AppColors.textSecondary,
+                    height: 1.45,
                   ),
                 ),
               ],
@@ -641,6 +620,296 @@ class _FeedSectionHeader extends StatelessWidget {
   }
 }
 
+class _FeedDiscoveryPanel extends StatelessWidget {
+  final FeedTabType feedType;
+  final List<Post> posts;
+
+  const _FeedDiscoveryPanel({required this.feedType, required this.posts});
+
+  @override
+  Widget build(BuildContext context) {
+    final strings = AppStrings.of(context);
+    final theme = Theme.of(context);
+    final chipData = _buildFeedDiscoveryChips(posts, strings, feedType);
+    final isForYou = feedType == FeedTabType.forYou;
+    final title =
+        isForYou
+            ? (strings.isRu ? 'Подобрано для вас' : 'Picked for you')
+            : (strings.isRu ? 'В вашей сети' : 'Inside your circle');
+    final subtitle =
+        isForYou
+            ? (strings.isRu
+                ? 'Свежие темы, люди и быстрые входы в то, что сейчас набирает отклик.'
+                : 'Fresh topics, people, and quick entries into what is resonating right now.')
+            : (strings.isRu
+                ? 'Следите за ритмом своих подписок и возвращайтесь к активным обсуждениям.'
+                : 'Keep up with your network and jump back into active conversations.');
+    final countLabel =
+        isForYou
+            ? (strings.isRu
+                ? '${posts.length} рекомендаций'
+                : '${posts.length} recommendations')
+            : (strings.isRu
+                ? '${posts.length} свежих постов'
+                : '${posts.length} fresh posts');
+
+    return AppSurfaceCard(
+      padding: const EdgeInsets.all(18),
+      color: Colors.white.withValues(alpha: 0.96),
+      borderColor: const Color(0xFFE4EBF7),
+      boxShadow: AppShadows.soft(),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 42,
+                height: 42,
+                decoration: BoxDecoration(
+                  color: (isForYou ? AppColors.feed : AppColors.friends)
+                      .withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Icon(
+                  isForYou
+                      ? Icons.auto_awesome_rounded
+                      : Icons.people_alt_rounded,
+                  color: isForYou ? AppColors.feed : AppColors.friends,
+                  size: 20,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: theme.textTheme.titleLarge?.copyWith(
+                        fontWeight: FontWeight.w900,
+                        color: AppColors.textPrimary,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      subtitle,
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: AppColors.textSecondary,
+                        height: 1.45,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 12),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 10,
+                ),
+                decoration: BoxDecoration(
+                  color: AppColors.surfaceVariant,
+                  borderRadius: BorderRadius.circular(AppRadii.pill),
+                  border: Border.all(color: AppColors.divider),
+                ),
+                child: Text(
+                  countLabel,
+                  style: theme.textTheme.labelMedium?.copyWith(
+                    color: isForYou ? AppColors.feed : AppColors.friends,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            children: chipData
+                .map((chip) => _FeedDiscoveryChip(data: chip))
+                .toList(growable: false),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _FeedDiscoveryChip extends StatelessWidget {
+  final _FeedDiscoveryChipData data;
+
+  const _FeedDiscoveryChip({required this.data});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: data.background,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: data.border),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(data.icon, size: 16, color: data.foreground),
+          const SizedBox(width: 8),
+          Text(
+            data.label,
+            style: Theme.of(
+              context,
+            ).textTheme.labelMedium?.copyWith(color: data.foreground),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _FeedDiscoveryChipData {
+  final IconData icon;
+  final String label;
+  final Color background;
+  final Color border;
+  final Color foreground;
+
+  const _FeedDiscoveryChipData({
+    required this.icon,
+    required this.label,
+    required this.background,
+    required this.border,
+    required this.foreground,
+  });
+}
+
+List<_FeedDiscoveryChipData> _buildFeedDiscoveryChips(
+  List<Post> posts,
+  AppStrings strings,
+  FeedTabType feedType,
+) {
+  final chips = <_FeedDiscoveryChipData>[];
+  final seenLabels = <String>{};
+
+  void addChip({
+    required IconData icon,
+    required String label,
+    required Color background,
+    required Color border,
+    required Color foreground,
+  }) {
+    final normalized = label.trim().toLowerCase();
+    if (normalized.isEmpty ||
+        !seenLabels.add(normalized) ||
+        chips.length >= 4) {
+      return;
+    }
+
+    chips.add(
+      _FeedDiscoveryChipData(
+        icon: icon,
+        label: label,
+        background: background,
+        border: border,
+        foreground: foreground,
+      ),
+    );
+  }
+
+  final hashtagPattern = RegExp(r'#([A-Za-z0-9_]+)');
+  for (final post in posts) {
+    for (final match in hashtagPattern.allMatches(post.content)) {
+      if (chips.length >= 4) {
+        break;
+      }
+      final tag = match.group(1);
+      if (tag == null || tag.isEmpty) {
+        continue;
+      }
+      addChip(
+        icon: Icons.local_fire_department_rounded,
+        label: '#$tag',
+        background: const Color(0xFFFFF3EC),
+        border: const Color(0xFFFFDFC8),
+        foreground: const Color(0xFFC56A28),
+      );
+    }
+  }
+
+  for (final post in posts) {
+    if (chips.length >= 4) {
+      break;
+    }
+    addChip(
+      icon:
+          feedType == FeedTabType.forYou
+              ? Icons.person_search_rounded
+              : Icons.favorite_border_rounded,
+      label: '@${post.username}',
+      background:
+          feedType == FeedTabType.forYou
+              ? AppColors.feedSoft
+              : AppColors.friendsSoft,
+      border:
+          feedType == FeedTabType.forYou
+              ? const Color(0xFFD6E3FF)
+              : const Color(0xFFD7F3E0),
+      foreground:
+          feedType == FeedTabType.forYou ? AppColors.feed : AppColors.friends,
+    );
+  }
+
+  if (chips.length < 4) {
+    final fallbacks =
+        feedType == FeedTabType.forYou
+            ? [
+              (
+                icon: Icons.bolt_rounded,
+                label: strings.isRu ? 'Быстрые реакции' : 'Quick reactions',
+                background: const Color(0xFFF0EDFF),
+                border: const Color(0xFFE0D8FF),
+                foreground: AppColors.profile,
+              ),
+              (
+                icon: Icons.trending_up_rounded,
+                label: strings.isRu ? 'Рост обсуждений' : 'Trending now',
+                background: const Color(0xFFEFF7FF),
+                border: const Color(0xFFDCE8FF),
+                foreground: AppColors.chats,
+              ),
+            ]
+            : [
+              (
+                icon: Icons.schedule_rounded,
+                label: strings.isRu ? 'Новые публикации' : 'Fresh updates',
+                background: const Color(0xFFEFF7FF),
+                border: const Color(0xFFDCE8FF),
+                foreground: AppColors.chats,
+              ),
+              (
+                icon: Icons.groups_2_rounded,
+                label: strings.isRu ? 'Ваш круг' : 'Your people',
+                background: const Color(0xFFE9FBF0),
+                border: const Color(0xFFD7F3E0),
+                foreground: AppColors.friends,
+              ),
+            ];
+
+    for (final fallback in fallbacks) {
+      addChip(
+        icon: fallback.icon,
+        label: fallback.label,
+        background: fallback.background,
+        border: fallback.border,
+        foreground: fallback.foreground,
+      );
+    }
+  }
+
+  return chips;
+}
+
 class _FeedInlineErrorBanner extends StatelessWidget {
   final String message;
   final VoidCallback onRetry;
@@ -650,13 +919,11 @@ class _FeedInlineErrorBanner extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final strings = AppStrings.of(context);
-    return Container(
+    return AppSurfaceCard(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-      decoration: BoxDecoration(
-        color: const Color(0xFFFFF6F7),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFFFDADF)),
-      ),
+      color: const Color(0xFFFFF8FA),
+      borderColor: const Color(0xFFFFDADF),
+      boxShadow: const [],
       child: Row(
         children: [
           const Icon(

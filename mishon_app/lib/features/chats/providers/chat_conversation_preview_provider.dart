@@ -74,6 +74,11 @@ class ConversationPreviewOverride {
       return imageCount > 1 ? 'Photos: $imageCount' : 'Photo';
     }
 
+    final voiceCount = message.attachments.where((item) => item.isVoiceNote).length;
+    if (voiceCount == message.attachments.length) {
+      return voiceCount > 1 ? 'Voice messages: $voiceCount' : 'Voice message';
+    }
+
     return message.attachments.length > 1
         ? 'Files: ${message.attachments.length}'
         : 'File';
@@ -89,6 +94,14 @@ class ChatConversationPreviewOverridesNotifier
       ...state,
       message.conversationId: ConversationPreviewOverride.fromMessage(message),
     };
+  }
+
+  void clearConversation(int conversationId) {
+    if (!state.containsKey(conversationId)) {
+      return;
+    }
+
+    state = {...state}..remove(conversationId);
   }
 
   void markDelivered(int conversationId, int messageId, DateTime deliveredAt) {

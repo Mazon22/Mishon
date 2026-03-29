@@ -19,14 +19,19 @@ import 'package:mishon_app/core/settings/app_settings_provider.dart';
 import 'package:mishon_app/core/utils/attachment_picker.dart';
 import 'package:mishon_app/core/utils/chat_share_content.dart';
 import 'package:mishon_app/core/utils/external_url.dart';
+import 'package:mishon_app/core/utils/voice_note_recorder.dart';
+import 'package:mishon_app/core/utils/voice_note_utils.dart';
 import 'package:mishon_app/core/widgets/app_toast.dart';
 import 'package:mishon_app/core/widgets/fullscreen_image_screen.dart';
 import 'package:mishon_app/core/widgets/interactive_content_text.dart';
+import 'package:mishon_app/core/widgets/minimal_components.dart';
 import 'package:mishon_app/core/widgets/profile_media.dart';
+import 'package:mishon_app/core/widgets/report_dialog.dart';
 import 'package:mishon_app/core/widgets/states.dart';
 import 'package:mishon_app/features/chats/providers/chat_conversation_preview_provider.dart';
 import 'package:mishon_app/features/chats/providers/chat_messages_provider.dart';
 import 'package:mishon_app/features/chats/providers/chat_realtime_service.dart';
+import 'package:mishon_app/features/chats/widgets/voice_message_bubble.dart';
 import 'package:mishon_app/features/comments/screens/comments_screen_args.dart';
 import 'package:mishon_app/features/notifications/providers/notification_summary_provider.dart';
 
@@ -59,6 +64,7 @@ String _messageContextPreview(
   required String content,
   required int attachmentCount,
   required bool hasImageAttachment,
+  required bool hasVoiceAttachment,
 }) {
   final trimmed = content.trim();
   final sharedPost = tryParseSharedPostMessage(trimmed);
@@ -72,6 +78,12 @@ String _messageContextPreview(
 
   if (attachmentCount == 0) {
     return strings.message;
+  }
+
+  if (hasVoiceAttachment) {
+    return attachmentCount > 1
+        ? (strings.isRu ? 'Голосовые сообщения' : 'Voice messages')
+        : (strings.isRu ? 'Голосовое сообщение' : 'Voice message');
   }
 
   if (hasImageAttachment) {
@@ -93,6 +105,9 @@ String _messagePreviewLabel(AppStrings strings, ChatMessageModel message) {
     hasImageAttachment: message.attachments.any(
       (attachment) => attachment.isImage,
     ),
+    hasVoiceAttachment: message.attachments.any(
+      (attachment) => attachment.isVoiceNote,
+    ),
   );
 }
 
@@ -106,6 +121,9 @@ String _localMessagePreviewLabel(
     attachmentCount: message.attachments.length,
     hasImageAttachment: message.attachments.any(
       (attachment) => attachment.isImage,
+    ),
+    hasVoiceAttachment: message.attachments.any(
+      (attachment) => attachment.isVoiceNote,
     ),
   );
 }
@@ -145,6 +163,17 @@ String _localizeChatGeneratedPreview(
 
   if (normalized == 'файл' || normalized == 'file') {
     return strings.isRu ? 'Файл' : 'File';
+  }
+
+  if (normalized == 'голосовое сообщение' || normalized == 'voice message') {
+    return strings.isRu ? 'Голосовое сообщение' : 'Voice message';
+  }
+
+  if (normalized.startsWith('voice messages:') || normalized.startsWith('голосовые сообщения:')) {
+    final countText = trimmed.split(':').length > 1 ? trimmed.split(':').last.trim() : '';
+    return strings.isRu
+        ? (countText.isNotEmpty ? 'Голосовые сообщения: $countText' : 'Голосовые сообщения')
+        : (countText.isNotEmpty ? 'Voice messages: $countText' : 'Voice messages');
   }
 
   if (normalized == 'вложение' || normalized == 'attachment') {
@@ -193,14 +222,19 @@ class ChatScreen extends ConsumerStatefulWidget {
 class _ChatScreenState extends ConsumerState<ChatScreen>
     with AutomaticKeepAliveClientMixin {
   static const int _maxAttachmentBytes = 15 * 1024 * 1024;
+  static const Duration _voiceSampleWindow = Duration(milliseconds: 100);
   static const double _backSwipeEdgeWidth = 32;
   static const double _backSwipeDistanceThreshold = 88;
   static const double _backSwipeVelocityThreshold = 900;
 
   final _messageController = TextEditingController();
   final _scrollController = ScrollController();
+  final _voiceRecorder = VoiceNoteRecorder();
   late final ChatRealtimeService _chatRealtimeService;
   bool _isSending = false;
+  bool _isVoiceRecording = false;
+  Duration _voiceRecordingDuration = Duration.zero;
+  Timer? _voiceRecordingTimer;
   ChatMessageModel? _replyingTo;
   ChatMessageModel? _editingMessage;
   UserProfile? _peerProfile;
@@ -227,6 +261,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
   void dispose() {
     _messageController.removeListener(_handleComposerChanged);
     _scrollController.removeListener(_handleScrollChanged);
+    _voiceRecordingTimer?.cancel();
+    _voiceRecorder.dispose();
     unawaited(_chatRealtimeService.stopTyping(widget.args.conversationId));
     _messageController.dispose();
     _scrollController.dispose();
@@ -238,6 +274,13 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
 
   void _handleComposerChanged() {
     final isTyping = _messageController.text.trim().isNotEmpty;
+    final currentUserId = ref.read(currentUserIdProvider);
+    final isSavedMessagesConversation =
+        currentUserId != null && widget.args.peerId == currentUserId;
+    if (isSavedMessagesConversation) {
+      return;
+    }
+
     if (_editingMessage != null) {
       unawaited(_chatRealtimeService.stopTyping(widget.args.conversationId));
       return;
@@ -352,6 +395,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     bool silent = false,
     bool forceRefresh = false,
   }) async {
+    if (widget.args.peerId <= 0) {
+      return;
+    }
     final isRu = ref.read(appSettingsProvider).language == AppLanguage.ru;
     try {
       final authRepository = ref.read(authRepositoryProvider);
@@ -430,6 +476,10 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
             (file) => _PendingAttachment(
               fileName: file.fileName,
               bytes: file.bytes,
+              contentType: inferAttachmentContentType(
+                file.fileName,
+                isImage: type == AttachmentPickType.image,
+              ),
               isImage: type == AttachmentPickType.image,
             ),
           )
@@ -730,6 +780,11 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
 
   Future<void> _toggleBlockUser({required bool unblock}) async {
     final strings = AppStrings.of(context);
+    final currentUserId = ref.read(currentUserIdProvider);
+    if (currentUserId != null && widget.args.peerId == currentUserId) {
+      return;
+    }
+
     final confirmed =
         await showDialog<bool>(
           context: context,
@@ -860,6 +915,12 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
                     title: Text(strings.deleteForEveryone),
                     onTap: () => Navigator.of(context).pop('delete_all'),
                   ),
+                if (!message.isMine)
+                  ListTile(
+                    leading: const Icon(Icons.flag_outlined),
+                    title: Text(strings.reportMessageAction),
+                    onTap: () => Navigator.of(context).pop('report'),
+                  ),
                 ListTile(
                   leading: const Icon(Icons.delete_outline_rounded),
                   title: Text(strings.deleteForMe),
@@ -890,6 +951,36 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
       case 'delete_me':
         unawaited(_deleteMessageForMe(message));
         break;
+      case 'report':
+        unawaited(_reportMessage(message));
+        break;
+    }
+  }
+
+  Future<void> _reportMessage(ChatMessageModel message) async {
+    final strings = AppStrings.of(context);
+    final draft = await showReportDialog(
+      context,
+      title: strings.reportTargetMessageTitle,
+    );
+    if (draft == null) {
+      return;
+    }
+
+    try {
+      await ref.read(socialRepositoryProvider).createReport(
+            targetType: 'Message',
+            targetId: message.id,
+            reason: draft.reason,
+            customNote: draft.note,
+          );
+      _showSnackBar(strings.reportSubmitted);
+    } on ApiException catch (error) {
+      _showSnackBar(error.apiError.message, isError: true);
+    } on OfflineException catch (error) {
+      _showSnackBar(error.message, isError: true);
+    } catch (_) {
+      _showSnackBar(strings.operationError, isError: true);
     }
   }
 
@@ -1130,6 +1221,133 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     });
   }
 
+  Future<void> _startVoiceRecording() async {
+    final strings = AppStrings.of(context);
+    if (_isSending || _editingMessage != null || _isVoiceRecording) {
+      return;
+    }
+
+    if (_messageController.text.trim().isNotEmpty ||
+        _pendingAttachments.isNotEmpty) {
+      _showSnackBar(
+        strings.isRu
+            ? 'Р”Р»СЏ РіРѕР»РѕСЃРѕРІРѕРіРѕ СЃРѕРѕР±С‰РµРЅРёСЏ РѕС‡РёСЃС‚РёС‚Рµ РїРѕР»Рµ РІРІРѕРґР°'
+            : 'Clear the composer before recording a voice note',
+        isError: true,
+      );
+      return;
+    }
+
+    try {
+      if (!await _voiceRecorder.requestPermission()) {
+        _showSnackBar(
+          strings.isRu
+              ? 'РќСѓР¶РµРЅ РґРѕСЃС‚СѓРї Рє РјРёРєСЂРѕС„РѕРЅСѓ'
+              : 'Microphone access is required',
+          isError: true,
+        );
+        return;
+      }
+
+      await _voiceRecorder.start();
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _isVoiceRecording = true;
+        _voiceRecordingDuration = Duration.zero;
+      });
+      _voiceRecordingTimer?.cancel();
+      _voiceRecordingTimer = Timer.periodic(_voiceSampleWindow, (_) {
+        if (!mounted || !_isVoiceRecording) {
+          return;
+        }
+        setState(() {
+          _voiceRecordingDuration = _voiceRecorder.elapsed;
+        });
+      });
+    } catch (_) {
+      _showSnackBar(
+        strings.isRu
+            ? 'РќРµ СѓРґР°Р»РѕСЃСЊ Р·Р°РїСѓСЃС‚РёС‚СЊ Р·Р°РїРёСЃСЊ'
+            : 'Could not start voice recording',
+        isError: true,
+      );
+    }
+  }
+
+  Future<void> _stopVoiceRecording({required bool send}) async {
+    if (!_isVoiceRecording) {
+      return;
+    }
+
+    _voiceRecordingTimer?.cancel();
+    _voiceRecordingTimer = null;
+
+    final result = await _voiceRecorder.stop();
+    if (!mounted) {
+      return;
+    }
+
+    setState(() {
+      _isVoiceRecording = false;
+      _voiceRecordingDuration = Duration.zero;
+    });
+
+    if (result == null || !send) {
+      return;
+    }
+
+    final attachment = _PendingAttachment(
+      fileName: result.fileName,
+      bytes: result.bytes,
+      contentType: result.contentType,
+      isImage: false,
+      duration: result.duration,
+    );
+
+    final localMessage = _createLocalOutgoingMessage(
+      '',
+      [attachment],
+      _replyingTo,
+    );
+    setState(() {
+      _localOutgoingMessages = [..._localOutgoingMessages, localMessage];
+      _isSending = true;
+    });
+    _resetComposer();
+
+    final wasNearLatest = _isNearLatest();
+    final realtimeService = ref.read(chatRealtimeServiceProvider);
+    await realtimeService.stopTyping(widget.args.conversationId);
+    if (wasNearLatest) {
+      _scrollToLatest();
+    }
+    await _sendLocalOutgoingMessage(
+      localMessage,
+      scrollToLatest: wasNearLatest,
+    );
+  }
+
+  Future<void> _cancelVoiceRecording() async {
+    if (!_isVoiceRecording) {
+      return;
+    }
+
+    _voiceRecordingTimer?.cancel();
+    _voiceRecordingTimer = null;
+    await _voiceRecorder.cancel();
+    if (!mounted) {
+      return;
+    }
+
+    setState(() {
+      _isVoiceRecording = false;
+      _voiceRecordingDuration = Duration.zero;
+    });
+  }
+
   _LocalOutgoingMessage _createLocalOutgoingMessage(
     String content,
     List<_PendingAttachment> attachments,
@@ -1164,6 +1382,18 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
       return replyTo.content;
     }
     if (replyTo.attachments.isNotEmpty) {
+      final hasVoice = replyTo.attachments.any((attachment) => attachment.isVoiceNote);
+      if (hasVoice) {
+        return strings.isRu ? 'Голосовое сообщение' : 'Voice message';
+      }
+
+      final imageCount = replyTo.attachments.where((attachment) => attachment.isImage).length;
+      if (imageCount == replyTo.attachments.length) {
+        return imageCount > 1
+            ? (strings.isRu ? 'Фотографии' : 'Photos')
+            : (strings.isRu ? 'Фото' : 'Photo');
+      }
+
       return strings.attachment;
     }
     return null;
@@ -1186,6 +1416,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
                   (attachment) => ChatUploadAttachment(
                     fileName: attachment.fileName,
                     bytes: attachment.bytes,
+                    contentType: attachment.contentType,
                     isImage: attachment.isImage,
                   ),
                 )
@@ -1573,6 +1804,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     final showTypingIndicator =
         messageState.isPeerTyping &&
         _editingMessage == null &&
+        currentUserId != null &&
+        widget.args.peerId != currentUserId &&
         !peerBlockedViewer &&
         !viewerBlockedPeer;
     final isSavedMessagesConversation =
@@ -1594,6 +1827,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
             : isPeerOnline == true
             ? const Color(0xFF229C5A)
             : const Color(0xFF728098);
+    final showSelfBadge =
+        currentUserId != null && widget.args.peerId == currentUserId;
     final headerAvatar =
         isSavedMessagesConversation
             ? DecoratedBox(
@@ -1655,15 +1890,26 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
                       mainAxisSize: MainAxisSize.min,
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          widget.args.peerUsername,
-                          overflow: TextOverflow.ellipsis,
-                          style: Theme.of(
-                            context,
-                          ).textTheme.titleMedium?.copyWith(
-                            fontWeight: FontWeight.w800,
-                            color: const Color(0xFF162238),
-                          ),
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Flexible(
+                              child: Text(
+                                widget.args.peerUsername,
+                                overflow: TextOverflow.ellipsis,
+                                style: Theme.of(
+                                  context,
+                                ).textTheme.titleMedium?.copyWith(
+                                  fontWeight: FontWeight.w800,
+                                  color: const Color(0xFF162238),
+                                ),
+                              ),
+                            ),
+                            if (showSelfBadge) ...[
+                              const SizedBox(width: 6),
+                              const AppVerifiedBadge(size: 16),
+                            ],
+                          ],
                         ),
                         const SizedBox(height: 2),
                         AnimatedSwitcher(
@@ -1710,18 +1956,19 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
                       strings.isRu ? 'Очистить историю' : 'Clear history',
                     ),
                   ),
-                  PopupMenuItem(
-                    value: viewerBlockedPeer ? 'unblock' : 'block',
-                    child: Text(
-                      viewerBlockedPeer
-                          ? (strings.isRu
-                              ? 'Разблокировать пользователя'
-                              : 'Unblock user')
-                          : (strings.isRu
-                              ? 'Заблокировать пользователя'
-                              : 'Block user'),
+                  if (!isSavedMessagesConversation)
+                    PopupMenuItem(
+                      value: viewerBlockedPeer ? 'unblock' : 'block',
+                      child: Text(
+                        viewerBlockedPeer
+                            ? (strings.isRu
+                                ? 'Разблокировать пользователя'
+                                : 'Unblock user')
+                            : (strings.isRu
+                                ? 'Заблокировать пользователя'
+                                : 'Block user'),
+                      ),
                     ),
-                  ),
                 ],
           ),
         ],
@@ -1789,22 +2036,39 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
                                       ).notifier,
                                     )
                                     .refresh(force: true),
-                            child: ListView(
+                            child: CustomScrollView(
                               physics: const AlwaysScrollableScrollPhysics(
                                 parent: BouncingScrollPhysics(),
                               ),
-                              padding: const EdgeInsets.all(24),
-                              children: [
-                                EmptyState(
-                                  icon: Icons.forum_outlined,
-                                  title:
-                                      strings.isRu
-                                          ? 'Пока нет сообщений'
-                                          : 'No messages yet',
-                                  subtitle:
-                                      strings.isRu
-                                          ? 'Напишите первое сообщение, чтобы начать диалог.'
-                                          : 'Send the first message to start the conversation.',
+                              slivers: [
+                                SliverFillRemaining(
+                                  hasScrollBody: false,
+                                  child: Padding(
+                                    padding: const EdgeInsets.fromLTRB(
+                                      24,
+                                      16,
+                                      24,
+                                      24,
+                                    ),
+                                    child: Center(
+                                      child: ConstrainedBox(
+                                        constraints: const BoxConstraints(
+                                          maxWidth: 420,
+                                        ),
+                                        child: EmptyState(
+                                          icon: Icons.forum_outlined,
+                                          title:
+                                              strings.isRu
+                                                  ? 'Пока нет сообщений'
+                                                  : 'No messages yet',
+                                          subtitle:
+                                              strings.isRu
+                                                  ? 'Напишите первое сообщение, чтобы начать диалог.'
+                                                  : 'Send the first message to start the conversation.',
+                                        ),
+                                      ),
+                                    ),
+                                  ),
                                 ),
                               ],
                             ),
@@ -1950,6 +2214,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
                     controller: _messageController,
                     isSending: _isSending,
                     onSubmit: _submit,
+                    isRecordingVoice: _isVoiceRecording,
+                    recordingDuration: _voiceRecordingDuration,
                     replyingTo: _replyingTo,
                     editingMessage: _editingMessage,
                     onCancelContext: _resetComposer,
@@ -1962,6 +2228,11 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
                       0,
                       (sum, item) => sum + item.sizeBytes,
                     ),
+                    onStartVoiceRecording: _startVoiceRecording,
+                    onStopVoiceRecording: () => _stopVoiceRecording(
+                      send: true,
+                    ),
+                    onCancelVoiceRecording: _cancelVoiceRecording,
                   ),
               ],
             ),
@@ -2206,6 +2477,8 @@ class _MessageComposer extends StatelessWidget {
   final TextEditingController controller;
   final bool isSending;
   final VoidCallback onSubmit;
+  final bool isRecordingVoice;
+  final Duration recordingDuration;
   final ChatMessageModel? replyingTo;
   final ChatMessageModel? editingMessage;
   final VoidCallback onCancelContext;
@@ -2214,11 +2487,16 @@ class _MessageComposer extends StatelessWidget {
   final VoidCallback onPickFiles;
   final ValueChanged<_PendingAttachment> onRemoveAttachment;
   final int totalAttachmentBytes;
+  final VoidCallback onStartVoiceRecording;
+  final VoidCallback onStopVoiceRecording;
+  final VoidCallback onCancelVoiceRecording;
 
   const _MessageComposer({
     required this.controller,
     required this.isSending,
     required this.onSubmit,
+    required this.isRecordingVoice,
+    required this.recordingDuration,
     required this.replyingTo,
     required this.editingMessage,
     required this.onCancelContext,
@@ -2227,6 +2505,9 @@ class _MessageComposer extends StatelessWidget {
     required this.onPickFiles,
     required this.onRemoveAttachment,
     required this.totalAttachmentBytes,
+    required this.onStartVoiceRecording,
+    required this.onStopVoiceRecording,
+    required this.onCancelVoiceRecording,
   });
 
   Future<void> _showAttachmentTypeSheet(BuildContext context) async {
@@ -2275,7 +2556,7 @@ class _MessageComposer extends StatelessWidget {
   Widget build(BuildContext context) {
     final strings = AppStrings.of(context);
     final hasContext = replyingTo != null || editingMessage != null;
-    final canAttach = editingMessage == null;
+    final canAttach = editingMessage == null && !isRecordingVoice;
     return ClipRRect(
       borderRadius: const BorderRadius.vertical(top: Radius.circular(30)),
       child: BackdropFilter(
@@ -2299,6 +2580,82 @@ class _MessageComposer extends StatelessWidget {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
+                if (isRecordingVoice)
+                  Container(
+                    width: double.infinity,
+                    margin: const EdgeInsets.only(bottom: 10),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 12,
+                    ),
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: [Color(0xFFFFF0F2), Color(0xFFFFE8EB)],
+                      ),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(color: const Color(0xFFF5C8D0)),
+                    ),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 38,
+                          height: 38,
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFFF5B6E).withValues(
+                              alpha: 0.14,
+                            ),
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(
+                            Icons.mic_rounded,
+                            color: Color(0xFFFF5B6E),
+                            size: 20,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  strings.isRu ? 'Идёт запись...' : 'Recording...',
+                                  style: Theme.of(
+                                    context,
+                                ).textTheme.bodyMedium?.copyWith(
+                                  color: const Color(0xFF9C2942),
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                              const SizedBox(height: 3),
+                                Text(
+                                  formatDurationLabel(recordingDuration),
+                                  style: Theme.of(
+                                    context,
+                                  ).textTheme.bodySmall?.copyWith(
+                                  color: const Color(0xFFB15567),
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  strings.isRu ? 'Влево — отмена' : 'Slide left to cancel',
+                                  style: Theme.of(
+                                    context,
+                                  ).textTheme.bodySmall?.copyWith(
+                                    color: const Color(0xFFB15567),
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        const SizedBox(width: 8),
+                      ],
+                    ),
+                  ),
                 if (hasContext)
                   Container(
                     width: double.infinity,
@@ -2381,17 +2738,30 @@ class _MessageComposer extends StatelessWidget {
                         ),
                         const SizedBox(height: 10),
                         Wrap(
-                          spacing: 8,
-                          runSpacing: 8,
-                          children: pendingAttachments
-                              .map(
-                                (attachment) => _PendingAttachmentChip(
-                                  attachment: attachment,
-                                  onRemove:
-                                      () => onRemoveAttachment(attachment),
+                          spacing: 10,
+                          runSpacing: 10,
+                          children: [
+                            ...pendingAttachments
+                                .where((attachment) => attachment.isImage)
+                                .map(
+                                  (attachment) => _PendingImageAttachmentCard(
+                                    attachment: attachment,
+                                    onRemove: () => onRemoveAttachment(
+                                      attachment,
+                                    ),
+                                  ),
                                 ),
-                              )
-                              .toList(growable: false),
+                            ...pendingAttachments
+                                .where((attachment) => !attachment.isImage)
+                                .map(
+                                  (attachment) => _PendingAttachmentChip(
+                                    attachment: attachment,
+                                    onRemove: () => onRemoveAttachment(
+                                      attachment,
+                                    ),
+                                  ),
+                                ),
+                          ],
                         ),
                       ],
                     ),
@@ -2403,6 +2773,7 @@ class _MessageComposer extends StatelessWidget {
                         value.text.trim().isNotEmpty ||
                         pendingAttachments.isNotEmpty ||
                         editingMessage != null;
+                    final showSend = hasDraft && !isRecordingVoice;
 
                     return Row(
                       crossAxisAlignment: CrossAxisAlignment.end,
@@ -2455,6 +2826,7 @@ class _MessageComposer extends StatelessWidget {
                               controller: controller,
                               minLines: 1,
                               maxLines: 5,
+                              enabled: !isRecordingVoice,
                               textCapitalization: TextCapitalization.sentences,
                               decoration: InputDecoration(
                                 hintText:
@@ -2486,68 +2858,71 @@ class _MessageComposer extends StatelessWidget {
                         const SizedBox(width: 10),
                         AnimatedScale(
                           duration: const Duration(milliseconds: 180),
-                          scale: hasDraft ? 1 : 0.96,
+                          scale: showSend || isRecordingVoice ? 1 : 0.96,
                           child: AnimatedContainer(
                             duration: const Duration(milliseconds: 180),
-                            width: 48,
-                            height: 48,
+                            width: isRecordingVoice ? 62 : 48,
+                            height: isRecordingVoice ? 62 : 48,
                             decoration: BoxDecoration(
-                              gradient:
-                                  hasDraft
-                                      ? const LinearGradient(
-                                        begin: Alignment.topLeft,
-                                        end: Alignment.bottomRight,
-                                        colors: [
-                                          Color(0xFF2F67FF),
-                                          Color(0xFF5D8CFF),
-                                        ],
-                                      )
-                                      : const LinearGradient(
-                                        begin: Alignment.topLeft,
-                                        end: Alignment.bottomRight,
-                                        colors: [
-                                          Color(0xFFC9D4EA),
-                                          Color(0xFFB8C6E0),
-                                        ],
-                                      ),
+                              color: const Color(0xFF2F67FF),
                               shape: BoxShape.circle,
-                              boxShadow:
-                                  hasDraft
-                                      ? [
-                                        BoxShadow(
-                                          color: const Color(
-                                            0xFF2F67FF,
-                                          ).withValues(alpha: 0.28),
-                                          blurRadius: 16,
-                                          offset: const Offset(0, 10),
-                                        ),
-                                      ]
-                                      : null,
+                              boxShadow: [
+                                BoxShadow(
+                                  color: const Color(0xFF2F67FF)
+                                      .withValues(alpha: 0.28),
+                                  blurRadius: 16,
+                                  offset: const Offset(0, 10),
+                                ),
+                              ],
                             ),
                             child: Material(
                               color: Colors.transparent,
-                              child: InkWell(
-                                onTap: isSending ? null : onSubmit,
-                                customBorder: const CircleBorder(),
-                                child: Center(
-                                  child:
-                                      isSending
-                                          ? const SizedBox(
-                                            width: 20,
-                                            height: 20,
-                                            child: CircularProgressIndicator(
-                                              strokeWidth: 2,
-                                              color: Colors.white,
-                                            ),
-                                          )
-                                          : Icon(
+                              child:
+                                  isSending
+                                      ? const Center(
+                                        child: SizedBox(
+                                          width: 20,
+                                          height: 20,
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 2,
+                                            color: Colors.white,
+                                          ),
+                                        ),
+                                      )
+                                      : showSend
+                                      ? InkWell(
+                                        onTap: onSubmit,
+                                        customBorder: const CircleBorder(),
+                                        child: Center(
+                                          child: Icon(
                                             editingMessage != null
                                                 ? Icons.check_rounded
                                                 : Icons.send_rounded,
                                             color: Colors.white,
                                           ),
-                                ),
-                              ),
+                                        ),
+                                      )
+                                      : GestureDetector(
+                                        behavior: HitTestBehavior.opaque,
+                                        onLongPressStart:
+                                            (_) => onStartVoiceRecording(),
+                                        onLongPressMoveUpdate: (details) {
+                                          if (details.offsetFromOrigin.dx < -36) {
+                                            onCancelVoiceRecording();
+                                          }
+                                        },
+                                        onLongPressEnd:
+                                            (_) => onStopVoiceRecording(),
+                                        onLongPressCancel:
+                                            onCancelVoiceRecording,
+                                        child: const Center(
+                                          child: Icon(
+                                            Icons.mic_rounded,
+                                            color: Colors.white,
+                                            size: 28,
+                                          ),
+                                        ),
+                                      ),
                             ),
                           ),
                         ),
@@ -3049,8 +3424,11 @@ class _MessageBubble extends StatelessWidget {
     final imageAttachments = message.attachments
         .where((attachment) => attachment.isImage)
         .toList(growable: false);
+    final voiceAttachments = message.attachments
+        .where((attachment) => attachment.isVoiceNote)
+        .toList(growable: false);
     final fileAttachments = message.attachments
-        .where((attachment) => !attachment.isImage)
+        .where((attachment) => !attachment.isImage && !attachment.isVoiceNote)
         .toList(growable: false);
     final readTooltip = _readReceiptTooltip(context);
     final sharedPost = tryParseSharedPostMessage(message.content);
@@ -3058,6 +3436,7 @@ class _MessageBubble extends StatelessWidget {
         sharedPost == null &&
         message.content.isNotEmpty &&
         imageAttachments.isEmpty &&
+        voiceAttachments.isEmpty &&
         fileAttachments.isEmpty;
     final hasStandaloneImage =
         sharedPost == null &&
@@ -3065,6 +3444,15 @@ class _MessageBubble extends StatelessWidget {
         message.replyToContent == null &&
         message.content.trim().isEmpty &&
         imageAttachments.isNotEmpty &&
+        voiceAttachments.isEmpty &&
+        fileAttachments.isEmpty;
+    final hasStandaloneVoice =
+        sharedPost == null &&
+        message.forwardedFromSenderUsername == null &&
+        message.replyToContent == null &&
+        message.content.trim().isEmpty &&
+        voiceAttachments.isNotEmpty &&
+        imageAttachments.isEmpty &&
         fileAttachments.isEmpty;
 
     return LayoutBuilder(
@@ -3160,12 +3548,12 @@ class _MessageBubble extends StatelessWidget {
                   child: InkWell(
                     onLongPress: onOpenMenu,
                     borderRadius: _bubbleRadius,
-                    child: Padding(
+                      child: Padding(
                       padding: EdgeInsets.fromLTRB(
-                        hasStandaloneImage ? 6 : 14,
-                        hasStandaloneImage ? 6 : 10,
-                        hasStandaloneImage ? 6 : 12,
-                        8,
+                        hasStandaloneImage ? 0 : 14,
+                        hasStandaloneImage ? 0 : 10,
+                        hasStandaloneImage ? 0 : 12,
+                        hasStandaloneImage ? 0 : 8,
                       ),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -3296,20 +3684,131 @@ class _MessageBubble extends StatelessWidget {
                                 bottom: fileAttachments.isNotEmpty ? 10 : 0,
                               ),
                               child: Column(
+                                crossAxisAlignment:
+                                    CrossAxisAlignment.stretch,
                                 children: imageAttachments
                                     .map(
                                       (attachment) => Padding(
-                                        padding: const EdgeInsets.only(
-                                          bottom: 8,
+                                        padding: EdgeInsets.only(
+                                          bottom:
+                                              imageAttachments.length > 1
+                                                  ? 8
+                                                  : 0,
                                         ),
                                         child: _ImageAttachmentCard(
                                           attachment: attachment,
                                           onTap:
                                               () =>
                                                   onOpenAttachment(attachment),
+                                          fullBleed: hasStandaloneImage,
+                                          footer:
+                                              hasStandaloneImage
+                                                  ? Positioned(
+                                                    right: 8,
+                                                    bottom: 8,
+                                                    child: DecoratedBox(
+                                                      decoration: BoxDecoration(
+                                                        color: Colors.black
+                                                            .withValues(
+                                                              alpha: 0.18,
+                                                            ),
+                                                        borderRadius:
+                                                            BorderRadius
+                                                                .circular(
+                                                                  999,
+                                                                ),
+                                                      ),
+                                                      child: Padding(
+                                                        padding:
+                                                            const EdgeInsets
+                                                                .symmetric(
+                                                              horizontal: 8,
+                                                              vertical: 4,
+                                                            ),
+                                                        child: _buildFooter(
+                                                          context,
+                                                          strings,
+                                                          readTooltip,
+                                                          compact: true,
+                                                        ),
+                                                      ),
+                                                    ),
+                                                  )
+                                              : null,
                                         ),
                                       ),
                                     )
+                                    .toList(growable: false),
+                              ),
+                            ),
+                          if (voiceAttachments.isNotEmpty)
+                            Padding(
+                              padding: EdgeInsets.only(
+                                bottom: fileAttachments.isNotEmpty ? 10 : 0,
+                              ),
+                              child: Column(
+                                crossAxisAlignment:
+                                    CrossAxisAlignment.stretch,
+                                children: voiceAttachments
+                                    .asMap()
+                                    .entries
+                                    .map((entry) {
+                                      final attachment = entry.value;
+                                      final isLast =
+                                          entry.key == voiceAttachments.length - 1;
+                                      return Padding(
+                                        padding: EdgeInsets.only(
+                                          bottom:
+                                              voiceAttachments.length > 1
+                                                  ? 8
+                                                  : 0,
+                                        ),
+                                        child: VoiceMessageBubble(
+                                          fileName: attachment.fileName,
+                                          sizeBytes: attachment.sizeBytes,
+                                          isMine: message.isMine,
+                                          duration:
+                                              estimateAudioDurationFromSizeBytes(
+                                                attachment.sizeBytes,
+                                              ),
+                                          audioUrl: attachment.fileUrl,
+                                          footer:
+                                              hasStandaloneVoice && isLast
+                                                  ? Positioned(
+                                                    right: 8,
+                                                    bottom: 8,
+                                                    child: DecoratedBox(
+                                                      decoration: BoxDecoration(
+                                                        color: Colors.black
+                                                            .withValues(
+                                                              alpha: 0.18,
+                                                            ),
+                                                        borderRadius:
+                                                            BorderRadius
+                                                                .circular(
+                                                                  999,
+                                                                ),
+                                                      ),
+                                                      child: Padding(
+                                                        padding:
+                                                            const EdgeInsets
+                                                                .symmetric(
+                                                              horizontal: 8,
+                                                              vertical: 4,
+                                                            ),
+                                                        child: _buildFooter(
+                                                          context,
+                                                          strings,
+                                                          readTooltip,
+                                                          compact: true,
+                                                        ),
+                                                      ),
+                                                    ),
+                                                  )
+                                              : null,
+                                        ),
+                                      );
+                                    })
                                     .toList(growable: false),
                               ),
                             ),
@@ -3329,7 +3828,9 @@ class _MessageBubble extends StatelessWidget {
                                   )
                                   .toList(growable: false),
                             ),
-                          if (!hasTextOnlyBody) ...[
+                          if (!hasTextOnlyBody &&
+                              !hasStandaloneImage &&
+                              !hasStandaloneVoice) ...[
                             const SizedBox(height: 8),
                             Row(
                               children: [
@@ -3370,9 +3871,18 @@ class _FailedMessageBubble extends StatelessWidget {
     final imageAttachments = message.attachments
         .where((attachment) => attachment.isImage)
         .toList(growable: false);
-    final fileAttachments = message.attachments
-        .where((attachment) => !attachment.isImage)
+    final voiceAttachments = message.attachments
+        .where((attachment) => attachment.isVoiceNote)
         .toList(growable: false);
+    final fileAttachments = message.attachments
+        .where((attachment) => !attachment.isImage && !attachment.isVoiceNote)
+        .toList(growable: false);
+    final hasStandaloneVoice =
+        message.replyToContent == null &&
+        message.content.trim().isEmpty &&
+        voiceAttachments.isNotEmpty &&
+        imageAttachments.isEmpty &&
+        fileAttachments.isEmpty;
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -3501,6 +4011,37 @@ class _FailedMessageBubble extends StatelessWidget {
                               .toList(growable: false),
                         ),
                       ),
+                    if (voiceAttachments.isNotEmpty)
+                      Padding(
+                        padding: EdgeInsets.only(
+                          bottom: fileAttachments.isNotEmpty ? 10 : 0,
+                        ),
+                        child: Column(
+                          children: voiceAttachments
+                              .asMap()
+                              .entries
+                              .map((entry) {
+                                final attachment = entry.value;
+                                return Padding(
+                                  padding: EdgeInsets.only(
+                                    bottom:
+                                        voiceAttachments.length > 1 ? 8 : 0,
+                                  ),
+                                  child: VoiceMessageBubble(
+                                    fileName: attachment.fileName,
+                                    sizeBytes: attachment.sizeBytes,
+                                    isMine: true,
+                                    duration: estimateAudioDurationFromSizeBytes(
+                                      attachment.sizeBytes,
+                                    ),
+                                    audioUrl: null,
+                                    onTap: onRetry,
+                                  ),
+                                );
+                              })
+                              .toList(growable: false),
+                        ),
+                      ),
                     if (fileAttachments.isNotEmpty)
                       Column(
                         children: fileAttachments
@@ -3514,58 +4055,60 @@ class _FailedMessageBubble extends StatelessWidget {
                             )
                             .toList(growable: false),
                       ),
-                    const SizedBox(height: 6),
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          DateFormat(
-                            'HH:mm',
-                          ).format(message.createdAt.toLocal()),
-                          style: Theme.of(
-                            context,
-                          ).textTheme.bodySmall?.copyWith(
-                            color: Colors.white70,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        InkWell(
-                          onTap: onRetry,
-                          borderRadius: BorderRadius.circular(999),
-                          child: const Padding(
-                            padding: EdgeInsets.all(2),
-                            child: Icon(
-                              Icons.error_outline_rounded,
-                              size: 18,
-                              color: Color(0xFFFFD6D6),
+                    if (!hasStandaloneVoice) ...[
+                      const SizedBox(height: 6),
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            DateFormat(
+                              'HH:mm',
+                            ).format(message.createdAt.toLocal()),
+                            style: Theme.of(
+                              context,
+                            ).textTheme.bodySmall?.copyWith(
+                              color: Colors.white70,
+                              fontWeight: FontWeight.w600,
                             ),
                           ),
-                        ),
-                        PopupMenuButton<String>(
-                          padding: EdgeInsets.zero,
-                          icon: const SizedBox.shrink(),
-                          onSelected: (value) {
-                            if (value == 'retry') {
-                              onRetry();
-                            } else if (value == 'delete') {
-                              onDelete();
-                            }
-                          },
-                          itemBuilder:
-                              (context) => [
-                                PopupMenuItem(
-                                  value: 'retry',
-                                  child: Text(strings.retry),
-                                ),
-                                PopupMenuItem(
-                                  value: 'delete',
-                                  child: Text(strings.delete),
-                                ),
-                              ],
-                        ),
-                      ],
-                    ),
+                          const SizedBox(width: 8),
+                          InkWell(
+                            onTap: onRetry,
+                            borderRadius: BorderRadius.circular(999),
+                            child: const Padding(
+                              padding: EdgeInsets.all(2),
+                              child: Icon(
+                                Icons.error_outline_rounded,
+                                size: 18,
+                                color: Color(0xFFFFD6D6),
+                              ),
+                            ),
+                          ),
+                          PopupMenuButton<String>(
+                            padding: EdgeInsets.zero,
+                            icon: const SizedBox.shrink(),
+                            onSelected: (value) {
+                              if (value == 'retry') {
+                                onRetry();
+                              } else if (value == 'delete') {
+                                onDelete();
+                              }
+                            },
+                            itemBuilder:
+                                (context) => [
+                                  PopupMenuItem(
+                                    value: 'retry',
+                                    child: Text(strings.retry),
+                                  ),
+                                  PopupMenuItem(
+                                    value: 'delete',
+                                    child: Text(strings.delete),
+                                  ),
+                                ],
+                          ),
+                        ],
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -3595,17 +4138,28 @@ class _LocalOutgoingMessageBubble extends StatelessWidget {
     final imageAttachments = message.attachments
         .where((attachment) => attachment.isImage)
         .toList(growable: false);
+    final voiceAttachments = message.attachments
+        .where((attachment) => attachment.isVoiceNote)
+        .toList(growable: false);
     final fileAttachments = message.attachments
-        .where((attachment) => !attachment.isImage)
+        .where((attachment) => !attachment.isImage && !attachment.isVoiceNote)
         .toList(growable: false);
     final hasTextOnlyBody =
         message.content.isNotEmpty &&
         imageAttachments.isEmpty &&
+        voiceAttachments.isEmpty &&
         fileAttachments.isEmpty;
     final hasStandaloneImage =
         message.replyToContent == null &&
         message.content.trim().isEmpty &&
         imageAttachments.isNotEmpty &&
+        voiceAttachments.isEmpty &&
+        fileAttachments.isEmpty;
+    final hasStandaloneVoice =
+        message.replyToContent == null &&
+        message.content.trim().isEmpty &&
+        voiceAttachments.isNotEmpty &&
+        imageAttachments.isEmpty &&
         fileAttachments.isEmpty;
 
     return LayoutBuilder(
@@ -3662,10 +4216,10 @@ class _LocalOutgoingMessageBubble extends StatelessWidget {
                 ),
                 child: Padding(
                   padding: EdgeInsets.fromLTRB(
-                    hasStandaloneImage ? 6 : 14,
-                    hasStandaloneImage ? 6 : 10,
-                    hasStandaloneImage ? 6 : 12,
-                    8,
+                    hasStandaloneImage ? 0 : 14,
+                    hasStandaloneImage ? 0 : 10,
+                    hasStandaloneImage ? 0 : 12,
+                    hasStandaloneImage ? 0 : 8,
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -3760,15 +4314,78 @@ class _LocalOutgoingMessageBubble extends StatelessWidget {
                             bottom: fileAttachments.isNotEmpty ? 10 : 0,
                           ),
                           child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
                             children: imageAttachments
                                 .map(
                                   (attachment) => Padding(
-                                    padding: const EdgeInsets.only(bottom: 8),
+                                    padding: EdgeInsets.only(
+                                      bottom:
+                                          imageAttachments.length > 1 ? 8 : 0,
+                                    ),
                                     child: _PendingImageAttachmentCard(
                                       attachment: attachment,
+                                      fullBleed: hasStandaloneImage,
+                                      footer:
+                                          hasStandaloneImage
+                                              ? Positioned(
+                                                right: 8,
+                                                bottom: 8,
+                                                child: _LocalOutgoingFooter(
+                                                  createdAt: message.createdAt,
+                                                  isFailed: message.isFailed,
+                                                ),
+                                              )
+                                              : null,
                                     ),
                                   ),
                                 )
+                                .toList(growable: false),
+                          ),
+                        ),
+                      if (voiceAttachments.isNotEmpty)
+                        Padding(
+                          padding: EdgeInsets.only(
+                            bottom: fileAttachments.isNotEmpty ? 10 : 0,
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: voiceAttachments
+                                .asMap()
+                                .entries
+                                .map((entry) {
+                                  final attachment = entry.value;
+                                  final isLast =
+                                      entry.key == voiceAttachments.length - 1;
+                                  return Padding(
+                                    padding: EdgeInsets.only(
+                                      bottom:
+                                          voiceAttachments.length > 1 ? 8 : 0,
+                                    ),
+                                    child: VoiceMessageBubble(
+                                      fileName: attachment.fileName,
+                                      sizeBytes: attachment.sizeBytes,
+                                      isMine: true,
+                                      duration:
+                                          estimateAudioDurationFromSizeBytes(
+                                            attachment.sizeBytes,
+                                          ),
+                                      audioUrl: null,
+                                      isPending: true,
+                                      uploadProgress: message.uploadProgress,
+                                      footer:
+                                          hasStandaloneVoice && isLast
+                                              ? Positioned(
+                                                right: 8,
+                                                bottom: 8,
+                                                child: _LocalOutgoingFooter(
+                                                  createdAt: message.createdAt,
+                                                  isFailed: message.isFailed,
+                                                ),
+                                              )
+                                              : null,
+                                    ),
+                                  );
+                                })
                                 .toList(growable: false),
                           ),
                         ),
@@ -3785,7 +4402,9 @@ class _LocalOutgoingMessageBubble extends StatelessWidget {
                               )
                               .toList(growable: false),
                         ),
-                      if (!hasTextOnlyBody) ...[
+                      if (!hasTextOnlyBody &&
+                          !hasStandaloneImage &&
+                          !hasStandaloneVoice) ...[
                         const SizedBox(height: 8),
                         Row(
                           children: [
@@ -4235,11 +4854,58 @@ class _LoadingMessagePlaceholder extends StatelessWidget {
 class _ImageAttachmentCard extends StatelessWidget {
   final ChatAttachmentModel attachment;
   final VoidCallback onTap;
+  final bool fullBleed;
+  final Widget? footer;
 
-  const _ImageAttachmentCard({required this.attachment, required this.onTap});
+  const _ImageAttachmentCard({
+    required this.attachment,
+    required this.onTap,
+    this.fullBleed = false,
+    this.footer,
+  });
 
   @override
   Widget build(BuildContext context) {
+    final image = CachedNetworkImage(
+      imageUrl: attachment.fileUrl,
+      fit: BoxFit.cover,
+      placeholder:
+          (_, __) => const ColoredBox(
+            color: Color(0x14000000),
+            child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+          ),
+      errorWidget:
+          (_, __, ___) => const ColoredBox(
+            color: Color(0x14000000),
+            child: Center(child: Icon(Icons.broken_image_rounded, size: 34)),
+          ),
+    );
+
+    if (fullBleed) {
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(20),
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: onTap,
+            child: SizedBox(
+              width: double.infinity,
+              child: AspectRatio(
+                aspectRatio: 1,
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    image,
+                    if (footer != null) footer!,
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
     return ClipRRect(
       borderRadius: BorderRadius.circular(20),
       child: Material(
@@ -4252,27 +4918,7 @@ class _ImageAttachmentCard extends StatelessWidget {
               maxWidth: 320,
               maxHeight: 360,
             ),
-            child: AspectRatio(
-              aspectRatio: 1,
-              child: CachedNetworkImage(
-                imageUrl: attachment.fileUrl,
-                fit: BoxFit.cover,
-                placeholder:
-                    (_, __) => const ColoredBox(
-                      color: Color(0x14000000),
-                      child: Center(
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      ),
-                    ),
-                errorWidget:
-                    (_, __, ___) => const ColoredBox(
-                      color: Color(0x14000000),
-                      child: Center(
-                        child: Icon(Icons.broken_image_rounded, size: 34),
-                      ),
-                    ),
-              ),
-            ),
+            child: AspectRatio(aspectRatio: 1, child: image),
           ),
         ),
       ),
@@ -4376,31 +5022,115 @@ class _FileAttachmentTile extends StatelessWidget {
 
 class _PendingImageAttachmentCard extends StatelessWidget {
   final _PendingAttachment attachment;
+  final VoidCallback? onRemove;
+  final bool fullBleed;
+  final Widget? footer;
 
-  const _PendingImageAttachmentCard({required this.attachment});
+  const _PendingImageAttachmentCard({
+    required this.attachment,
+    this.onRemove,
+    this.fullBleed = false,
+    this.footer,
+  });
 
   @override
   Widget build(BuildContext context) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(20),
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(
-          minWidth: 180,
-          maxWidth: 320,
-          maxHeight: 360,
+    final image = Image.memory(
+      attachment.bytes,
+      fit: BoxFit.cover,
+      errorBuilder:
+          (_, __, ___) => const ColoredBox(
+            color: Color(0x14000000),
+            child: Center(child: Icon(Icons.broken_image_rounded, size: 34)),
+          ),
+    );
+
+    if (fullBleed) {
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(18),
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: null,
+            child: SizedBox(
+              width: double.infinity,
+              child: AspectRatio(
+                aspectRatio: 1,
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    image,
+                    if (footer != null) footer!,
+                  ],
+                ),
+              ),
+            ),
+          ),
         ),
-        child: AspectRatio(
-          aspectRatio: 1,
-          child: Image.memory(
-            attachment.bytes,
-            fit: BoxFit.cover,
-            errorBuilder:
-                (_, __, ___) => const ColoredBox(
-                  color: Color(0x14000000),
-                  child: Center(
-                    child: Icon(Icons.broken_image_rounded, size: 34),
+      );
+    }
+
+    return ConstrainedBox(
+      constraints: const BoxConstraints(
+        minWidth: 160,
+        maxWidth: 220,
+      ),
+      child: AspectRatio(
+        aspectRatio: 1,
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(18),
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              image,
+              if (onRemove != null)
+                Positioned(
+                  top: 10,
+                  right: 10,
+                  child: Material(
+                    color: Colors.black.withValues(alpha: 0.42),
+                    shape: const CircleBorder(),
+                    child: InkWell(
+                      onTap: onRemove,
+                      customBorder: const CircleBorder(),
+                      child: const Padding(
+                        padding: EdgeInsets.all(7),
+                        child: Icon(
+                          Icons.close_rounded,
+                          size: 16,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
                   ),
                 ),
+              Positioned(
+                left: 10,
+                right: 10,
+                bottom: 10,
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.38),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 5,
+                    ),
+                    child: Text(
+                      attachment.fileName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
           ),
         ),
       ),
@@ -4561,15 +5291,24 @@ _AttachmentVisual _resolveAttachmentVisual({
 class _PendingAttachment {
   final String fileName;
   final Uint8List bytes;
+  final String contentType;
   final bool isImage;
+  final Duration? duration;
 
   const _PendingAttachment({
     required this.fileName,
     required this.bytes,
+    required this.contentType,
     required this.isImage,
+    this.duration,
   });
 
   int get sizeBytes => bytes.lengthInBytes;
+
+  bool get isVoice => contentType.toLowerCase().startsWith('audio/') ||
+      isAudioFileName(fileName);
+
+  bool get isVoiceNote => isVoice;
 }
 
 enum _LocalOutgoingMessageStatus { uploading, sending, failed }

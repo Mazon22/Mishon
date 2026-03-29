@@ -1,12 +1,8 @@
 import 'dart:async';
-import 'dart:typed_data';
-
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:image_picker/image_picker.dart';
-
 import 'package:mishon_app/core/constants/api_constants.dart';
 import 'package:mishon_app/core/localization/app_strings.dart';
 import 'package:mishon_app/core/models/auth_model.dart';
@@ -16,12 +12,15 @@ import 'package:mishon_app/core/repositories/auth_repository.dart';
 import 'package:mishon_app/core/settings/app_settings_provider.dart';
 import 'package:mishon_app/core/repositories/post_repository.dart';
 import 'package:mishon_app/core/repositories/social_repository.dart';
+import 'package:mishon_app/core/theme/app_theme.dart';
+import 'package:mishon_app/core/widgets/minimal_components.dart';
 import 'package:mishon_app/core/widgets/app_shell.dart';
 import 'package:mishon_app/core/widgets/app_toast.dart';
 import 'package:mishon_app/core/widgets/empty_posts_banner.dart';
 import 'package:mishon_app/core/widgets/fullscreen_image_screen.dart';
 import 'package:mishon_app/core/widgets/post_card.dart';
 import 'package:mishon_app/core/widgets/profile_media.dart';
+import 'package:mishon_app/core/widgets/report_dialog.dart';
 import 'package:mishon_app/core/widgets/states.dart';
 import 'package:mishon_app/features/auth/providers/auth_provider.dart';
 import 'package:mishon_app/features/chats/utils/chat_post_share.dart';
@@ -29,10 +28,10 @@ import 'package:mishon_app/features/chats/screens/chat_screen.dart';
 import 'package:mishon_app/features/comments/screens/comments_screen_args.dart';
 import 'package:mishon_app/features/feed/providers/feed_provider.dart';
 import 'package:mishon_app/features/profile/providers/profile_provider.dart';
-import 'package:mishon_app/features/profile/screens/profile_media_editor_screen.dart';
 import 'package:mishon_app/features/profile/screens/profile_settings_screen.dart';
 import 'package:mishon_app/features/profile/screens/profile_setup_screen.dart';
 import 'package:mishon_app/features/profile/widgets/follow_tab.dart';
+import 'package:mishon_app/features/profile/widgets/friends_tab.dart';
 
 const _kProfileMotionDuration = Duration(milliseconds: 240);
 const _kProfileTabBarHeight = 56.0;
@@ -53,11 +52,9 @@ class ProfileScreen extends ConsumerStatefulWidget {
 
 class _ProfileScreenState extends ConsumerState<ProfileScreen>
     with AutomaticKeepAliveClientMixin {
-  final _picker = ImagePicker();
-
   bool _isLoading = true;
   bool _isActionBusy = false;
-  bool _isMediaBusy = false;
+  final bool _isMediaBusy = false;
   String? _errorMessage;
   UserProfile? _profile;
   List<Post> _posts = const [];
@@ -115,7 +112,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
               );
       final shouldHidePosts =
           currentUserId != widget.userId &&
-          (profile.hasBlockedViewer || profile.isBlockedByViewer);
+          (profile.hasBlockedViewer ||
+              profile.isBlockedByViewer ||
+              !profile.canViewPosts);
       final posts =
           shouldHidePosts
               ? const <Post>[]
@@ -197,6 +196,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
         _profile = _profile!.copyWith(
           followersCount: response.followersCount,
           isFollowing: response.isFollowing,
+          hasPendingFollowRequest: response.isRequested,
+          canViewProfile: response.isFollowing || !response.isRequested,
+          canViewPosts: response.isFollowing || !response.isRequested,
         );
       });
     } on ApiException catch (e) {
@@ -227,6 +229,14 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
 
     if (_profile!.isBlockedByViewer) {
       _showSnackBar(AppStrings.of(context).youBlockedUser, isError: true);
+      return;
+    }
+
+    if (!_profile!.canSendMessages) {
+      _showSnackBar(
+        AppStrings.of(context).youCannotSendMessagesToThisUser,
+        isError: true,
+      );
       return;
     }
 
@@ -314,129 +324,6 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
     }
   }
 
-  Future<void> _pickAndEditMedia(ProfileMediaKind kind) async {
-    if (_profile == null || _isMediaBusy) {
-      return;
-    }
-
-    try {
-      final image = await _picker.pickImage(
-        source: ImageSource.gallery,
-        maxWidth: 2400,
-        maxHeight: 2400,
-        imageQuality: 90,
-      );
-
-      if (image == null || !mounted) {
-        return;
-      }
-
-      final bytes = await image.readAsBytes();
-      if (!mounted) {
-        return;
-      }
-
-      final result = await Navigator.of(context).push<ProfileMediaEditResult>(
-        MaterialPageRoute(
-          builder:
-              (_) => ProfileMediaEditorScreen(
-                imageBytes: bytes,
-                kind: kind,
-                initialScale:
-                    kind == ProfileMediaKind.avatar
-                        ? _profile!.avatarScale
-                        : _profile!.bannerScale,
-                initialOffsetX:
-                    kind == ProfileMediaKind.avatar
-                        ? _profile!.avatarOffsetX
-                        : _profile!.bannerOffsetX,
-                initialOffsetY:
-                    kind == ProfileMediaKind.avatar
-                        ? _profile!.avatarOffsetY
-                        : _profile!.bannerOffsetY,
-              ),
-        ),
-      );
-
-      if (result == null) {
-        return;
-      }
-
-      await _applyProfileMediaUpdate(
-        avatarBytes: kind == ProfileMediaKind.avatar ? result.bytes : null,
-        bannerBytes: kind == ProfileMediaKind.banner ? result.bytes : null,
-        avatarScale: kind == ProfileMediaKind.avatar ? result.scale : null,
-        avatarOffsetX: kind == ProfileMediaKind.avatar ? result.offsetX : null,
-        avatarOffsetY: kind == ProfileMediaKind.avatar ? result.offsetY : null,
-        bannerScale: kind == ProfileMediaKind.banner ? result.scale : null,
-        bannerOffsetX: kind == ProfileMediaKind.banner ? result.offsetX : null,
-        bannerOffsetY: kind == ProfileMediaKind.banner ? result.offsetY : null,
-      );
-    } catch (_) {
-      if (!mounted) {
-        return;
-      }
-      _showSnackBar(AppStrings.of(context).couldNotPrepareImage, isError: true);
-    }
-  }
-
-  Future<void> _applyProfileMediaUpdate({
-    Uint8List? avatarBytes,
-    Uint8List? bannerBytes,
-    double? avatarScale,
-    double? avatarOffsetX,
-    double? avatarOffsetY,
-    double? bannerScale,
-    double? bannerOffsetX,
-    double? bannerOffsetY,
-    bool removeAvatar = false,
-    bool removeBanner = false,
-  }) async {
-    if (_profile == null) {
-      return;
-    }
-
-    setState(() => _isMediaBusy = true);
-    try {
-      final updatedProfile = await ref
-          .read(authRepositoryProvider)
-          .updateProfileMedia(
-            avatarBytes: avatarBytes,
-            bannerBytes: bannerBytes,
-            avatarScale: avatarScale ?? _profile!.avatarScale,
-            avatarOffsetX: avatarOffsetX ?? _profile!.avatarOffsetX,
-            avatarOffsetY: avatarOffsetY ?? _profile!.avatarOffsetY,
-            bannerScale: bannerScale ?? _profile!.bannerScale,
-            bannerOffsetX: bannerOffsetX ?? _profile!.bannerOffsetX,
-            bannerOffsetY: bannerOffsetY ?? _profile!.bannerOffsetY,
-            removeAvatar: removeAvatar,
-            removeBanner: removeBanner,
-          );
-
-      if (!mounted) {
-        return;
-      }
-
-      setState(() => _profile = updatedProfile);
-      ref.invalidate(profileNotifierProvider);
-      ref.invalidate(feedNotifierProvider);
-      _showSnackBar(AppStrings.of(context).profileMediaUpdated);
-    } on ApiException catch (e) {
-      _showSnackBar(e.apiError.message, isError: true);
-    } on OfflineException catch (e) {
-      _showSnackBar(e.message, isError: true);
-    } catch (_) {
-      _showSnackBar(
-        AppStrings.of(context).couldNotUpdateProfileMedia,
-        isError: true,
-      );
-    } finally {
-      if (mounted) {
-        setState(() => _isMediaBusy = false);
-      }
-    }
-  }
-
   Future<void> _logout() async {
     await ref.read(authNotifierProvider.notifier).logout();
     if (!mounted) {
@@ -460,6 +347,36 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
 
   Future<void> _sharePostAsync(Post post) async {
     await sharePostToChat(context: context, ref: ref, post: post);
+  }
+
+  Future<void> _reportTarget({
+    required String targetType,
+    required int targetId,
+    required String title,
+  }) async {
+    final strings = AppStrings.of(context);
+    final draft = await showReportDialog(context, title: title);
+    if (draft == null) {
+      return;
+    }
+
+    try {
+      await ref
+          .read(socialRepositoryProvider)
+          .createReport(
+            targetType: targetType,
+            targetId: targetId,
+            reason: draft.reason,
+            customNote: draft.note,
+          );
+      _showSnackBar(strings.reportSubmitted);
+    } on ApiException catch (error) {
+      _showSnackBar(error.apiError.message, isError: true);
+    } on OfflineException catch (error) {
+      _showSnackBar(error.message, isError: true);
+    } catch (_) {
+      _showSnackBar(strings.operationError, isError: true);
+    }
   }
 
   List<Post> get _mediaPosts =>
@@ -554,20 +471,6 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                     left: 128,
                     bottom: -34,
                     child: _PresenceLabel(label: _formatPresenceLabel(profile)),
-                  ),
-                if (_isOwnProfile)
-                  Positioned(
-                    right: 18,
-                    bottom: 16,
-                    child: _HeaderGhostButton(
-                      icon: Icons.wallpaper_rounded,
-                      label: _isMediaBusy ? 'Saving...' : 'Change banner',
-                      onTap:
-                          _isMediaBusy
-                              ? null
-                              : () =>
-                                  _pickAndEditMedia(ProfileMediaKind.banner),
-                    ),
                   ),
               ],
             ),
@@ -670,16 +573,23 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                   spacing: 12,
                   runSpacing: 12,
                   children: [
-                    _StatCard(label: 'Posts', value: '${profile.postsCount}'),
-                    _StatCard(
-                      label: 'Followers',
-                      value: '${profile.followersCount}',
-                      onTap: () => _showFollowBottomSheet(context, true),
-                    ),
-                    _StatCard(
-                      label: 'Following',
+                    AppMetricCard(
                       value: '${profile.followingCount}',
-                      onTap: () => _showFollowBottomSheet(context, false),
+                      label: AppStrings.of(context).friends,
+                      accentColor: AppColors.profile,
+                      icon: Icons.people_alt_rounded,
+                    ),
+                    AppMetricCard(
+                      value: '${profile.followersCount}',
+                      label: AppStrings.of(context).followers,
+                      accentColor: AppColors.profile,
+                      icon: Icons.favorite_rounded,
+                    ),
+                    AppMetricCard(
+                      value: '${profile.followingCount}',
+                      label: AppStrings.of(context).following,
+                      accentColor: AppColors.profile,
+                      icon: Icons.person_rounded,
                     ),
                   ],
                 ),
@@ -758,6 +668,20 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
     BuildContext context,
     UserProfile profile,
   ) {
+    final strings = AppStrings.of(context);
+    final isBlocked = profile.hasBlockedViewer || profile.isBlockedByViewer;
+    final hasPendingRequest = profile.hasPendingFollowRequest;
+    final title =
+        isBlocked ? profile.username : strings.privateProfileLockedTitle;
+    final subtitle =
+        isBlocked
+            ? (profile.hasBlockedViewer
+                ? strings.userBlockedYou
+                : strings.youBlockedUser)
+            : hasPendingRequest
+            ? strings.followRequestPendingSubtitle
+            : strings.privateProfileLockedSubtitle;
+
     return RefreshIndicator(
       onRefresh: () => _loadProfile(),
       child: ListView(
@@ -833,8 +757,10 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                     borderRadius: BorderRadius.circular(20),
                   ),
                   child: Icon(
-                    profile.hasBlockedViewer
+                    isBlocked
                         ? Icons.block_rounded
+                        : hasPendingRequest
+                        ? Icons.hourglass_top_rounded
                         : Icons.lock_outline_rounded,
                     color: const Color(0xFF2A5BFF),
                     size: 30,
@@ -842,22 +768,49 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                 ),
                 const SizedBox(height: 16),
                 Text(
-                  profile.username,
+                  title,
                   style: Theme.of(context).textTheme.headlineSmall?.copyWith(
                     fontWeight: FontWeight.w800,
                   ),
                 ),
                 const SizedBox(height: 10),
                 Text(
-                  profile.hasBlockedViewer
-                      ? AppStrings.of(context).userBlockedYou
-                      : AppStrings.of(context).youBlockedUser,
+                  subtitle,
                   textAlign: TextAlign.center,
                   style: Theme.of(context).textTheme.bodyLarge?.copyWith(
                     color: const Color(0xFF63748D),
                     height: 1.45,
                   ),
                 ),
+                if (!isBlocked) ...[
+                  const SizedBox(height: 18),
+                  Wrap(
+                    spacing: 10,
+                    runSpacing: 10,
+                    alignment: WrapAlignment.center,
+                    children: [
+                      _PrimaryProfileButton(
+                        label:
+                            _isActionBusy
+                                ? strings.working
+                                : hasPendingRequest
+                                ? strings.cancelRequestAction
+                                : strings.follow,
+                        icon:
+                            hasPendingRequest
+                                ? Icons.close_rounded
+                                : Icons.person_add_alt_1_rounded,
+                        onTap: _isActionBusy ? null : _toggleFollow,
+                      ),
+                      if (profile.canSendMessages)
+                        _SecondaryProfileButton(
+                          label: strings.message,
+                          icon: Icons.chat_bubble_outline_rounded,
+                          onTap: _isActionBusy ? null : _openChat,
+                        ),
+                    ],
+                  ),
+                ],
               ],
             ),
           ),
@@ -891,7 +844,10 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
 
     final isRestrictedView =
         !_isOwnProfile &&
-        (_profile!.hasBlockedViewer || _profile!.isBlockedByViewer);
+        (_profile!.hasBlockedViewer ||
+            _profile!.isBlockedByViewer ||
+            !_profile!.canViewProfile ||
+            !_profile!.canViewPosts);
 
     if (isRestrictedView) {
       return _buildRestrictedProfileBody(context, _profile!);
@@ -951,7 +907,10 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                       leadingWidth: 60,
                       title:
                           innerBoxScrolled
-                              ? _CollapsedProfileTitle(profile: _profile!)
+                              ? _CollapsedProfileTitle(
+                                profile: _profile!,
+                                showVerifiedBadge: _isOwnProfile,
+                              )
                               : null,
                       titleSpacing: 10,
                       actions: _buildTopBarActions(),
@@ -964,25 +923,21 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                           isActionBusy: _isActionBusy,
                           isMediaBusy: _isMediaBusy,
                           onEditProfile: _showEditSheet,
-                          onChangeAvatar:
-                              _isOwnProfile
-                                  ? () =>
-                                      _pickAndEditMedia(ProfileMediaKind.avatar)
-                                  : null,
-                          onChangeBanner:
-                              _isOwnProfile
-                                  ? () =>
-                                      _pickAndEditMedia(ProfileMediaKind.banner)
-                                  : null,
+                          onChangeAvatar: null,
+                          onChangeBanner: null,
                           onOpenChat: _isOwnProfile ? null : _openChat,
                           onToggleFollow: _isOwnProfile ? null : _toggleFollow,
-                          onPostsTap:
-                              () =>
-                                  DefaultTabController.of(context).animateTo(0),
+                          onVerifyEmail:
+                              _isOwnProfile && !_profile!.emailVerified
+                                  ? () => context.push(
+                                    '/verify-email/pending?email=${Uri.encodeComponent(_profile!.email)}',
+                                  )
+                                  : null,
+                          onPostsTap: () => _showFollowBottomSheet(context, 1),
                           onFollowersTap:
-                              () => _showFollowBottomSheet(context, true),
+                              () => _showFollowBottomSheet(context, 0),
                           onFollowingTap:
-                              () => _showFollowBottomSheet(context, false),
+                              () => _showFollowBottomSheet(context, 2),
                           presenceLabel: _formatPresenceLabel(_profile!),
                         ),
                       ),
@@ -1002,6 +957,14 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                     onComment: _openComments,
                     onOpenProfile: _openAuthorProfile,
                     onShare: _sharePost,
+                    onReport:
+                        _isOwnProfile
+                            ? null
+                            : (post) => _reportTarget(
+                              targetType: 'Post',
+                              targetId: post.id,
+                              title: strings.reportTargetPostTitle,
+                            ),
                     onCreatePost:
                         _isOwnProfile ? () => context.go('/create-post') : null,
                   ),
@@ -1017,6 +980,12 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                     onComment: _openComments,
                     onOpenProfile: _openAuthorProfile,
                     onShare: _sharePost,
+                    onReport:
+                        (post) => _reportTarget(
+                          targetType: 'Post',
+                          targetId: post.id,
+                          title: strings.reportTargetPostTitle,
+                        ),
                   ),
                 ],
               ),
@@ -1040,12 +1009,33 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
 
     if (_isOwnProfile) {
       actions.insertAll(0, [
+        if (_profile != null && !_profile!.emailVerified)
+          _TopBarIconButton(
+            icon: Icons.mark_email_unread_outlined,
+            onTap:
+                () => context.push(
+                  '/verify-email/pending?email=${Uri.encodeComponent(_profile!.email)}',
+                ),
+          ),
         _TopBarIconButton(
           icon: Icons.settings_outlined,
           onTap: _showSettingsScreen,
         ),
         _TopBarIconButton(icon: Icons.logout_rounded, onTap: _showLogoutDialog),
       ]);
+    } else if (_profile != null) {
+      actions.insert(
+        0,
+        _TopBarIconButton(
+          icon: Icons.flag_outlined,
+          onTap:
+              () => _reportTarget(
+                targetType: 'User',
+                targetId: _profile!.id,
+                title: AppStrings.of(context).reportTargetUserTitle,
+              ),
+        ),
+      );
     }
 
     return actions;
@@ -1056,14 +1046,22 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
   }
 
   void _openComments(Post post) {
+    if (!post.canComment) {
+      _showSnackBar(
+        AppStrings.of(context).commentPrivacySubtitle,
+        isError: true,
+      );
+      return;
+    }
     context.push(
       '/comments',
       extra: CommentsScreenArgs(postId: post.id, postUserId: post.userId),
     );
   }
 
-  void _showFollowBottomSheet(BuildContext context, bool showFollowers) {
+  void _showFollowBottomSheet(BuildContext context, int initialIndex) {
     final strings = AppStrings.of(context);
+    final safeInitialIndex = initialIndex.clamp(0, 2).toInt();
 
     showModalBottomSheet(
       context: context,
@@ -1076,13 +1074,14 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
             expand: false,
             builder:
                 (_, __) => DefaultTabController(
-                  length: 2,
-                  initialIndex: showFollowers ? 0 : 1,
+                  length: 3,
+                  initialIndex: safeInitialIndex,
                   child: Column(
                     children: [
                       TabBar(
                         tabs: [
                           Tab(text: strings.followers),
+                          Tab(text: strings.friends),
                           Tab(text: strings.following),
                         ],
                       ),
@@ -1093,6 +1092,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                               userId: widget.userId,
                               isFollowersTab: true,
                             ),
+                            const FriendsTab(),
                             FollowTab(
                               userId: widget.userId,
                               isFollowersTab: false,
@@ -1227,6 +1227,7 @@ class _ProfileHeader extends StatelessWidget {
   final VoidCallback? onChangeBanner;
   final VoidCallback? onOpenChat;
   final VoidCallback? onToggleFollow;
+  final VoidCallback? onVerifyEmail;
   final VoidCallback onPostsTap;
   final VoidCallback onFollowersTap;
   final VoidCallback onFollowingTap;
@@ -1242,6 +1243,7 @@ class _ProfileHeader extends StatelessWidget {
     required this.onChangeBanner,
     required this.onOpenChat,
     required this.onToggleFollow,
+    required this.onVerifyEmail,
     required this.onPostsTap,
     required this.onFollowersTap,
     required this.onFollowingTap,
@@ -1256,13 +1258,17 @@ class _ProfileHeader extends StatelessWidget {
     final isCompactHeader = width < 700;
     final isCompactControls = width < 900;
     final handle = '@${profile.username.toLowerCase().replaceAll(' ', '')}';
+    final displayName =
+        (profile.displayName?.trim().isNotEmpty ?? false)
+            ? profile.displayName!.trim()
+            : profile.username;
     final bio = (profile.aboutMe ?? '').trim();
     final isFollowing = profile.isFollowing ?? false;
+    final hasPendingRequest = profile.hasPendingFollowRequest;
     final bannerHeight = isCompactHeader ? 156.0 : 180.0;
     final avatarOverlap = isCompactHeader ? -40.0 : -48.0;
     final contentTopPadding = isCompactHeader ? 52.0 : 60.0;
     final sectionSpacing = isCompactHeader ? 12.0 : 16.0;
-    final actionBottomSpacing = isCompactHeader ? 10.0 : 14.0;
 
     return Container(
       decoration: const BoxDecoration(
@@ -1343,7 +1349,7 @@ class _ProfileHeader extends StatelessWidget {
                                     offsetX: profile.avatarOffsetX,
                                     offsetY: profile.avatarOffsetY,
                                     isOnline: profile.isOnline,
-                                    onTap: onChangeAvatar,
+                                    onTap: null,
                                   ),
                                 ),
                               ),
@@ -1374,20 +1380,6 @@ class _ProfileHeader extends StatelessWidget {
                                   ),
                                 ),
                               ),
-                              if (onChangeBanner != null)
-                                Positioned(
-                                  right: 16,
-                                  bottom: 16,
-                                  child: _GlassPillButton(
-                                    icon: Icons.wallpaper_rounded,
-                                    label:
-                                        isMediaBusy
-                                            ? strings.saving
-                                            : strings.changeBanner,
-                                    compact: isCompactControls,
-                                    onTap: isMediaBusy ? null : onChangeBanner,
-                                  ),
-                                ),
                             ],
                           ),
                         ),
@@ -1399,174 +1391,288 @@ class _ProfileHeader extends StatelessWidget {
                               18,
                               18,
                             ),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                LayoutBuilder(
-                                  builder: (context, constraints) {
-                                    final isCompact =
-                                        constraints.maxWidth < 430;
-                                    final identity = Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        Text(
-                                          profile.username,
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                          style: Theme.of(
-                                            context,
-                                          ).textTheme.headlineSmall?.copyWith(
-                                            fontWeight: FontWeight.w900,
-                                            letterSpacing: -0.8,
-                                          ),
-                                        ),
-                                        const SizedBox(height: 4),
-                                        Text(
-                                          handle,
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                          style: Theme.of(
-                                            context,
-                                          ).textTheme.bodyMedium?.copyWith(
-                                            color: const Color(0xFF607089),
-                                            fontWeight: FontWeight.w600,
-                                          ),
-                                        ),
-                                      ],
-                                    );
-
-                                    if (!isOwnProfile || !isCompact) {
-                                      return Row(
+                            child: SingleChildScrollView(
+                              physics: const BouncingScrollPhysics(),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  LayoutBuilder(
+                                    builder: (context, constraints) {
+                                      final isCompact =
+                                          constraints.maxWidth < 430;
+                                      final identity = Column(
                                         crossAxisAlignment:
                                             CrossAxisAlignment.start,
                                         children: [
-                                          Expanded(child: identity),
-                                          if (isOwnProfile) ...[
-                                            const SizedBox(width: 12),
-                                            _PrimaryProfileButton(
-                                              label: strings.editProfile,
-                                              icon: Icons.edit_outlined,
-                                              compact: isCompactControls,
-                                              onTap: onEditProfile,
+                                          Text(
+                                            displayName,
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: Theme.of(
+                                              context,
+                                            ).textTheme.headlineSmall?.copyWith(
+                                              fontWeight: FontWeight.w900,
+                                              letterSpacing: -0.8,
                                             ),
-                                          ],
+                                          ),
+                                          const SizedBox(height: 4),
+                                          Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              Flexible(
+                                                child: Text(
+                                                  handle,
+                                                  maxLines: 1,
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
+                                                  style: Theme.of(
+                                                    context,
+                                                  ).textTheme.bodyMedium
+                                                      ?.copyWith(
+                                                        color: const Color(
+                                                          0xFF607089,
+                                                        ),
+                                                        fontWeight:
+                                                            FontWeight.w600,
+                                                      ),
+                                                ),
+                                              ),
+                                              if (isOwnProfile) ...[
+                                                const SizedBox(width: 6),
+                                                const AppVerifiedBadge(size: 16),
+                                              ],
+                                            ],
+                                          ),
                                         ],
                                       );
-                                    }
 
-                                    return Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        identity,
-                                        const SizedBox(height: 12),
-                                        _PrimaryProfileButton(
-                                          label: strings.editProfile,
-                                          icon: Icons.edit_outlined,
-                                          compact: isCompactControls,
-                                          onTap: onEditProfile,
-                                        ),
-                                      ],
-                                    );
-                                  },
-                                ),
-                                if (bio.isNotEmpty) ...[
-                                  SizedBox(height: sectionSpacing),
-                                  Text(
-                                    bio,
-                                    style: Theme.of(
-                                      context,
-                                    ).textTheme.bodyMedium?.copyWith(
-                                      color: const Color(0xFF2D3C54),
-                                      height: 1.45,
+                                      if (!isOwnProfile || !isCompact) {
+                                        if (!isOwnProfile) {
+                                          return Row(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              Expanded(child: identity),
+                                              const SizedBox(width: 12),
+                                              Column(
+                                                crossAxisAlignment:
+                                                    CrossAxisAlignment.end,
+                                                children: [
+                                                  _SecondaryProfileButton(
+                                                    label: strings.message,
+                                                    icon:
+                                                        Icons
+                                                            .chat_bubble_outline_rounded,
+                                                    compact: isCompactControls,
+                                                    onTap:
+                                                        isActionBusy
+                                                            ? null
+                                                            : onOpenChat,
+                                                  ),
+                                                  const SizedBox(height: 10),
+                                                  _PrimaryProfileButton(
+                                                    label:
+                                                        isActionBusy
+                                                            ? strings.working
+                                                            : hasPendingRequest
+                                                            ? strings
+                                                                .requestPendingLabel
+                                                            : isFollowing
+                                                            ? strings
+                                                                .followingLabel
+                                                            : strings.follow,
+                                                    icon:
+                                                        isActionBusy
+                                                            ? Icons
+                                                                .autorenew_rounded
+                                                            : hasPendingRequest
+                                                            ? Icons
+                                                                .hourglass_top_rounded
+                                                            : isFollowing
+                                                            ? Icons
+                                                                .check_rounded
+                                                            : Icons
+                                                                .person_add_alt_1_rounded,
+                                                    onTap:
+                                                        isActionBusy
+                                                            ? null
+                                                            : onToggleFollow,
+                                                    active:
+                                                        isFollowing ||
+                                                        hasPendingRequest,
+                                                    compact: isCompactControls,
+                                                  ),
+                                                ],
+                                              ),
+                                            ],
+                                          );
+                                        }
+
+                                        return Row(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Expanded(child: identity),
+                                            if (isOwnProfile) ...[
+                                              const SizedBox(width: 12),
+                                              _PrimaryProfileButton(
+                                                label: strings.editProfile,
+                                                icon: Icons.edit_outlined,
+                                                compact: isCompactControls,
+                                                onTap: onEditProfile,
+                                              ),
+                                            ],
+                                          ],
+                                        );
+                                      }
+
+                                      return Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          identity,
+                                          const SizedBox(height: 12),
+                                          _PrimaryProfileButton(
+                                            label: strings.editProfile,
+                                            icon: Icons.edit_outlined,
+                                            compact: isCompactControls,
+                                            onTap: onEditProfile,
+                                          ),
+                                        ],
+                                      );
+                                    },
+                                  ),
+                                  if (bio.isNotEmpty) ...[
+                                    SizedBox(height: sectionSpacing),
+                                    Text(
+                                      bio,
+                                      style: Theme.of(
+                                        context,
+                                      ).textTheme.bodyMedium?.copyWith(
+                                        color: const Color(0xFF2D3C54),
+                                        height: 1.45,
+                                      ),
                                     ),
-                                  ),
-                                ],
-                                SizedBox(height: sectionSpacing),
-                                if (!isOwnProfile) ...[
-                                  Wrap(
-                                    spacing: 10,
-                                    runSpacing: isCompactHeader ? 8 : 10,
-                                    children: [
-                                      _SecondaryProfileButton(
-                                        label: strings.message,
-                                        icon: Icons.chat_bubble_outline_rounded,
-                                        compact: isCompactControls,
-                                        onTap: isActionBusy ? null : onOpenChat,
+                                  ],
+                                  if (isOwnProfile &&
+                                      !profile.emailVerified) ...[
+                                    SizedBox(height: sectionSpacing),
+                                    Container(
+                                      padding: const EdgeInsets.all(14),
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFFFFF4DB),
+                                        borderRadius: BorderRadius.circular(20),
+                                        border: Border.all(
+                                          color: const Color(0xFFFFD78C),
+                                        ),
                                       ),
-                                      _PrimaryProfileButton(
-                                        label:
-                                            isActionBusy
-                                                ? strings.working
-                                                : isFollowing
-                                                ? strings.followingLabel
-                                                : strings.follow,
-                                        icon:
-                                            isActionBusy
-                                                ? Icons.autorenew_rounded
-                                                : isFollowing
-                                                ? Icons.check_rounded
-                                                : Icons
-                                                    .person_add_alt_1_rounded,
-                                        onTap:
-                                            isActionBusy
-                                                ? null
-                                                : onToggleFollow,
-                                        active: isFollowing,
-                                        compact: isCompactControls,
+                                      child: Row(
+                                        children: [
+                                          const Icon(
+                                            Icons.mark_email_unread_outlined,
+                                            color: Color(0xFFAF6A00),
+                                          ),
+                                          const SizedBox(width: 12),
+                                          Expanded(
+                                            child: Column(
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.start,
+                                              children: [
+                                                Text(
+                                                  strings
+                                                      .verifyEmailReminderTitle,
+                                                  style: Theme.of(context)
+                                                      .textTheme
+                                                      .titleSmall
+                                                      ?.copyWith(
+                                                        fontWeight:
+                                                            FontWeight.w800,
+                                                      ),
+                                                ),
+                                                const SizedBox(height: 4),
+                                                Text(
+                                                  strings
+                                                      .verifyEmailReminderSubtitle,
+                                                  style: Theme.of(context)
+                                                      .textTheme
+                                                      .bodySmall
+                                                      ?.copyWith(
+                                                        color: const Color(
+                                                          0xFF6D5A2D,
+                                                        ),
+                                                      ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                          const SizedBox(width: 8),
+                                          FilledButton.tonal(
+                                            onPressed: onVerifyEmail,
+                                            child: Text(
+                                              strings.verifyEmailAction,
+                                            ),
+                                          ),
+                                        ],
                                       ),
-                                    ],
-                                  ),
-                                  SizedBox(height: actionBottomSpacing),
-                                ],
-                                LayoutBuilder(
-                                  builder: (context, constraints) {
-                                    final spacing =
-                                        constraints.maxWidth < 720 ? 8.0 : 10.0;
-                                    final scaleFactor = (constraints.maxWidth /
-                                            420)
-                                        .clamp(0.72, 1.0);
+                                    ),
+                                  ],
+                                  SizedBox(height: sectionSpacing),
+                                  LayoutBuilder(
+                                    builder: (context, constraints) {
+                                      final spacing =
+                                          constraints.maxWidth < 720
+                                              ? 8.0
+                                              : 10.0;
+                                      final scaleFactor =
+                                          (constraints.maxWidth / 420).clamp(
+                                            0.72,
+                                            1.0,
+                                          );
 
-                                    return Row(
-                                      children: [
-                                        Expanded(
-                                          child: _MetricCard(
-                                            label: strings.posts,
-                                            value: '${profile.postsCount}',
-                                            accent: colorScheme.primary,
-                                            compact: scaleFactor < 0.94,
-                                            scaleFactor: scaleFactor,
-                                            onTap: onPostsTap,
+                                      return Row(
+                                        children: [
+                                          Expanded(
+                                            child: _MetricCard(
+                                              label: strings.friends,
+                                              value:
+                                                  '${profile.followingCount}',
+                                              accent: colorScheme.primary,
+                                              compact: scaleFactor < 0.94,
+                                              scaleFactor: scaleFactor,
+                                              onTap: onPostsTap,
+                                            ),
                                           ),
-                                        ),
-                                        SizedBox(width: spacing),
-                                        Expanded(
-                                          child: _MetricCard(
-                                            label: strings.followers,
-                                            value: '${profile.followersCount}',
-                                            accent: const Color(0xFF1B8D64),
-                                            compact: scaleFactor < 0.94,
-                                            scaleFactor: scaleFactor,
-                                            onTap: onFollowersTap,
+                                          SizedBox(width: spacing),
+                                          Expanded(
+                                            child: _MetricCard(
+                                              label: strings.followers,
+                                              value:
+                                                  '${profile.followersCount}',
+                                              accent: const Color(0xFF1B8D64),
+                                              compact: scaleFactor < 0.94,
+                                              scaleFactor: scaleFactor,
+                                              onTap: onFollowersTap,
+                                            ),
                                           ),
-                                        ),
-                                        SizedBox(width: spacing),
-                                        Expanded(
-                                          child: _MetricCard(
-                                            label: strings.following,
-                                            value: '${profile.followingCount}',
-                                            accent: const Color(0xFF8B4DFF),
-                                            compact: scaleFactor < 0.94,
-                                            scaleFactor: scaleFactor,
-                                            onTap: onFollowingTap,
+                                          SizedBox(width: spacing),
+                                          Expanded(
+                                            child: _MetricCard(
+                                              label: strings.following,
+                                              value:
+                                                  '${profile.followingCount}',
+                                              accent: const Color(0xFF8B4DFF),
+                                              compact: scaleFactor < 0.94,
+                                              scaleFactor: scaleFactor,
+                                              onTap: onFollowingTap,
+                                            ),
                                           ),
-                                        ),
-                                      ],
-                                    );
-                                  },
-                                ),
-                              ],
+                                        ],
+                                      );
+                                    },
+                                  ),
+                                ],
+                              ),
                             ),
                           ),
                         ),
@@ -1592,6 +1698,7 @@ class _ProfilePostsTab extends StatelessWidget {
   final void Function(Post post) onComment;
   final void Function(Post post) onOpenProfile;
   final void Function(Post post) onShare;
+  final void Function(Post post)? onReport;
   final VoidCallback? onCreatePost;
 
   const _ProfilePostsTab({
@@ -1603,6 +1710,7 @@ class _ProfilePostsTab extends StatelessWidget {
     required this.onComment,
     required this.onOpenProfile,
     required this.onShare,
+    required this.onReport,
     required this.onCreatePost,
   });
 
@@ -1639,6 +1747,8 @@ class _ProfilePostsTab extends StatelessWidget {
                       onShare: () => onShare(post),
                       onOpenProfile: () => onOpenProfile(post),
                       onDelete: isOwnProfile ? () => onDelete(post.id) : null,
+                      onReport:
+                          !isOwnProfile ? () => onReport?.call(post) : null,
                     ),
                   );
                 }, childCount: posts.length),
@@ -1701,6 +1811,7 @@ class _ProfileLikesTab extends StatelessWidget {
   final void Function(Post post) onComment;
   final void Function(Post post) onOpenProfile;
   final void Function(Post post) onShare;
+  final void Function(Post post)? onReport;
 
   const _ProfileLikesTab({
     required this.posts,
@@ -1709,6 +1820,7 @@ class _ProfileLikesTab extends StatelessWidget {
     required this.onComment,
     required this.onOpenProfile,
     required this.onShare,
+    this.onReport,
   });
 
   @override
@@ -1740,6 +1852,7 @@ class _ProfileLikesTab extends StatelessWidget {
                       onComment: () => onComment(post),
                       onShare: () => onShare(post),
                       onOpenProfile: () => onOpenProfile(post),
+                      onReport: onReport == null ? null : () => onReport!(post),
                     ),
                   );
                 }, childCount: posts.length),
@@ -1789,6 +1902,7 @@ class _ProfilePostCard extends StatelessWidget {
   final VoidCallback onShare;
   final VoidCallback onOpenProfile;
   final VoidCallback? onDelete;
+  final VoidCallback? onReport;
 
   const _ProfilePostCard({
     required this.post,
@@ -1798,6 +1912,7 @@ class _ProfilePostCard extends StatelessWidget {
     required this.onShare,
     required this.onOpenProfile,
     this.onDelete,
+    this.onReport,
   });
 
   @override
@@ -1904,17 +2019,35 @@ class _ProfilePostCard extends StatelessWidget {
                         ),
                       ),
                     ),
-                    if (onDelete != null)
-                      Material(
-                        color: Colors.transparent,
-                        clipBehavior: Clip.antiAlias,
-                        child: InkWell(
-                          borderRadius: BorderRadius.circular(14),
-                          onTap: onDelete,
-                          child: const Padding(
-                            padding: EdgeInsets.all(8),
-                            child: Icon(Icons.more_horiz_rounded),
-                          ),
+                    if (onDelete != null || onReport != null)
+                      PopupMenuButton<String>(
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        onSelected: (value) {
+                          switch (value) {
+                            case 'delete':
+                              onDelete?.call();
+                            case 'report':
+                              onReport?.call();
+                          }
+                        },
+                        itemBuilder:
+                            (context) => <PopupMenuEntry<String>>[
+                              if (onReport != null)
+                                PopupMenuItem<String>(
+                                  value: 'report',
+                                  child: Text(strings.reportPostAction),
+                                ),
+                              if (onDelete != null)
+                                PopupMenuItem<String>(
+                                  value: 'delete',
+                                  child: Text(strings.deletePost),
+                                ),
+                            ],
+                        child: const Padding(
+                          padding: EdgeInsets.all(8),
+                          child: Icon(Icons.more_horiz_rounded),
                         ),
                       ),
                   ],
@@ -2353,7 +2486,7 @@ class _ProfileTabBar extends StatelessWidget implements PreferredSizeWidget {
               indicator: UnderlineTabIndicator(
                 borderSide: const BorderSide(
                   width: 3,
-                  color: Color(0xFF1D4ED8),
+                  color: Color(0xFF6F66FF),
                 ),
                 insets: EdgeInsets.symmetric(horizontal: indicatorInset),
               ),
@@ -2392,11 +2525,19 @@ class _ProfileTabBar extends StatelessWidget implements PreferredSizeWidget {
 
 class _CollapsedProfileTitle extends StatelessWidget {
   final UserProfile profile;
+  final bool showVerifiedBadge;
 
-  const _CollapsedProfileTitle({required this.profile});
+  const _CollapsedProfileTitle({
+    required this.profile,
+    required this.showVerifiedBadge,
+  });
 
   @override
   Widget build(BuildContext context) {
+    final displayName =
+        (profile.displayName?.trim().isNotEmpty ?? false)
+            ? profile.displayName!.trim()
+            : profile.username;
     return Row(
       children: [
         AppAvatar(
@@ -2414,7 +2555,7 @@ class _CollapsedProfileTitle extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             children: [
               Text(
-                profile.username,
+                displayName,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(
@@ -2422,11 +2563,25 @@ class _CollapsedProfileTitle extends StatelessWidget {
                   color: Color(0xFF1B283C),
                 ),
               ),
-              Text(
-                '@${profile.username.toLowerCase().replaceAll(' ', '')}',
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontSize: 12, color: Color(0xFF728198)),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Flexible(
+                    child: Text(
+                      '@${profile.username.toLowerCase().replaceAll(' ', '')}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: Color(0xFF728198),
+                      ),
+                    ),
+                  ),
+                  if (showVerifiedBadge) ...[
+                    const SizedBox(width: 6),
+                    const AppVerifiedBadge(size: 14),
+                  ],
+                ],
               ),
             ],
           ),
@@ -2463,59 +2618,6 @@ class _TopBarIconButton extends StatelessWidget {
   }
 }
 
-class _GlassPillButton extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final VoidCallback? onTap;
-  final bool compact;
-
-  const _GlassPillButton({
-    required this.icon,
-    required this.label,
-    required this.onTap,
-    this.compact = false,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: Colors.white.withValues(alpha: 0.14),
-      borderRadius: BorderRadius.circular(999),
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(999),
-        child: Padding(
-          padding: EdgeInsets.symmetric(
-            horizontal: compact ? 12 : 14,
-            vertical: compact ? 8 : 10,
-          ),
-          child: FittedBox(
-            fit: BoxFit.scaleDown,
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(icon, color: Colors.white, size: compact ? 16 : 18),
-                SizedBox(width: compact ? 6 : 8),
-                Text(
-                  label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w700,
-                    fontSize: compact ? 14 : 16,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 class _PrimaryProfileButton extends StatelessWidget {
   final String label;
   final IconData icon;
@@ -2536,12 +2638,14 @@ class _PrimaryProfileButton extends StatelessWidget {
     return AnimatedContainer(
       duration: _kProfileMotionDuration,
       decoration: BoxDecoration(
-        color: active ? const Color(0xFF17315A) : const Color(0xFF1D4ED8),
+        color:
+            active
+                ? AppColors.profile
+                : AppColors.profile.withValues(alpha: 0.92),
         borderRadius: BorderRadius.circular(18),
         boxShadow: [
           BoxShadow(
-            color: (active ? const Color(0xFF17315A) : const Color(0xFF1D4ED8))
-                .withValues(alpha: 0.18),
+            color: AppColors.profile.withValues(alpha: 0.18),
             blurRadius: 18,
             offset: const Offset(0, 10),
           ),
@@ -2603,7 +2707,7 @@ class _SecondaryProfileButton extends StatelessWidget {
     return AnimatedContainer(
       duration: _kProfileMotionDuration,
       decoration: BoxDecoration(
-        color: const Color(0xFFF3F6FB),
+        color: AppColors.profile.withValues(alpha: 0.08),
         borderRadius: BorderRadius.circular(18),
       ),
       child: Material(
@@ -2622,18 +2726,14 @@ class _SecondaryProfileButton extends StatelessWidget {
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(
-                    icon,
-                    color: const Color(0xFF17315A),
-                    size: compact ? 16 : 18,
-                  ),
+                  Icon(icon, color: AppColors.profile, size: compact ? 16 : 18),
                   SizedBox(width: compact ? 6 : 8),
                   Text(
                     label,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                      color: const Color(0xFF17315A),
+                      color: AppColors.profile,
                       fontWeight: FontWeight.w800,
                       fontSize: compact ? 14 : 16,
                     ),
@@ -2816,98 +2916,6 @@ class _ProfileTabEmptyState extends StatelessWidget {
             ),
           ],
         ],
-      ),
-    );
-  }
-}
-
-class _StatCard extends StatelessWidget {
-  final String label;
-  final String value;
-  final VoidCallback? onTap;
-
-  const _StatCard({required this.label, required this.value, this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    final content = Container(
-      constraints: const BoxConstraints(minWidth: 110),
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF4F7FF),
-        borderRadius: BorderRadius.circular(22),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            value,
-            style: Theme.of(context).textTheme.titleLarge?.copyWith(
-              fontWeight: FontWeight.w900,
-              letterSpacing: -0.4,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            label,
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-              color: const Color(0xFF61728B),
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-        ],
-      ),
-    );
-
-    if (onTap == null) {
-      return content;
-    }
-
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(22),
-      child: content,
-    );
-  }
-}
-
-class _HeaderGhostButton extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final VoidCallback? onTap;
-
-  const _HeaderGhostButton({
-    required this.icon,
-    required this.label,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: Colors.white.withValues(alpha: 0.14),
-      borderRadius: BorderRadius.circular(999),
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(999),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(icon, color: Colors.white, size: 18),
-              const SizedBox(width: 8),
-              Text(
-                label,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ],
-          ),
-        ),
       ),
     );
   }

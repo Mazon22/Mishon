@@ -4,8 +4,13 @@ import 'package:go_router/go_router.dart';
 import 'package:mishon_app/core/localization/app_strings.dart';
 import 'package:mishon_app/core/navigation/main_navigation_shell.dart';
 import 'package:mishon_app/core/providers/app_bootstrap_provider.dart';
+import 'package:mishon_app/features/auth/screens/forgot_password_screen.dart';
 import 'package:mishon_app/features/auth/screens/login_screen.dart';
+import 'package:mishon_app/features/auth/screens/onboarding_screen.dart';
 import 'package:mishon_app/features/auth/screens/register_screen.dart';
+import 'package:mishon_app/features/auth/screens/reset_password_screen.dart';
+import 'package:mishon_app/features/auth/screens/verify_email_pending_screen.dart';
+import 'package:mishon_app/features/auth/screens/verify_email_result_screen.dart';
 import 'package:mishon_app/features/chats/screens/chat_screen.dart';
 import 'package:mishon_app/features/chats/screens/chats_overview_screen.dart';
 import 'package:mishon_app/features/comments/screens/comments_screen_args.dart';
@@ -15,7 +20,11 @@ import 'package:mishon_app/features/friends/screens/friends_overview_screen.dart
 import 'package:mishon_app/features/notifications/screens/notifications_screen.dart';
 import 'package:mishon_app/features/people/screens/people_overview_screen.dart';
 import 'package:mishon_app/features/post/screens/create_post_screen.dart';
+import 'package:mishon_app/features/profile/screens/profile_settings_screen.dart';
+import 'package:mishon_app/features/profile/screens/follow_requests_screen.dart';
+import 'package:mishon_app/features/profile/screens/privacy_settings_screen.dart';
 import 'package:mishon_app/features/profile/screens/profile_screen.dart';
+import 'package:mishon_app/features/profile/screens/sessions_management_screen.dart';
 
 final _rootNavigatorKey = GlobalKey<NavigatorState>(debugLabel: 'root');
 final _feedNavigatorKey = GlobalKey<NavigatorState>(debugLabel: 'feedBranch');
@@ -35,21 +44,21 @@ final goRouterProvider = Provider<GoRouter>((ref) {
 
   return GoRouter(
     navigatorKey: _rootNavigatorKey,
-    initialLocation: '/feed',
+    initialLocation: '/',
     redirect: (context, state) {
-      final isAuthRoute =
-          state.matchedLocation == '/login' ||
-          state.matchedLocation == '/register';
+      final location = state.matchedLocation;
+      final isPublicRoute = _isPublicRoute(location);
+      final isAuthEntryRoute = location == '/login' || location == '/register';
 
-      if (!isAuthenticated && !isAuthRoute) {
+      if (!isAuthenticated && !isPublicRoute) {
         return '/login';
       }
 
-      if (isAuthenticated && isAuthRoute) {
+      if (isAuthenticated && isAuthEntryRoute) {
         return '/feed';
       }
 
-      if (state.matchedLocation == '/') {
+      if (location == '/') {
         return isAuthenticated ? '/feed' : '/login';
       }
 
@@ -73,6 +82,62 @@ final goRouterProvider = Provider<GoRouter>((ref) {
             (context, state) => _buildTelegramRoutePage(
               state: state,
               child: const RegisterScreen(),
+            ),
+      ),
+      GoRoute(
+        path: '/forgot-password',
+        name: 'forgotPassword',
+        pageBuilder:
+            (context, state) => _buildTelegramRoutePage(
+              state: state,
+              child: const ForgotPasswordScreen(),
+            ),
+      ),
+      GoRoute(
+        path: '/reset-password',
+        name: 'resetPassword',
+        pageBuilder: (context, state) {
+          final token =
+              state.uri.queryParameters['token'] ??
+              state.uri.queryParameters['code'];
+          return _buildTelegramRoutePage(
+            state: state,
+            child: ResetPasswordScreen(token: token),
+          );
+        },
+      ),
+      GoRoute(
+        path: '/verify-email',
+        name: 'verifyEmail',
+        pageBuilder: (context, state) {
+          final token =
+              state.uri.queryParameters['token'] ??
+              state.uri.queryParameters['code'];
+          return _buildTelegramRoutePage(
+            state: state,
+            child: VerifyEmailResultScreen(token: token),
+          );
+        },
+      ),
+      GoRoute(
+        path: '/verify-email/pending',
+        name: 'verifyEmailPending',
+        pageBuilder: (context, state) {
+          final email = state.uri.queryParameters['email'] ?? '';
+          return _buildTelegramRoutePage(
+            state: state,
+            child: VerifyEmailPendingScreen(email: email),
+          );
+        },
+      ),
+      GoRoute(
+        path: '/onboarding',
+        name: 'onboarding',
+        parentNavigatorKey: _rootNavigatorKey,
+        pageBuilder:
+            (context, state) => _buildTelegramRoutePage(
+              state: state,
+              child: const OnboardingScreen(),
             ),
       ),
       StatefulShellRoute(
@@ -174,6 +239,17 @@ final goRouterProvider = Provider<GoRouter>((ref) {
         },
       ),
       GoRoute(
+        path: '/chat/:conversationId',
+        name: 'chatById',
+        parentNavigatorKey: _rootNavigatorKey,
+        pageBuilder: (context, state) {
+          return _buildTelegramRoutePage(
+            state: state,
+            child: ChatScreen(args: _chatArgsFromState(state)),
+          );
+        },
+      ),
+      GoRoute(
         path: '/profile/:id',
         name: 'profile',
         parentNavigatorKey: _rootNavigatorKey,
@@ -208,6 +284,17 @@ final goRouterProvider = Provider<GoRouter>((ref) {
         },
       ),
       GoRoute(
+        path: '/comments/:postId',
+        name: 'commentsByPost',
+        parentNavigatorKey: _rootNavigatorKey,
+        pageBuilder: (context, state) {
+          return _buildTelegramRoutePage(
+            state: state,
+            child: TelegramCommentsScreen(args: _commentsArgsFromState(state)),
+          );
+        },
+      ),
+      GoRoute(
         path: '/notifications',
         name: 'notifications',
         parentNavigatorKey: _rootNavigatorKey,
@@ -215,6 +302,46 @@ final goRouterProvider = Provider<GoRouter>((ref) {
             (context, state) => _buildTelegramRoutePage(
               state: state,
               child: const NotificationsScreen(),
+            ),
+      ),
+      GoRoute(
+        path: '/sessions',
+        name: 'sessions',
+        parentNavigatorKey: _rootNavigatorKey,
+        pageBuilder:
+            (context, state) => _buildTelegramRoutePage(
+              state: state,
+              child: const SessionsManagementScreen(),
+            ),
+      ),
+      GoRoute(
+        path: '/privacy',
+        name: 'privacy',
+        parentNavigatorKey: _rootNavigatorKey,
+        pageBuilder:
+            (context, state) => _buildTelegramRoutePage(
+              state: state,
+              child: const PrivacySettingsScreen(),
+            ),
+      ),
+      GoRoute(
+        path: '/follow-requests',
+        name: 'followRequests',
+        parentNavigatorKey: _rootNavigatorKey,
+        pageBuilder:
+            (context, state) => _buildTelegramRoutePage(
+              state: state,
+              child: const FollowRequestsScreen(),
+            ),
+      ),
+      GoRoute(
+        path: '/moderation',
+        name: 'moderation',
+        parentNavigatorKey: _rootNavigatorKey,
+        pageBuilder:
+            (context, state) => _buildTelegramRoutePage(
+              state: state,
+              child: const ModerationDashboardScreen(),
             ),
       ),
     ],
@@ -244,6 +371,60 @@ final goRouterProvider = Provider<GoRouter>((ref) {
     },
   );
 });
+
+bool _isPublicRoute(String matchedLocation) {
+  return matchedLocation == '/login' ||
+      matchedLocation == '/register' ||
+      matchedLocation == '/forgot-password' ||
+      matchedLocation == '/reset-password' ||
+      matchedLocation == '/verify-email' ||
+      matchedLocation == '/verify-email/pending';
+}
+
+ChatScreenArgs _chatArgsFromState(GoRouterState state) {
+  final conversationId = int.parse(state.pathParameters['conversationId']!);
+  final peerId = int.tryParse(state.uri.queryParameters['peerId'] ?? '') ?? 0;
+  final peerUsername = state.uri.queryParameters['username'] ?? 'Chat';
+  final peerAvatarUrl = state.uri.queryParameters['avatarUrl'];
+  final isOnline = _tryParseBool(state.uri.queryParameters['isOnline']);
+  final lastSeenAt = _tryParseDateTime(state.uri.queryParameters['lastSeenAt']);
+
+  return ChatScreenArgs(
+    conversationId: conversationId,
+    peerId: peerId,
+    peerUsername: peerUsername,
+    peerAvatarUrl: peerAvatarUrl,
+    initialIsOnline: isOnline,
+    initialLastSeenAt: lastSeenAt,
+  );
+}
+
+CommentsScreenArgs _commentsArgsFromState(GoRouterState state) {
+  final postId = int.parse(state.pathParameters['postId']!);
+  final postUserId =
+      int.tryParse(state.uri.queryParameters['postUserId'] ?? '') ?? 0;
+  return CommentsScreenArgs(postId: postId, postUserId: postUserId);
+}
+
+bool? _tryParseBool(String? value) {
+  if (value == null) {
+    return null;
+  }
+  if (value == 'true') {
+    return true;
+  }
+  if (value == 'false') {
+    return false;
+  }
+  return null;
+}
+
+DateTime? _tryParseDateTime(String? value) {
+  if (value == null || value.isEmpty) {
+    return null;
+  }
+  return DateTime.tryParse(value);
+}
 
 CustomTransitionPage<void> _buildTelegramRoutePage({
   required GoRouterState state,

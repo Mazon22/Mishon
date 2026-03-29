@@ -10,8 +10,11 @@ import 'package:mishon_app/core/network/exceptions.dart';
 import 'package:mishon_app/core/repositories/social_repository.dart';
 import 'package:mishon_app/core/widgets/app_shell.dart';
 import 'package:mishon_app/core/widgets/app_toast.dart';
+import 'package:mishon_app/core/widgets/minimal_components.dart';
 import 'package:mishon_app/core/widgets/profile_media.dart';
 import 'package:mishon_app/core/widgets/states.dart';
+import 'package:mishon_app/core/theme/app_theme.dart';
+import 'package:mishon_app/core/theme/app_tokens.dart';
 import 'package:mishon_app/features/chats/screens/chat_screen.dart';
 
 class FriendsScreen extends ConsumerStatefulWidget {
@@ -553,71 +556,41 @@ class _FriendsSummaryPanel extends StatelessWidget {
   Widget build(BuildContext context) {
     final strings = AppStrings.of(context);
 
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(28),
-        gradient: const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: <Color>[
-            Color(0xFF12355B),
-            Color(0xFF196E8A),
-            Color(0xFF3DAE8B),
-          ],
-        ),
-      ),
+    return AppSurfaceCard(
+      padding: const EdgeInsets.all(16),
+      radius: AppRadii.xl,
+      color: Colors.white.withValues(alpha: 0.95),
+      boxShadow: AppShadows.soft(),
       child: Row(
         children: <Widget>[
           Expanded(
-            child: _SummaryMetric(
+            child: AppMetricCard(
               value: '$friendsCount',
               label: strings.isRu ? 'друзей' : 'friends',
+              accentColor: AppColors.friends,
+              icon: Icons.favorite_rounded,
             ),
           ),
+          const SizedBox(width: AppSpacing.sm),
           Expanded(
-            child: _SummaryMetric(
+            child: AppMetricCard(
               value: '$incomingCount',
               label: strings.isRu ? 'входящих' : 'incoming',
+              accentColor: AppColors.people,
+              icon: Icons.call_received_rounded,
             ),
           ),
+          const SizedBox(width: AppSpacing.sm),
           Expanded(
-            child: _SummaryMetric(
+            child: AppMetricCard(
               value: '$outgoingCount',
               label: strings.isRu ? 'исходящих' : 'outgoing',
+              accentColor: AppColors.profile,
+              icon: Icons.call_made_rounded,
             ),
           ),
         ],
       ),
-    );
-  }
-}
-
-class _SummaryMetric extends StatelessWidget {
-  final String value;
-  final String label;
-
-  const _SummaryMetric({required this.value, required this.label});
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: <Widget>[
-        Text(
-          value,
-          style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-            color: Colors.white,
-            fontWeight: FontWeight.w800,
-          ),
-        ),
-        const SizedBox(height: 4),
-        Text(
-          label,
-          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-            color: Colors.white.withValues(alpha: 0.82),
-          ),
-        ),
-      ],
     );
   }
 }
@@ -680,19 +653,11 @@ class _FriendConnectionCard extends StatelessWidget {
           onRemove();
         }
       },
-      child: Container(
+      child: AppSurfaceCard(
         padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(24),
-          boxShadow: <BoxShadow>[
-            BoxShadow(
-              color: const Color(0xFF1B2838).withValues(alpha: 0.08),
-              blurRadius: 20,
-              offset: const Offset(0, 12),
-            ),
-          ],
-        ),
+        radius: AppRadii.xl,
+        color: Colors.white.withValues(alpha: 0.96),
+        boxShadow: AppShadows.soft(),
         child: Row(
           children: <Widget>[
             Stack(
@@ -744,7 +709,7 @@ class _FriendConnectionCard extends StatelessWidget {
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                         style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: const Color(0xFF536273),
+                          color: AppColors.textSecondary,
                         ),
                       ),
                       const SizedBox(height: 8),
@@ -755,8 +720,8 @@ class _FriendConnectionCard extends StatelessWidget {
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
                           color:
                               user.isOnline
-                                  ? const Color(0xFF138A4E)
-                                  : const Color(0xFF7A8797),
+                                  ? AppColors.success
+                                  : AppColors.textTertiary,
                           fontWeight: FontWeight.w700,
                         ),
                       ),
@@ -775,9 +740,13 @@ class _FriendConnectionCard extends StatelessWidget {
             else
               Column(
                 children: <Widget>[
-                  ElevatedButton(
+                  FilledButton.tonalIcon(
                     onPressed: onMessage,
-                    child: Text(strings.message),
+                    icon: const Icon(
+                      Icons.chat_bubble_outline_rounded,
+                      size: 18,
+                    ),
+                    label: Text(strings.message),
                   ),
                   const SizedBox(height: 8),
                   OutlinedButton(
@@ -826,19 +795,11 @@ class _RequestCard extends StatelessWidget {
                     ? 'Ожидает ответа на вашу заявку.'
                     : 'Waiting for a response to your request.'));
 
-    return Container(
+    return AppSurfaceCard(
       padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(24),
-        boxShadow: <BoxShadow>[
-          BoxShadow(
-            color: const Color(0xFF1B2838).withValues(alpha: 0.08),
-            blurRadius: 20,
-            offset: const Offset(0, 12),
-          ),
-        ],
-      ),
+      radius: AppRadii.xl,
+      color: Colors.white.withValues(alpha: 0.96),
+      boxShadow: AppShadows.soft(),
       child: Row(
         children: <Widget>[
           Stack(
@@ -891,7 +852,7 @@ class _RequestCard extends StatelessWidget {
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        color: const Color(0xFF536273),
+                        color: AppColors.textSecondary,
                       ),
                     ),
                   ],
@@ -909,7 +870,10 @@ class _RequestCard extends StatelessWidget {
           else
             Column(
               children: <Widget>[
-                ElevatedButton(onPressed: onPrimary, child: Text(primaryLabel)),
+                FilledButton.tonal(
+                  onPressed: onPrimary,
+                  child: Text(primaryLabel),
+                ),
                 if (onSecondary != null && secondaryLabel != null) ...<Widget>[
                   const SizedBox(height: 8),
                   OutlinedButton(

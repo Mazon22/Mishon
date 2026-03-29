@@ -1,9 +1,10 @@
 import 'package:flutter/foundation.dart';
 
 class ApiConstants {
-  static const String _localhostUrl = 'http://localhost:5097/api';
-  static const String _androidEmulatorUrl = 'http://10.0.2.2:5097/api';
+  static const String _localhostUrl = 'http://localhost:8081/api';
+  static const String _androidEmulatorUrl = 'http://10.0.2.2:8081/api';
   static const String _defaultProdUrl = 'https://api.mishon.com/api';
+  static const bool enableEmailVerificationFlow = false;
 
   static String get baseUrl {
     const envUrl = String.fromEnvironment('API_BASE_URL');

@@ -18,6 +18,11 @@ class DiscoverUser {
   final bool isFriend;
   final int? incomingFriendRequestId;
   final int? outgoingFriendRequestId;
+  final bool isPrivateAccount;
+  final String profileVisibility;
+  final bool canViewProfile;
+  final bool canSendMessages;
+  final bool hasPendingFollowRequest;
 
   const DiscoverUser({
     required this.id,
@@ -37,6 +42,11 @@ class DiscoverUser {
     required this.isFriend,
     required this.incomingFriendRequestId,
     required this.outgoingFriendRequestId,
+    this.isPrivateAccount = false,
+    this.profileVisibility = 'Public',
+    this.canViewProfile = true,
+    this.canSendMessages = true,
+    this.hasPendingFollowRequest = false,
   });
 
   DiscoverUser copyWith({
@@ -55,6 +65,11 @@ class DiscoverUser {
     bool? isFriend,
     int? incomingFriendRequestId,
     int? outgoingFriendRequestId,
+    bool? isPrivateAccount,
+    String? profileVisibility,
+    bool? canViewProfile,
+    bool? canSendMessages,
+    bool? hasPendingFollowRequest,
     bool clearIncomingFriendRequestId = false,
     bool clearOutgoingFriendRequestId = false,
   }) {
@@ -82,6 +97,12 @@ class DiscoverUser {
           clearOutgoingFriendRequestId
               ? null
               : outgoingFriendRequestId ?? this.outgoingFriendRequestId,
+      isPrivateAccount: isPrivateAccount ?? this.isPrivateAccount,
+      profileVisibility: profileVisibility ?? this.profileVisibility,
+      canViewProfile: canViewProfile ?? this.canViewProfile,
+      canSendMessages: canSendMessages ?? this.canSendMessages,
+      hasPendingFollowRequest:
+          hasPendingFollowRequest ?? this.hasPendingFollowRequest,
     );
   }
 
@@ -107,6 +128,12 @@ class DiscoverUser {
       isFriend: json['isFriend'] as bool? ?? false,
       incomingFriendRequestId: json['incomingFriendRequestId'] as int?,
       outgoingFriendRequestId: json['outgoingFriendRequestId'] as int?,
+      isPrivateAccount: json['isPrivateAccount'] as bool? ?? false,
+      profileVisibility: json['profileVisibility'] as String? ?? 'Public',
+      canViewProfile: json['canViewProfile'] as bool? ?? true,
+      canSendMessages: json['canSendMessages'] as bool? ?? true,
+      hasPendingFollowRequest:
+          json['hasPendingFollowRequest'] as bool? ?? false,
     );
   }
 }
@@ -315,6 +342,7 @@ class ConversationModel {
   final bool lastMessageIsDeliveredToPeer;
   final bool lastMessageIsReadByPeer;
   final int unreadCount;
+  final bool canSendMessages;
 
   const ConversationModel({
     required this.id,
@@ -339,6 +367,7 @@ class ConversationModel {
     required this.lastMessageIsDeliveredToPeer,
     required this.lastMessageIsReadByPeer,
     required this.unreadCount,
+    this.canSendMessages = true,
   });
 
   ConversationModel copyWith({
@@ -355,6 +384,7 @@ class ConversationModel {
     bool? lastMessageIsDeliveredToPeer,
     bool? lastMessageIsReadByPeer,
     int? unreadCount,
+    bool? canSendMessages,
   }) {
     return ConversationModel(
       id: id,
@@ -381,6 +411,7 @@ class ConversationModel {
       lastMessageIsReadByPeer:
           lastMessageIsReadByPeer ?? this.lastMessageIsReadByPeer,
       unreadCount: unreadCount ?? this.unreadCount,
+      canSendMessages: canSendMessages ?? this.canSendMessages,
     );
   }
 
@@ -413,6 +444,7 @@ class ConversationModel {
       lastMessageIsReadByPeer:
           json['lastMessageIsReadByPeer'] as bool? ?? false,
       unreadCount: json['unreadCount'] as int? ?? 0,
+      canSendMessages: json['canSendMessages'] as bool? ?? true,
     );
   }
 }
@@ -427,6 +459,7 @@ class DirectConversationModel {
   final double avatarOffsetY;
   final DateTime lastSeenAt;
   final bool isOnline;
+  final bool canSendMessages;
 
   const DirectConversationModel({
     required this.id,
@@ -438,6 +471,7 @@ class DirectConversationModel {
     this.avatarOffsetY = 0,
     required this.lastSeenAt,
     required this.isOnline,
+    this.canSendMessages = true,
   });
 
   factory DirectConversationModel.fromJson(Map<String, dynamic> json) {
@@ -451,6 +485,7 @@ class DirectConversationModel {
       avatarOffsetY: (json['avatarOffsetY'] as num?)?.toDouble() ?? 0,
       lastSeenAt: DateTime.parse(json['lastSeenAt'] as String),
       isOnline: json['isOnline'] as bool? ?? false,
+      canSendMessages: json['canSendMessages'] as bool? ?? true,
     );
   }
 }
@@ -479,6 +514,8 @@ class ChatMessageModel {
   final double forwardedFromUserAvatarOffsetX;
   final double forwardedFromUserAvatarOffsetY;
   final List<ChatAttachmentModel> attachments;
+  final bool isHidden;
+  final bool isRemoved;
 
   const ChatMessageModel({
     required this.id,
@@ -504,6 +541,8 @@ class ChatMessageModel {
     this.forwardedFromUserAvatarOffsetX = 0,
     this.forwardedFromUserAvatarOffsetY = 0,
     required this.attachments,
+    this.isHidden = false,
+    this.isRemoved = false,
   });
 
   ChatMessageModel copyWith({
@@ -530,6 +569,8 @@ class ChatMessageModel {
     double? forwardedFromUserAvatarOffsetX,
     double? forwardedFromUserAvatarOffsetY,
     List<ChatAttachmentModel>? attachments,
+    bool? isHidden,
+    bool? isRemoved,
   }) {
     return ChatMessageModel(
       id: id ?? this.id,
@@ -562,6 +603,8 @@ class ChatMessageModel {
       forwardedFromUserAvatarOffsetY:
           forwardedFromUserAvatarOffsetY ?? this.forwardedFromUserAvatarOffsetY,
       attachments: attachments ?? this.attachments,
+      isHidden: isHidden ?? this.isHidden,
+      isRemoved: isRemoved ?? this.isRemoved,
     );
   }
 
@@ -605,6 +648,8 @@ class ChatMessageModel {
       attachments: (json['attachments'] as List<dynamic>? ?? const [])
           .map((e) => ChatAttachmentModel.fromJson(e as Map<String, dynamic>))
           .toList(growable: false),
+      isHidden: json['isHidden'] as bool? ?? false,
+      isRemoved: json['isRemoved'] as bool? ?? false,
     );
   }
 }
@@ -708,6 +753,18 @@ class ChatAttachmentModel {
     required this.isImage,
   });
 
+  bool get isAudio =>
+      contentType.toLowerCase().startsWith('audio/') || _hasAudioExtension;
+
+  bool get isVoiceNote => isAudio;
+
+  bool get _hasAudioExtension {
+    final extension =
+        fileName.contains('.') ? fileName.split('.').last.toLowerCase() : '';
+    return const {'wav', 'mp3', 'm4a', 'aac', 'ogg', 'webm', 'opus'}
+        .contains(extension);
+  }
+
   factory ChatAttachmentModel.fromJson(Map<String, dynamic> json) {
     return ChatAttachmentModel(
       id: json['id'] as int,
@@ -723,15 +780,28 @@ class ChatAttachmentModel {
 class ChatUploadAttachment {
   final String fileName;
   final Uint8List bytes;
+  final String contentType;
   final bool isImage;
 
   const ChatUploadAttachment({
     required this.fileName,
     required this.bytes,
+    required this.contentType,
     required this.isImage,
   });
 
   int get sizeBytes => bytes.lengthInBytes;
+
+  bool get isAudio =>
+      contentType.toLowerCase().startsWith('audio/') ||
+      const {'wav', 'mp3', 'm4a', 'aac', 'ogg', 'webm', 'opus'}
+          .contains(
+            fileName.contains('.')
+                ? fileName.split('.').last.toLowerCase()
+                : '',
+          );
+
+  bool get isVoiceNote => isAudio;
 }
 
 class NotificationItemModel {
@@ -797,21 +867,180 @@ class NotificationSummaryModel {
   final int unreadNotifications;
   final int unreadChats;
   final int incomingFriendRequests;
+  final int pendingFollowRequests;
 
   const NotificationSummaryModel({
     required this.unreadNotifications,
     required this.unreadChats,
     required this.incomingFriendRequests,
+    this.pendingFollowRequests = 0,
   });
 
   int get totalBottomBadges =>
-      unreadNotifications + unreadChats + incomingFriendRequests;
+      unreadNotifications +
+      unreadChats +
+      incomingFriendRequests +
+      pendingFollowRequests;
 
   factory NotificationSummaryModel.fromJson(Map<String, dynamic> json) {
     return NotificationSummaryModel(
       unreadNotifications: json['unreadNotifications'] as int? ?? 0,
       unreadChats: json['unreadChats'] as int? ?? 0,
       incomingFriendRequests: json['incomingFriendRequests'] as int? ?? 0,
+      pendingFollowRequests: json['pendingFollowRequests'] as int? ?? 0,
+    );
+  }
+}
+
+class ReportItemModel {
+  final int id;
+  final String source;
+  final String targetType;
+  final int targetId;
+  final int? targetUserId;
+  final String reason;
+  final String status;
+  final DateTime createdAt;
+  final int? assignedModeratorUserId;
+  final String? assignedModeratorUsername;
+
+  const ReportItemModel({
+    required this.id,
+    required this.source,
+    required this.targetType,
+    required this.targetId,
+    required this.targetUserId,
+    required this.reason,
+    required this.status,
+    required this.createdAt,
+    required this.assignedModeratorUserId,
+    required this.assignedModeratorUsername,
+  });
+
+  factory ReportItemModel.fromJson(Map<String, dynamic> json) {
+    return ReportItemModel(
+      id: json['id'] as int,
+      source: json['source'] as String,
+      targetType: json['targetType'] as String,
+      targetId: json['targetId'] as int,
+      targetUserId: json['targetUserId'] as int?,
+      reason: json['reason'] as String,
+      status: json['status'] as String,
+      createdAt: DateTime.parse(json['createdAt'] as String),
+      assignedModeratorUserId: json['assignedModeratorUserId'] as int?,
+      assignedModeratorUsername: json['assignedModeratorUsername'] as String?,
+    );
+  }
+}
+
+class ReportDetailModel {
+  final int id;
+  final String source;
+  final String targetType;
+  final int targetId;
+  final int? targetUserId;
+  final String reason;
+  final String? customNote;
+  final String status;
+  final int? reporterUserId;
+  final String? reporterUsername;
+  final int? assignedModeratorUserId;
+  final String? assignedModeratorUsername;
+  final String resolution;
+  final String? resolutionNote;
+  final DateTime createdAt;
+  final DateTime updatedAt;
+  final DateTime? resolvedAt;
+
+  const ReportDetailModel({
+    required this.id,
+    required this.source,
+    required this.targetType,
+    required this.targetId,
+    required this.targetUserId,
+    required this.reason,
+    required this.customNote,
+    required this.status,
+    required this.reporterUserId,
+    required this.reporterUsername,
+    required this.assignedModeratorUserId,
+    required this.assignedModeratorUsername,
+    required this.resolution,
+    required this.resolutionNote,
+    required this.createdAt,
+    required this.updatedAt,
+    required this.resolvedAt,
+  });
+
+  factory ReportDetailModel.fromJson(Map<String, dynamic> json) {
+    return ReportDetailModel(
+      id: json['id'] as int,
+      source: json['source'] as String,
+      targetType: json['targetType'] as String,
+      targetId: json['targetId'] as int,
+      targetUserId: json['targetUserId'] as int?,
+      reason: json['reason'] as String,
+      customNote: json['customNote'] as String?,
+      status: json['status'] as String,
+      reporterUserId: json['reporterUserId'] as int?,
+      reporterUsername: json['reporterUsername'] as String?,
+      assignedModeratorUserId: json['assignedModeratorUserId'] as int?,
+      assignedModeratorUsername: json['assignedModeratorUsername'] as String?,
+      resolution: json['resolution'] as String? ?? 'None',
+      resolutionNote: json['resolutionNote'] as String?,
+      createdAt: DateTime.parse(json['createdAt'] as String),
+      updatedAt: DateTime.parse(json['updatedAt'] as String),
+      resolvedAt:
+          json['resolvedAt'] != null
+              ? DateTime.parse(json['resolvedAt'] as String)
+              : null,
+    );
+  }
+}
+
+class ModerationActionModel {
+  final int id;
+  final int actorUserId;
+  final String actorUsername;
+  final int? targetUserId;
+  final String actionType;
+  final String? targetType;
+  final int? targetId;
+  final int? reportId;
+  final String? note;
+  final DateTime createdAt;
+  final DateTime? expiresAt;
+
+  const ModerationActionModel({
+    required this.id,
+    required this.actorUserId,
+    required this.actorUsername,
+    required this.targetUserId,
+    required this.actionType,
+    required this.targetType,
+    required this.targetId,
+    required this.reportId,
+    required this.note,
+    required this.createdAt,
+    required this.expiresAt,
+  });
+
+  factory ModerationActionModel.fromJson(Map<String, dynamic> json) {
+    return ModerationActionModel(
+      id: json['id'] as int,
+      actorUserId: json['actorUserId'] as int,
+      actorUsername: json['actorUsername'] as String,
+      targetUserId: json['targetUserId'] as int?,
+      actionType: json['actionType'] as String,
+      targetType: json['targetType'] as String?,
+      targetId: json['targetId'] as int?,
+      reportId: json['reportId'] as int?,
+      note: json['note'] as String?,
+      createdAt: DateTime.parse(json['createdAt'] as String),
+      expiresAt:
+          json['expiresAt'] != null
+              ? DateTime.parse(json['expiresAt'] as String)
+              : null,
     );
   }
 }

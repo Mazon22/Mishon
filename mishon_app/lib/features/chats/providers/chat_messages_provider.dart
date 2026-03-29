@@ -276,6 +276,9 @@ class ChatMessagesNotifier extends _$ChatMessagesNotifier {
   }
 
   void clearHistory() {
+    ref
+        .read(chatConversationPreviewOverridesProvider.notifier)
+        .clearConversation(conversationId);
     _updateStateSafely(
       (currentState) => currentState.copyWith(
         messages: const [],
