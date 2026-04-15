@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/jmoiron/sqlx"
@@ -16,7 +17,7 @@ func (s *Server) handleFriends(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "Failed to load friends")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"items": items})
+	writeJSON(w, http.StatusOK, map[string]any{"items": normalizeFriendCardsMedia(r, items)})
 }
 
 func (s *Server) handleFriendRequests(w http.ResponseWriter, r *http.Request) {
@@ -26,7 +27,10 @@ func (s *Server) handleFriendRequests(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "Failed to load friend requests")
 		return
 	}
-	writeJSON(w, http.StatusOK, friendRequestsPayload{Incoming: incoming, Outgoing: outgoing})
+	writeJSON(w, http.StatusOK, friendRequestsPayload{
+		Incoming: normalizeFriendRequestsMedia(r, incoming),
+		Outgoing: normalizeFriendRequestsMedia(r, outgoing),
+	})
 }
 
 func (s *Server) handleSendFriendRequest(w http.ResponseWriter, r *http.Request) {
@@ -63,6 +67,13 @@ func (s *Server) handleSendFriendRequest(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusInternalServerError, "Failed to save friend request")
 		return
 	}
+
+	s.emitSyncToUsers("friends.changed", []int{user.ID, req.UserID}, map[string]any{
+		"actorUserId":  user.ID,
+		"targetUserId": req.UserID,
+		"kind":         "friend_request_created",
+	})
+	s.emitNotificationSummarySync(r.Context(), user.ID, req.UserID)
 
 	writeJSON(w, http.StatusCreated, map[string]bool{"ok": true})
 }
@@ -123,6 +134,13 @@ func (s *Server) handleAcceptFriendRequest(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
+	s.emitSyncToUsers("friends.changed", []int{user.ID, request.SenderID}, map[string]any{
+		"actorUserId":  user.ID,
+		"targetUserId": request.SenderID,
+		"kind":         "friend_request_accepted",
+	})
+	s.emitNotificationSummarySync(r.Context(), user.ID, request.SenderID)
+
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
@@ -146,6 +164,11 @@ func (s *Server) handleDeleteFriendRequest(w http.ResponseWriter, r *http.Reques
 		writeError(w, http.StatusNotFound, "Friend request not found")
 		return
 	}
+	s.emitSyncToUsers("friends.changed", []int{user.ID}, map[string]any{
+		"actorUserId": user.ID,
+		"kind":        "friend_request_deleted",
+	})
+	s.emitNotificationSummarySync(r.Context(), user.ID)
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
@@ -169,6 +192,12 @@ func (s *Server) handleRemoveFriend(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "Friendship not found")
 		return
 	}
+	s.emitSyncToUsers("friends.changed", []int{user.ID, peerID}, map[string]any{
+		"actorUserId":  user.ID,
+		"targetUserId": peerID,
+		"kind":         "friend_removed",
+	})
+	s.emitNotificationSummarySync(r.Context(), user.ID, peerID)
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
@@ -190,18 +219,36 @@ func (s *Server) handleToggleFollow(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "Failed to update follow state")
 		return
 	}
+	s.emitSyncToUsers("follow.changed", []int{user.ID, targetID}, map[string]any{
+		"actorUserId":  user.ID,
+		"targetUserId": targetID,
+		"isFollowing":  response.IsFollowing,
+		"isRequested":  response.IsRequested,
+	})
+	s.emitSyncGlobal("post.author-follow.changed", map[string]any{
+		"actorUserId":  user.ID,
+		"targetUserId": targetID,
+		"isFollowing":  response.IsFollowing,
+	})
+	s.emitNotificationSummarySync(r.Context(), user.ID, targetID)
 	writeJSON(w, http.StatusOK, response)
 }
 
 func (s *Server) handleDiscover(w http.ResponseWriter, r *http.Request) {
 	user := authUser(r.Context())
 	page, pageSize := paginationFromRequest(r)
-	items, hasMore, err := s.loadDiscoverUsers(r.Context(), user.ID, normalizeText(r.URL.Query().Get("query")), page, pageSize)
+	query := normalizeText(r.URL.Query().Get("query"))
+	items, hasMore, err := s.loadDiscoverUsers(r.Context(), user.ID, query, page, pageSize)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "Failed to load people")
 		return
 	}
-	writeJSON(w, http.StatusOK, pagedResponse[friendCard]{Items: items, Page: page, PageSize: pageSize, HasMore: hasMore})
+	totalCount, err := s.countDiscoverUsers(r.Context(), user.ID, query)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "Failed to load people")
+		return
+	}
+	writeJSON(w, http.StatusOK, buildPagedResponse(normalizeFriendCardsMedia(r, items), page, pageSize, totalCount, hasMore))
 }
 
 func (s *Server) handleNotifications(w http.ResponseWriter, r *http.Request) {
@@ -212,7 +259,12 @@ func (s *Server) handleNotifications(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "Failed to load notifications")
 		return
 	}
-	writeJSON(w, http.StatusOK, pagedResponse[notificationResponse]{Items: items, Page: page, PageSize: pageSize, HasMore: hasMore})
+	totalCount, err := s.countNotifications(r.Context(), user.ID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "Failed to load notifications")
+		return
+	}
+	writeJSON(w, http.StatusOK, buildPagedResponse(normalizeNotificationsMedia(r, items), page, pageSize, totalCount, hasMore))
 }
 
 func (s *Server) handleNotificationSummary(w http.ResponseWriter, r *http.Request) {
@@ -231,6 +283,11 @@ func (s *Server) handleReadAllNotifications(w http.ResponseWriter, r *http.Reque
 		writeError(w, http.StatusInternalServerError, "Failed to mark notifications as read")
 		return
 	}
+	s.emitSyncToUsers("notifications.changed", []int{user.ID}, map[string]any{
+		"userId": user.ID,
+		"kind":   "read_all",
+	})
+	s.emitNotificationSummarySync(r.Context(), user.ID)
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
@@ -251,6 +308,12 @@ func (s *Server) handleReadNotification(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusNotFound, "Notification not found")
 		return
 	}
+	s.emitSyncToUsers("notifications.changed", []int{user.ID}, map[string]any{
+		"userId":         user.ID,
+		"notificationId": notificationID,
+		"kind":           "read_one",
+	})
+	s.emitNotificationSummarySync(r.Context(), user.ID)
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
@@ -429,28 +492,76 @@ func (s *Server) loadDiscoverUsers(ctx context.Context, viewerID int, query stri
 	offset := (page - 1) * pageSize
 	search := "%"
 	if query != "" {
-		search = "%" + query + "%"
+		search = "%" + strings.ToLower(query) + "%"
 	}
 
 	rows := []friendDiscoverRow{}
 	if err := s.db.SelectContext(ctx, &rows, `
+		WITH viewer_following AS (
+			SELECT "FollowingId" AS user_id
+			FROM "Follows"
+			WHERE "FollowerId" = $1
+		),
+		viewer_friendships AS (
+			SELECT CASE
+				WHEN "UserAId" = $1 THEN "UserBId"
+				ELSE "UserAId"
+			END AS user_id
+			FROM "Friendships"
+			WHERE "UserAId" = $1 OR "UserBId" = $1
+		),
+		incoming_requests AS (
+			SELECT "SenderId" AS user_id, MIN("Id") AS request_id
+			FROM "FriendRequests"
+			WHERE "ReceiverId" = $1
+			GROUP BY "SenderId"
+		),
+		outgoing_requests AS (
+			SELECT "ReceiverId" AS user_id, MIN("Id") AS request_id
+			FROM "FriendRequests"
+			WHERE "SenderId" = $1
+			GROUP BY "ReceiverId"
+		),
+		pending_follow_requests AS (
+			SELECT DISTINCT "TargetUserId" AS user_id
+			FROM "FollowRequests"
+			WHERE "RequesterId" = $1 AND "Status" = 0
+		),
+		follower_counts AS (
+			SELECT "FollowingId" AS user_id, COUNT(*)::int AS followers_count
+			FROM "Follows"
+			GROUP BY "FollowingId"
+		),
+		post_counts AS (
+			SELECT "UserId" AS user_id, COUNT(*)::int AS posts_count
+			FROM "Posts"
+			WHERE "IsHidden" = false AND "IsRemoved" = false
+			GROUP BY "UserId"
+		)
 		SELECT
 			u."Id" AS id, u."Username" AS username, u."DisplayName" AS display_name, u."AboutMe" AS about_me,
 			u."AvatarUrl" AS avatar_url, u."AvatarScale" AS avatar_scale, u."AvatarOffsetX" AS avatar_offset_x,
 			u."AvatarOffsetY" AS avatar_offset_y, u."LastSeenAt" AS last_seen_at,
-			(SELECT COUNT(*) FROM "Follows" f WHERE f."FollowingId" = u."Id") AS followers_count,
-			(SELECT COUNT(*) FROM "Posts" p WHERE p."UserId" = u."Id" AND p."IsHidden" = false AND p."IsRemoved" = false) AS posts_count,
-			EXISTS(SELECT 1 FROM "Follows" f WHERE f."FollowerId" = $1 AND f."FollowingId" = u."Id") AS is_following,
-			EXISTS(SELECT 1 FROM "Friendships" fr WHERE (fr."UserAId" = $1 AND fr."UserBId" = u."Id") OR (fr."UserBId" = $1 AND fr."UserAId" = u."Id")) AS is_friend,
-			(SELECT fr."Id" FROM "FriendRequests" fr WHERE fr."SenderId" = u."Id" AND fr."ReceiverId" = $1 LIMIT 1) AS incoming_request_id,
-			(SELECT fr."Id" FROM "FriendRequests" fr WHERE fr."SenderId" = $1 AND fr."ReceiverId" = u."Id" LIMIT 1) AS outgoing_request_id,
-			EXISTS(SELECT 1 FROM "FollowRequests" fr WHERE fr."RequesterId" = $1 AND fr."TargetUserId" = u."Id" AND fr."Status" = 0) AS has_pending_follow_request,
+			COALESCE(fc.followers_count, 0) AS followers_count,
+			COALESCE(pc.posts_count, 0) AS posts_count,
+			(vf.user_id IS NOT NULL) AS is_following,
+			(vfr.user_id IS NOT NULL) AS is_friend,
+			ir.request_id AS incoming_request_id,
+			oor.request_id AS outgoing_request_id,
+			(pfr.user_id IS NOT NULL) AS has_pending_follow_request,
 			u."IsPrivateAccount" AS is_private_account,
 			u."ProfileVisibility" AS profile_visibility
 		FROM "Users" u
+		LEFT JOIN viewer_following vf ON vf.user_id = u."Id"
+		LEFT JOIN viewer_friendships vfr ON vfr.user_id = u."Id"
+		LEFT JOIN incoming_requests ir ON ir.user_id = u."Id"
+		LEFT JOIN outgoing_requests oor ON oor.user_id = u."Id"
+		LEFT JOIN pending_follow_requests pfr ON pfr.user_id = u."Id"
+		LEFT JOIN follower_counts fc ON fc.user_id = u."Id"
+		LEFT JOIN post_counts pc ON pc.user_id = u."Id"
 		WHERE u."Id" <> $1
-		  AND (LOWER(u."Username") LIKE LOWER($2) OR LOWER(COALESCE(u."DisplayName", '')) LIKE LOWER($2))
-		ORDER BY is_friend DESC, u."LastSeenAt" DESC
+		  AND (u."NormalizedUsername" LIKE $2 OR LOWER(COALESCE(u."DisplayName", '')) LIKE $2)
+		ORDER BY (vfr.user_id IS NOT NULL) DESC, u."LastSeenAt" DESC
 		LIMIT $3 OFFSET $4
 	`, viewerID, search, pageSize+1, offset); err != nil {
 		return nil, false, err
@@ -477,6 +588,7 @@ func (s *Server) loadNotifications(ctx context.Context, viewerID, page, pageSize
 		FROM "Notifications" n
 		LEFT JOIN "Users" actor ON actor."Id" = n."ActorUserId"
 		WHERE n."UserId" = $1
+		  AND n."Type" <> 'message'
 		ORDER BY n."CreatedAt" DESC
 		LIMIT $2 OFFSET $3
 	`, viewerID, pageSize+1, offset); err != nil {
@@ -492,7 +604,7 @@ func (s *Server) loadNotifications(ctx context.Context, viewerID, page, pageSize
 
 func (s *Server) loadNotificationSummary(ctx context.Context, viewerID int) (notificationSummary, error) {
 	var summary notificationSummary
-	if err := s.db.GetContext(ctx, &summary.UnreadNotifications, `SELECT COUNT(*) FROM "Notifications" WHERE "UserId" = $1 AND "IsRead" = false`, viewerID); err != nil {
+	if err := s.db.GetContext(ctx, &summary.UnreadNotifications, `SELECT COUNT(*) FROM "Notifications" WHERE "UserId" = $1 AND "IsRead" = false AND "Type" <> 'message'`, viewerID); err != nil {
 		return summary, err
 	}
 	if err := s.db.GetContext(ctx, &summary.IncomingFriendRequests, `SELECT COUNT(*) FROM "FriendRequests" WHERE "ReceiverId" = $1`, viewerID); err != nil {

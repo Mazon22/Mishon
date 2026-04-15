@@ -51,10 +51,9 @@ class _ResetPasswordScreenState extends ConsumerState<ResetPasswordScreen> {
     });
 
     try {
-      await ref.read(authRepositoryProvider).resetPassword(
-            widget.token!.trim(),
-            _passwordController.text,
-          );
+      await ref
+          .read(authRepositoryProvider)
+          .resetPassword(widget.token!.trim(), _passwordController.text);
       if (!mounted) {
         return;
       }
@@ -119,7 +118,10 @@ class _ResetPasswordScreenState extends ConsumerState<ResetPasswordScreen> {
                 AuthTextField(
                   controller: _passwordController,
                   labelText: strings.newPasswordLabel,
-                  hintText: strings.newPasswordHint,
+                  hintText:
+                      strings.isRu
+                          ? 'Введите новый пароль'
+                          : 'Enter a new password',
                   prefixIcon: Icons.lock_outline_rounded,
                   obscureText: true,
                   textInputAction: TextInputAction.next,
@@ -134,11 +136,14 @@ class _ResetPasswordScreenState extends ConsumerState<ResetPasswordScreen> {
                     return null;
                   },
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: 14),
                 AuthTextField(
                   controller: _confirmController,
                   labelText: strings.confirmNewPasswordLabel,
-                  hintText: strings.confirmPasswordHint,
+                  hintText:
+                      strings.isRu
+                          ? 'Повторите пароль'
+                          : 'Repeat your password',
                   prefixIcon: Icons.verified_user_outlined,
                   obscureText: true,
                   textInputAction: TextInputAction.done,
@@ -153,7 +158,7 @@ class _ResetPasswordScreenState extends ConsumerState<ResetPasswordScreen> {
                     return null;
                   },
                 ),
-                const SizedBox(height: 24),
+                const SizedBox(height: 20),
                 AuthPrimaryButton(
                   text: strings.resetPasswordAction,
                   onPressed: _submit,

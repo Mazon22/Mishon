@@ -11,6 +11,7 @@ import 'core/localization/app_strings.dart';
 import 'core/providers/app_bootstrap_provider.dart';
 import 'core/router/app_router.dart';
 import 'core/settings/app_settings_provider.dart';
+import 'core/sync/app_live_sync_bootstrap.dart';
 import 'core/theme/app_theme.dart';
 import 'core/widgets/app_security_shell.dart';
 
@@ -57,6 +58,7 @@ class _MishonAppState extends ConsumerState<MishonApp> {
   Widget build(BuildContext context) {
     final settings = ref.watch(appSettingsProvider);
     final bootstrapState = ref.watch(appBootstrapProvider);
+    ref.watch(appLiveSyncBootstrapProvider);
     final router = ref.watch(goRouterProvider);
 
     ref.listen<AsyncValue<PushRouteIntent>>(pushRouteIntentProvider, (

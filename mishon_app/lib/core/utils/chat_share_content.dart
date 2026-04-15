@@ -1,8 +1,8 @@
 import 'dart:convert';
 
-import 'package:mishon_app/core/constants/api_constants.dart';
 import 'package:mishon_app/core/localization/app_strings.dart';
 import 'package:mishon_app/core/models/post_model.dart';
+import 'package:mishon_app/core/utils/media_url.dart' as media_url;
 
 const _sharedPostPrefix = '__mishon_shared_post__:';
 
@@ -135,18 +135,9 @@ String? _extractPrimaryImageUrl(String? rawImageUrl) {
       .toList(growable: false);
 
   final primary = parts.isEmpty ? normalized : parts.first;
-  return primary.startsWith('http')
-      ? primary
-      : '${ApiConstants.baseUrl.replaceFirst('/api', '')}$primary';
+  return media_url.resolveMediaUrl(primary);
 }
 
 String? _resolveOptionalMediaUrl(String? url) {
-  if (url == null || url.trim().isEmpty) {
-    return null;
-  }
-
-  final normalized = url.trim();
-  return normalized.startsWith('http')
-      ? normalized
-      : '${ApiConstants.baseUrl.replaceFirst('/api', '')}$normalized';
+  return media_url.resolveOptionalMediaUrl(url);
 }

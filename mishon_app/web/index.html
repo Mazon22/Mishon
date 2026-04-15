@@ -18,7 +18,10 @@
 
   <meta charset="UTF-8">
   <meta content="IE=Edge" http-equiv="X-UA-Compatible">
-  <meta name="description" content="A new Flutter project.">
+  <meta
+    name="description"
+    content="Mishon mobile web client for feed, chats, friends, and profile."
+  >
 
   <!-- iOS meta tags & icons -->
   <meta name="mobile-web-app-capable" content="yes">
@@ -29,10 +32,40 @@
   <!-- Favicon -->
   <link rel="icon" type="image/png" href="favicon.png"/>
 
-  <title>mishon_app</title>
+  <title>Mishon Mobile Web</title>
   <link rel="manifest" href="manifest.json">
 </head>
 <body>
+  <script>
+    (async function () {
+      const isLocalhost =
+        window.location.hostname === 'localhost' ||
+        window.location.hostname === '127.0.0.1';
+      if (!isLocalhost || !('serviceWorker' in navigator)) {
+        return;
+      }
+
+      const registrations = await navigator.serviceWorker.getRegistrations();
+      if (registrations.length === 0) {
+        return;
+      }
+
+      await Promise.all(
+        registrations.map((registration) => registration.unregister()),
+      );
+
+      if ('caches' in window) {
+        const cacheKeys = await caches.keys();
+        await Promise.all(cacheKeys.map((cacheKey) => caches.delete(cacheKey)));
+      }
+
+      const reloadMarker = 'mishon-sw-reset';
+      if (!window.sessionStorage.getItem(reloadMarker)) {
+        window.sessionStorage.setItem(reloadMarker, '1');
+        window.location.reload();
+      }
+    })();
+  </script>
   <script src="flutter_bootstrap.js" async></script>
 </body>
 </html>

@@ -1,8 +1,8 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
-import 'package:mishon_app/core/constants/api_constants.dart';
 import 'package:mishon_app/core/localization/app_strings.dart';
 import 'package:mishon_app/core/models/post_model.dart';
+import 'package:mishon_app/core/utils/media_url.dart' as media_url;
 import 'package:mishon_app/core/widgets/fullscreen_image_screen.dart';
 import 'package:mishon_app/core/widgets/minimal_components.dart';
 import 'package:mishon_app/core/widgets/profile_media.dart';
@@ -704,7 +704,5 @@ String? _resolveOptionalMediaUrl(String? url) {
 }
 
 String _resolveMediaUrl(String url) {
-  return url.startsWith('http')
-      ? url
-      : '${ApiConstants.baseUrl.replaceFirst('/api', '')}$url';
+  return media_url.resolveMediaUrl(url);
 }

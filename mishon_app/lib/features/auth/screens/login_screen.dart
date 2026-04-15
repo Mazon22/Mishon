@@ -5,6 +5,7 @@ import 'package:mishon_app/core/constants/api_constants.dart';
 import 'package:mishon_app/core/localization/app_strings.dart';
 import 'package:mishon_app/core/repositories/auth_repository.dart';
 import 'package:mishon_app/features/auth/widgets/auth_shell.dart';
+import 'package:mishon_app/features/auth/widgets/auth_social_section.dart';
 
 import '../auth_flow_destination.dart';
 import '../providers/auth_provider.dart';
@@ -110,6 +111,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       title: strings.signInTitle,
       subtitle: strings.signInSubtitle,
       children: [
+        const AuthSocialSection(),
         Form(
           key: _formKey,
           autovalidateMode: AutovalidateMode.onUserInteraction,
@@ -132,7 +134,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
               AuthTextField(
                 controller: _emailController,
                 labelText: strings.emailAddress,
-                hintText: 'you@example.com',
+                hintText: strings.isRu ? 'Введите почту' : 'Enter your email',
                 prefixIcon: Icons.alternate_email_rounded,
                 keyboardType: TextInputType.emailAddress,
                 textInputAction: TextInputAction.next,
@@ -151,7 +153,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
               AuthTextField(
                 controller: _passwordController,
                 labelText: strings.passwordLabel,
-                hintText: strings.passwordHint,
+                hintText:
+                    strings.isRu ? 'Введите пароль' : 'Enter your password',
                 prefixIcon: Icons.lock_outline_rounded,
                 obscureText: true,
                 textInputAction: TextInputAction.done,
@@ -163,7 +166,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   return null;
                 },
               ),
-              const SizedBox(height: 14),
+              const SizedBox(height: 12),
               Align(
                 alignment: Alignment.centerRight,
                 child: TextButton(
@@ -172,13 +175,13 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   child: Text(strings.forgotPasswordAction),
                 ),
               ),
-              const SizedBox(height: 24),
+              const SizedBox(height: 20),
               AuthPrimaryButton(
                 text: strings.signInAction,
                 onPressed: _login,
                 isLoading: isLoading,
               ),
-              const SizedBox(height: 24),
+              const SizedBox(height: 20),
               AuthFooter(
                 label: strings.noAccountLabel,
                 action: strings.signUpAction,

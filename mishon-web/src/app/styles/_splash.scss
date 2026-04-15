@@ -1,0 +1,70 @@
+.app-splash {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  display: grid;
+  place-items: center;
+  background:
+    radial-gradient(circle at 50% 38%, rgba(95, 159, 255, 0.08), transparent 24%),
+    linear-gradient(180deg, #060c13 0%, #050a11 100%);
+  opacity: 1;
+  transition:
+    opacity 320ms ease,
+    visibility 320ms ease;
+
+  &--exiting {
+    opacity: 0;
+    visibility: hidden;
+  }
+
+  &__core {
+    position: relative;
+    display: grid;
+    place-items: center;
+    width: 132px;
+    height: 132px;
+  }
+
+  &__halo {
+    position: absolute;
+    inset: 18px;
+    border-radius: 999px;
+    background: radial-gradient(circle, rgba(95, 159, 255, 0.16), rgba(95, 159, 255, 0) 68%);
+    filter: blur(10px);
+    opacity: 0.82;
+    animation: splash-halo-in 540ms ease both;
+  }
+
+  &__mark {
+    position: relative;
+    z-index: 1;
+    width: 78px;
+    height: 78px;
+    filter: drop-shadow(0 16px 34px rgba(0, 0, 0, 0.32));
+    animation: splash-mark-in 420ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  }
+}
+
+@keyframes splash-mark-in {
+  from {
+    opacity: 0;
+    transform: scale(0.94);
+  }
+
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes splash-halo-in {
+  from {
+    opacity: 0;
+    transform: scale(0.92);
+  }
+
+  to {
+    opacity: 0.82;
+    transform: scale(1);
+  }
+}

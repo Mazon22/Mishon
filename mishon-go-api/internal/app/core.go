@@ -30,8 +30,10 @@ import (
 )
 
 type Server struct {
-	cfg config.Config
-	db  *sqlx.DB
+	cfg   config.Config
+	db    *sqlx.DB
+	sync  *syncBroker
+	media mediaStore
 }
 
 type authClaims struct {
@@ -60,9 +62,11 @@ type apiError struct {
 }
 
 type authRequest struct {
-	Username string `json:"username"`
-	Email    string `json:"email"`
-	Password string `json:"password"`
+	Username   string `json:"username"`
+	Email      string `json:"email"`
+	Password   string `json:"password"`
+	DeviceName string `json:"deviceName"`
+	Platform   string `json:"platform"`
 }
 
 type refreshRequest struct {
@@ -70,16 +74,16 @@ type refreshRequest struct {
 }
 
 type updateProfileRequest struct {
-	DisplayName        string `json:"displayName"`
-	Username           string `json:"username"`
-	AboutMe            string `json:"aboutMe"`
-	IsPrivateAccount   bool   `json:"isPrivateAccount"`
-	ProfileVisibility  string `json:"profileVisibility"`
-	MessagePrivacy     string `json:"messagePrivacy"`
-	CommentPrivacy     string `json:"commentPrivacy"`
-	PresenceVisibility string `json:"presenceVisibility"`
-	AvatarURL          string `json:"avatarUrl"`
-	BannerURL          string `json:"bannerUrl"`
+	DisplayName        *string `json:"displayName"`
+	Username           *string `json:"username"`
+	AboutMe            *string `json:"aboutMe"`
+	IsPrivateAccount   *bool   `json:"isPrivateAccount"`
+	ProfileVisibility  *string `json:"profileVisibility"`
+	MessagePrivacy     *string `json:"messagePrivacy"`
+	CommentPrivacy     *string `json:"commentPrivacy"`
+	PresenceVisibility *string `json:"presenceVisibility"`
+	AvatarURL          *string `json:"avatarUrl"`
+	BannerURL          *string `json:"bannerUrl"`
 }
 
 type createFriendRequestRequest struct {
@@ -119,11 +123,19 @@ type authResponse struct {
 	Role                 string    `json:"role"`
 }
 
+type sessionMetadata struct {
+	DeviceName *string
+	Platform   *string
+	UserAgent  *string
+	IPAddress  *string
+}
+
 type profileResponse struct {
 	ID                 int       `json:"id"`
 	Username           string    `json:"username"`
 	Email              string    `json:"email"`
 	DisplayName        *string   `json:"displayName,omitempty"`
+	IsVerified         bool      `json:"isVerified"`
 	AboutMe            *string   `json:"aboutMe,omitempty"`
 	AvatarURL          *string   `json:"avatarUrl,omitempty"`
 	BannerURL          *string   `json:"bannerUrl,omitempty"`
@@ -155,6 +167,7 @@ type userPreview struct {
 	ID            int        `json:"id"`
 	Username      string     `json:"username"`
 	DisplayName   *string    `json:"displayName,omitempty"`
+	IsVerified    bool       `json:"isVerified"`
 	AvatarURL     *string    `json:"avatarUrl,omitempty"`
 	AvatarScale   float64    `json:"avatarScale"`
 	AvatarOffsetX float64    `json:"avatarOffsetX"`
@@ -173,19 +186,24 @@ type postResponse struct {
 	LikesCount        int         `json:"likesCount"`
 	CommentsCount     int         `json:"commentsCount"`
 	IsLiked           bool        `json:"isLiked"`
+	IsBookmarked      bool        `json:"isBookmarked"`
 	IsFollowingAuthor bool        `json:"isFollowingAuthor"`
 }
 
 type commentResponse struct {
-	ID              int         `json:"id"`
-	PostID          int         `json:"postId"`
-	UserID          int         `json:"userId"`
-	Author          userPreview `json:"author"`
-	Content         string      `json:"content"`
-	CreatedAt       time.Time   `json:"createdAt"`
-	EditedAt        *time.Time  `json:"editedAt,omitempty"`
-	ParentCommentID *int        `json:"parentCommentId,omitempty"`
-	ReplyToUsername *string     `json:"replyToUsername,omitempty"`
+	ID              int               `json:"id"`
+	PostID          int               `json:"postId"`
+	UserID          int               `json:"userId"`
+	Author          userPreview       `json:"author"`
+	Content         string            `json:"content"`
+	CreatedAt       time.Time         `json:"createdAt"`
+	EditedAt        *time.Time        `json:"editedAt,omitempty"`
+	ParentCommentID *int              `json:"parentCommentId,omitempty"`
+	ReplyToUsername *string           `json:"replyToUsername,omitempty"`
+	LikesCount      int               `json:"likesCount"`
+	IsLiked         bool              `json:"isLiked"`
+	RepliesCount    int               `json:"repliesCount"`
+	PreviewReplies  []commentResponse `json:"previewReplies,omitempty"`
 }
 
 type conversationResponse struct {
@@ -279,10 +297,14 @@ type notificationSummary struct {
 }
 
 type pagedResponse[T any] struct {
-	Items    []T  `json:"items"`
-	Page     int  `json:"page"`
-	PageSize int  `json:"pageSize"`
-	HasMore  bool `json:"hasMore"`
+	Items       []T  `json:"items"`
+	Page        int  `json:"page"`
+	PageSize    int  `json:"pageSize"`
+	HasMore     bool `json:"hasMore"`
+	HasPrevious bool `json:"hasPrevious"`
+	HasNext     bool `json:"hasNext"`
+	TotalCount  int  `json:"totalCount"`
+	TotalPages  int  `json:"totalPages"`
 }
 
 func New(cfg config.Config) (*Server, error) {
@@ -295,7 +317,23 @@ func New(cfg config.Config) (*Server, error) {
 	db.SetMaxIdleConns(10)
 	db.SetConnMaxLifetime(30 * time.Minute)
 
-	return &Server{cfg: cfg, db: db}, nil
+	if err := runMigrations(context.Background(), db); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("run migrations: %w", err)
+	}
+
+	media, err := newMediaStore(db)
+	if err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("configure media storage: %w", err)
+	}
+
+	return &Server{
+		cfg:   cfg,
+		db:    db,
+		sync:  newSyncBroker(1024),
+		media: media,
+	}, nil
 }
 
 func (s *Server) Close() error {
@@ -311,7 +349,7 @@ func (s *Server) Router() http.Handler {
 	router.Use(cors.Handler(cors.Options{
 		AllowedOrigins:   s.cfg.AllowedOrigins,
 		AllowedMethods:   []string{http.MethodGet, http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete, http.MethodOptions},
-		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type"},
+		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "Origin", "X-Requested-With"},
 		ExposedHeaders:   []string{"Link"},
 		AllowCredentials: true,
 		MaxAge:           300,
@@ -320,17 +358,27 @@ func (s *Server) Router() http.Handler {
 	router.Get("/health", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 	})
+	router.Get("/media/{mediaKey}", s.handleMedia)
 
 	router.Route("/api/v1", func(r chi.Router) {
 		r.Route("/auth", func(r chi.Router) {
 			r.Post("/register", s.handleRegister)
 			r.Post("/login", s.handleLogin)
 			r.Post("/refresh", s.handleRefresh)
+			r.Get("/check-username", s.mobileHandleCheckRegistrationUsername)
+			r.Get("/check-email", s.mobileHandleCheckRegistrationEmail)
+			r.Post("/verify-email", s.handleVerifyEmail)
+			r.Post("/resend-verification", s.handleResendVerification)
+			r.Post("/forgot-password", s.handleForgotPassword)
+			r.Post("/reset-password", s.handleResetPassword)
 
 			r.Group(func(r chi.Router) {
 				r.Use(s.requireAuth)
 				r.Get("/me", s.handleMe)
 				r.Post("/logout", s.handleLogout)
+				r.Post("/logout-all", s.mobileHandleLogoutAllSessions)
+				r.Get("/sessions", s.mobileHandleGetSessions)
+				r.Delete("/sessions/{sessionID}", s.mobileHandleRevokeSession)
 			})
 		})
 
@@ -338,15 +386,23 @@ func (s *Server) Router() http.Handler {
 			r.Use(s.requireAuth)
 			r.Get("/profile", s.handleProfile)
 			r.Put("/profile", s.handleUpdateProfile)
+			r.Put("/profile/media", s.handleUpdateProfileMedia)
 			r.Get("/profile/posts", s.handleProfilePosts)
+			r.Get("/sync/stream", s.handleSyncStream)
 			r.Get("/feed", s.handleFeed)
 			r.Get("/discover", s.handleDiscover)
 			r.Post("/posts", s.handleCreatePost)
+			r.Get("/posts/{postID}", s.handleGetPost)
 			r.Patch("/posts/{postID}", s.handleUpdatePost)
 			r.Delete("/posts/{postID}", s.handleDeletePost)
 			r.Post("/posts/{postID}/like", s.handleToggleLike)
+			r.Post("/posts/{postID}/bookmark", s.handleToggleBookmark)
+			r.Get("/bookmarks/posts", s.handleBookmarkedPosts)
 			r.Get("/posts/{postID}/comments", s.handleComments)
 			r.Post("/posts/{postID}/comments", s.handleCreateComment)
+			r.Patch("/posts/{postID}/comments/{commentID}", s.mobileHandleUpdateComment)
+			r.Delete("/posts/{postID}/comments/{commentID}", s.mobileHandleDeleteComment)
+			r.Post("/posts/{postID}/comments/{commentID}/like", s.handleToggleCommentLike)
 			r.Get("/chats", s.handleChats)
 			r.Post("/chats/direct/{userID}", s.handleCreateOrGetDirectChat)
 			r.Get("/chats/{chatID}/messages", s.handleChatMessages)
@@ -362,6 +418,34 @@ func (s *Server) Router() http.Handler {
 			r.Get("/notifications/summary", s.handleNotificationSummary)
 			r.Post("/notifications/read-all", s.handleReadAllNotifications)
 			r.Post("/notifications/{notificationID}/read", s.handleReadNotification)
+			r.Post("/notifications/push-token", s.mobileHandleRegisterPushToken)
+			r.Delete("/notifications/push-token", s.mobileHandleRemovePushToken)
+			r.Post("/reports", s.handleCreateReport)
+			r.Get("/support/threads", s.handleSupportThreads)
+			r.Post("/support/threads", s.handleCreateSupportThread)
+			r.Get("/support/threads/{threadID}", s.handleSupportThreadDetail)
+			r.Post("/support/threads/{threadID}/messages", s.handleCreateSupportMessage)
+			r.Post("/support/threads/{threadID}/read", s.handleMarkSupportThreadRead)
+			r.Get("/moderation/reports", s.handleModerationReports)
+			r.Get("/moderation/reports/{reportID}", s.handleModerationReportDetail)
+			r.Post("/moderation/reports/{reportID}/assign", s.handleAssignReport)
+			r.Post("/moderation/reports/{reportID}/resolve", s.handleResolveReport)
+			r.Post("/moderation/actions/warn", s.handleWarnUser)
+			r.Post("/moderation/actions/suspend", s.handleSuspendUser)
+			r.Post("/moderation/actions/ban", s.handleBanUser)
+			r.Post("/moderation/actions/unban", s.handleUnbanUser)
+			r.Get("/admin/users", s.handleAdminUsers)
+			r.Get("/admin/users/{userID}", s.handleAdminUserDetail)
+			r.Post("/admin/users/{userID}/freeze", s.handleAdminFreezeUser)
+			r.Post("/admin/users/{userID}/unfreeze", s.handleAdminUnfreezeUser)
+			r.Post("/admin/users/{userID}/hard-delete", s.handleAdminHardDeleteUser)
+			r.Get("/admin/support/threads", s.handleAdminSupportThreads)
+			r.Get("/admin/support/threads/{threadID}", s.handleAdminSupportThreadDetail)
+			r.Post("/admin/support/threads/{threadID}/reply", s.handleAdminSupportReply)
+			r.Post("/admin/support/threads/{threadID}/close", s.handleAdminSupportClose)
+			r.Post("/admin/support/threads/{threadID}/reopen", s.handleAdminSupportReopen)
+			r.Post("/admin/roles/moderators/{userID}", s.handleAssignModerator)
+			r.Delete("/admin/roles/moderators/{userID}", s.handleRemoveModerator)
 		})
 	})
 
@@ -436,7 +520,12 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	sessionID, refreshToken, refreshExpiry, err := s.createSession(r.Context(), tx, user.ID)
+	sessionID, refreshToken, refreshExpiry, err := s.createSession(
+		r.Context(),
+		tx,
+		user.ID,
+		buildSessionMetadata(r, req.DeviceName, req.Platform),
+	)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "Failed to create session")
 		return
@@ -444,6 +533,11 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 
 	if err := tx.Commit(); err != nil {
 		writeError(w, http.StatusInternalServerError, "Failed to save account")
+		return
+	}
+
+	if err := s.issueAndDispatchAuthToken(r.Context(), user.ID, user.Email, authTokenKindEmailVerification); err != nil {
+		writeError(w, http.StatusInternalServerError, "Failed to prepare verification email")
 		return
 	}
 
@@ -513,7 +607,12 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	defer tx.Rollback()
 
-	sessionID, refreshToken, refreshExpiry, err := s.createSession(r.Context(), tx, user.ID)
+	sessionID, refreshToken, refreshExpiry, err := s.createSession(
+		r.Context(),
+		tx,
+		user.ID,
+		buildSessionMetadata(r, req.DeviceName, req.Platform),
+	)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "Failed to create session")
 		return
@@ -591,6 +690,8 @@ func (s *Server) handleRefresh(w http.ResponseWriter, r *http.Request) {
 		FROM "UserSessions" s
 		JOIN "Users" u ON u."Id" = s."UserId"
 		WHERE s."Id" = $1
+		  AND u."BannedAt" IS NULL
+		  AND (u."SuspendedUntil" IS NULL OR u."SuspendedUntil" < NOW())
 	`, sessionID)
 	if err != nil {
 		writeError(w, http.StatusUnauthorized, "Refresh token is not valid")
@@ -666,7 +767,7 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "Failed to load profile")
 		return
 	}
-	writeJSON(w, http.StatusOK, profile)
+	writeJSON(w, http.StatusOK, normalizeProfileMedia(r, profile))
 }
 
 func (s *Server) handleProfile(w http.ResponseWriter, r *http.Request) {
@@ -676,52 +777,107 @@ func (s *Server) handleProfile(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "Failed to load profile")
 		return
 	}
-	writeJSON(w, http.StatusOK, profile)
+	writeJSON(w, http.StatusOK, normalizeProfileMedia(r, profile))
 }
 
 func (s *Server) handleUpdateProfile(w http.ResponseWriter, r *http.Request) {
 	user := authUser(r.Context())
+	current, err := s.loadProfile(r.Context(), user.ID, user.ID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "Failed to load current profile")
+		return
+	}
+
 	var req updateProfileRequest
 	if err := decodeJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
-	username := normalizeUsername(req.Username)
+	username := current.Username
+	if req.Username != nil {
+		username = normalizeUsername(*req.Username)
+	}
 	if !isValidUsername(username) {
 		writeError(w, http.StatusBadRequest, "Username must be 5-32 chars and may contain a-z, 0-9, . and _")
 		return
 	}
 
-	profileVisibility, ok := parsePrivacy(req.ProfileVisibility, map[string]int{"Public": 0, "FollowersOnly": 1, "Private": 2})
+	profileVisibilityInput := current.ProfileVisibility
+	if req.ProfileVisibility != nil {
+		profileVisibilityInput = strings.TrimSpace(*req.ProfileVisibility)
+	}
+	profileVisibility, ok := parsePrivacy(profileVisibilityInput, map[string]int{"Public": 0, "FollowersOnly": 1, "Private": 2})
 	if !ok {
 		writeError(w, http.StatusBadRequest, "Unsupported profile visibility")
 		return
 	}
-	messagePrivacy, ok := parsePrivacy(req.MessagePrivacy, map[string]int{"Everyone": 0, "Followers": 1, "Friends": 2, "Nobody": 3})
+
+	messagePrivacyInput := current.MessagePrivacy
+	if req.MessagePrivacy != nil {
+		messagePrivacyInput = strings.TrimSpace(*req.MessagePrivacy)
+	}
+	messagePrivacy, ok := parsePrivacy(messagePrivacyInput, map[string]int{"Everyone": 0, "Followers": 1, "Friends": 2, "Nobody": 3})
 	if !ok {
 		writeError(w, http.StatusBadRequest, "Unsupported message privacy")
 		return
 	}
-	commentPrivacy, ok := parsePrivacy(req.CommentPrivacy, map[string]int{"Everyone": 0, "Followers": 1, "Friends": 2, "Nobody": 3})
+
+	commentPrivacyInput := current.CommentPrivacy
+	if req.CommentPrivacy != nil {
+		commentPrivacyInput = strings.TrimSpace(*req.CommentPrivacy)
+	}
+	commentPrivacy, ok := parsePrivacy(commentPrivacyInput, map[string]int{"Everyone": 0, "Followers": 1, "Friends": 2, "Nobody": 3})
 	if !ok {
 		writeError(w, http.StatusBadRequest, "Unsupported comment privacy")
 		return
 	}
-	presencePrivacy, ok := parsePrivacy(req.PresenceVisibility, map[string]int{"Everyone": 0, "Followers": 1, "Friends": 2, "Nobody": 3})
+
+	presenceVisibilityInput := current.PresenceVisibility
+	if req.PresenceVisibility != nil {
+		presenceVisibilityInput = strings.TrimSpace(*req.PresenceVisibility)
+	}
+	presencePrivacy, ok := parsePrivacy(presenceVisibilityInput, map[string]int{"Everyone": 0, "Followers": 1, "Friends": 2, "Nobody": 3})
 	if !ok {
 		writeError(w, http.StatusBadRequest, "Unsupported presence visibility")
 		return
 	}
 
-	_, err := s.db.ExecContext(r.Context(), `
+	isPrivateAccount := current.IsPrivateAccount
+	if req.IsPrivateAccount != nil {
+		isPrivateAccount = *req.IsPrivateAccount
+	}
+
+	nextAvatarURL := current.AvatarURL
+	if req.AvatarURL != nil {
+		trimmed := strings.TrimSpace(*req.AvatarURL)
+		if trimmed == "" {
+			nextAvatarURL = nil
+		} else {
+			nextAvatarURL = &trimmed
+		}
+	}
+
+	nextBannerURL := current.BannerURL
+	if req.BannerURL != nil {
+		trimmed := strings.TrimSpace(*req.BannerURL)
+		if trimmed == "" {
+			nextBannerURL = nil
+		} else {
+			nextBannerURL = &trimmed
+		}
+	}
+
+	_, err = s.db.ExecContext(r.Context(), `
 		UPDATE "Users"
 		SET "DisplayName" = $2, "Username" = $3, "NormalizedUsername" = $4,
 		    "AboutMe" = $5, "AvatarUrl" = $6, "BannerUrl" = $7,
 		    "IsPrivateAccount" = $8, "ProfileVisibility" = $9, "MessagePrivacy" = $10,
-		    "CommentPrivacy" = $11, "PresenceVisibility" = $12
+		    "CommentPrivacy" = $11, "PresenceVisibility" = $12,
+		    "AvatarMediaId" = CASE WHEN $13 THEN NULL ELSE "AvatarMediaId" END,
+		    "BannerMediaId" = CASE WHEN $14 THEN NULL ELSE "BannerMediaId" END
 		WHERE "Id" = $1
-	`, user.ID, nullStringFromInput(req.DisplayName), username, username, nullStringFromInput(req.AboutMe), nullStringFromInput(req.AvatarURL), nullStringFromInput(req.BannerURL), req.IsPrivateAccount, profileVisibility, messagePrivacy, commentPrivacy, presencePrivacy)
+	`, user.ID, stringValue(req.DisplayName, current.DisplayName), username, username, stringValue(req.AboutMe, current.AboutMe), nextAvatarURL, nextBannerURL, isPrivateAccount, profileVisibility, messagePrivacy, commentPrivacy, presencePrivacy, req.AvatarURL != nil, req.BannerURL != nil)
 	if err != nil {
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
@@ -732,12 +888,141 @@ func (s *Server) handleUpdateProfile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	s.cleanupManagedMediaIfOrphaned(r.Context(), stringValueOrEmpty(current.AvatarURL), stringValueOrEmpty(current.BannerURL))
+
 	profile, err := s.loadProfile(r.Context(), user.ID, user.ID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "Failed to reload profile")
 		return
 	}
-	writeJSON(w, http.StatusOK, profile)
+	s.emitSyncGlobal("profile.updated", map[string]any{
+		"userId": user.ID,
+	})
+	s.emitNotificationSummarySync(r.Context(), user.ID)
+	writeJSON(w, http.StatusOK, normalizeProfileMedia(r, profile))
+}
+
+func (s *Server) handleUpdateProfileMedia(w http.ResponseWriter, r *http.Request) {
+	user := authUser(r.Context())
+	if err := r.ParseMultipartForm(12 << 20); err != nil {
+		writeError(w, http.StatusBadRequest, "Invalid multipart form")
+		return
+	}
+
+	current, err := s.loadProfile(r.Context(), user.ID, user.ID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "Failed to load current profile")
+		return
+	}
+	var currentMedia struct {
+		AvatarMediaID sql.NullString `db:"avatar_media_id"`
+		BannerMediaID sql.NullString `db:"banner_media_id"`
+	}
+	if err := s.db.GetContext(r.Context(), &currentMedia, `
+		SELECT
+			COALESCE("AvatarMediaId"::text, '') AS avatar_media_id,
+			COALESCE("BannerMediaId"::text, '') AS banner_media_id
+		FROM "Users"
+		WHERE "Id" = $1
+	`, user.ID); err != nil {
+		writeError(w, http.StatusInternalServerError, "Failed to load profile media metadata")
+		return
+	}
+
+	avatarURL := current.AvatarURL
+	bannerURL := current.BannerURL
+	avatarMediaKey := strings.TrimSpace(currentMedia.AvatarMediaID.String)
+	bannerMediaKey := strings.TrimSpace(currentMedia.BannerMediaID.String)
+	var uploadedAvatar storedMedia
+	var uploadedBanner storedMedia
+	hasUploadedAvatar := false
+	hasUploadedBanner := false
+	if truthyFormValue(r.FormValue("removeAvatar")) {
+		avatarURL = nil
+		avatarMediaKey = ""
+	}
+	if truthyFormValue(r.FormValue("removeBanner")) {
+		bannerURL = nil
+		bannerMediaKey = ""
+	}
+
+	if file, header, err := r.FormFile("avatar"); err == nil {
+		defer file.Close()
+		savedMedia, saveErr := s.saveUploadedFile(r.Context(), "profile", file, header)
+		if saveErr != nil {
+			writeError(w, http.StatusInternalServerError, "Failed to save avatar")
+			return
+		}
+		uploadedAvatar = savedMedia
+		hasUploadedAvatar = true
+		avatarURL = &savedMedia.StoredValue
+		avatarMediaKey = savedMedia.Key
+	}
+
+	if file, header, err := r.FormFile("banner"); err == nil {
+		defer file.Close()
+		savedMedia, saveErr := s.saveUploadedFile(r.Context(), "profile", file, header)
+		if saveErr != nil {
+			if hasUploadedAvatar {
+				s.deleteStoredMedia(r.Context(), uploadedAvatar)
+			}
+			writeError(w, http.StatusInternalServerError, "Failed to save banner")
+			return
+		}
+		uploadedBanner = savedMedia
+		hasUploadedBanner = true
+		bannerURL = &savedMedia.StoredValue
+		bannerMediaKey = savedMedia.Key
+	}
+
+	if _, err := s.db.ExecContext(r.Context(), `
+		UPDATE "Users"
+		SET "AvatarUrl" = $2,
+		    "AvatarMediaId" = NULLIF($3, '')::uuid,
+		    "BannerUrl" = $4,
+		    "BannerMediaId" = NULLIF($5, '')::uuid,
+		    "AvatarScale" = $6,
+		    "AvatarOffsetX" = $7,
+		    "AvatarOffsetY" = $8,
+		    "BannerScale" = $9,
+		    "BannerOffsetX" = $10,
+		    "BannerOffsetY" = $11
+		WHERE "Id" = $1
+	`, user.ID,
+		avatarURL,
+		avatarMediaKey,
+		bannerURL,
+		bannerMediaKey,
+		parseFormFloatWithDefault(r.FormValue("avatarScale"), current.AvatarScale),
+		parseFormFloatWithDefault(r.FormValue("avatarOffsetX"), current.AvatarOffsetX),
+		parseFormFloatWithDefault(r.FormValue("avatarOffsetY"), current.AvatarOffsetY),
+		parseFormFloatWithDefault(r.FormValue("bannerScale"), current.BannerScale),
+		parseFormFloatWithDefault(r.FormValue("bannerOffsetX"), current.BannerOffsetX),
+		parseFormFloatWithDefault(r.FormValue("bannerOffsetY"), current.BannerOffsetY),
+	); err != nil {
+		if hasUploadedAvatar {
+			s.deleteStoredMedia(r.Context(), uploadedAvatar)
+		}
+		if hasUploadedBanner {
+			s.deleteStoredMedia(r.Context(), uploadedBanner)
+		}
+		writeError(w, http.StatusInternalServerError, "Failed to update media")
+		return
+	}
+
+	s.cleanupManagedMediaIfOrphaned(r.Context(), stringValueOrEmpty(current.AvatarURL), stringValueOrEmpty(current.BannerURL))
+
+	profile, err := s.loadProfile(r.Context(), user.ID, user.ID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "Failed to load updated profile")
+		return
+	}
+
+	s.emitSyncGlobal("profile.updated", map[string]any{
+		"userId": user.ID,
+	})
+	s.emitNotificationSummarySync(r.Context(), user.ID)
+	writeJSON(w, http.StatusOK, normalizeProfileMedia(r, profile))
 }
 
 func (s *Server) loadProfile(ctx context.Context, viewerID, targetID int) (profileResponse, error) {
@@ -801,6 +1086,7 @@ func (s *Server) loadProfile(ctx context.Context, viewerID, targetID int) (profi
 		Username:           row.Username,
 		Email:              row.Email,
 		DisplayName:        nullableString(row.DisplayName),
+		IsVerified:         row.IsEmailVerified,
 		AboutMe:            nullableString(row.AboutMe),
 		AvatarURL:          nullableString(row.AvatarURL),
 		BannerURL:          nullableString(row.BannerURL),
@@ -829,19 +1115,64 @@ func (s *Server) loadProfile(ctx context.Context, viewerID, targetID int) (profi
 	}, nil
 }
 
-func (s *Server) createSession(ctx context.Context, tx *sqlx.Tx, userID int) (uuid.UUID, string, time.Time, error) {
+func (s *Server) createSession(
+	ctx context.Context,
+	tx *sqlx.Tx,
+	userID int,
+	metadata sessionMetadata,
+) (uuid.UUID, string, time.Time, error) {
 	sessionID := uuid.New()
 	refreshToken := generateStructuredToken(sessionID)
 	refreshExpiry := time.Now().UTC().Add(s.cfg.RefreshTokenTTL)
 
 	if _, err := tx.ExecContext(ctx, `
-		INSERT INTO "UserSessions" ("Id", "UserId", "RefreshTokenHash", "CreatedAt", "LastUsedAt", "ExpiresAt")
-		VALUES ($1, $2, $3, NOW(), NOW(), $4)
-	`, sessionID, userID, hashToken(refreshToken), refreshExpiry); err != nil {
+		INSERT INTO "UserSessions" (
+			"Id", "UserId", "RefreshTokenHash", "CreatedAt", "LastUsedAt", "ExpiresAt",
+			"DeviceName", "Platform", "UserAgent", "IpAddress"
+		)
+		VALUES ($1, $2, $3, NOW(), NOW(), $4, $5, $6, $7, $8)
+	`, sessionID, userID, hashToken(refreshToken), refreshExpiry, metadata.DeviceName, metadata.Platform, metadata.UserAgent, metadata.IPAddress); err != nil {
 		return uuid.Nil, "", time.Time{}, err
 	}
 
 	return sessionID, refreshToken, refreshExpiry, nil
+}
+
+func buildSessionMetadata(r *http.Request, deviceName, platform string) sessionMetadata {
+	return sessionMetadata{
+		DeviceName: nullableTrimmedString(deviceName),
+		Platform:   nullableTrimmedString(platform),
+		UserAgent:  headerValuePtr(r.UserAgent()),
+		IPAddress:  headerValuePtr(clientIP(r)),
+	}
+}
+
+func nullableTrimmedString(value string) *string {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return nil
+	}
+	return &trimmed
+}
+
+func headerValuePtr(value string) *string {
+	return nullableTrimmedString(value)
+}
+
+func clientIP(r *http.Request) string {
+	for _, key := range []string{"CF-Connecting-IP", "X-Forwarded-For", "X-Real-Ip"} {
+		value := strings.TrimSpace(r.Header.Get(key))
+		if value == "" {
+			continue
+		}
+		if key == "X-Forwarded-For" {
+			value = strings.TrimSpace(strings.Split(value, ",")[0])
+		}
+		if value != "" {
+			return value
+		}
+	}
+	return strings.TrimSpace(r.RemoteAddr)
 }
 
 func (s *Server) issueAccessToken(userID int, username, email, role string, sessionID uuid.UUID) (string, time.Time, error) {
@@ -868,6 +1199,55 @@ func (s *Server) issueAccessToken(userID int, username, email, role string, sess
 	}
 
 	return signed, expiresAt, nil
+}
+
+func (s *Server) sessionIsValid(ctx context.Context, sessionID uuid.UUID, userID int) (bool, error) {
+	var exists bool
+	err := s.db.GetContext(ctx, &exists, `
+		SELECT EXISTS(
+			SELECT 1
+			FROM "UserSessions" s
+			JOIN "Users" u ON u."Id" = s."UserId"
+			WHERE s."Id" = $1
+			  AND s."UserId" = $2
+			  AND s."RevokedAt" IS NULL
+			  AND s."ExpiresAt" > NOW()
+			  AND u."BannedAt" IS NULL
+			  AND (u."SuspendedUntil" IS NULL OR u."SuspendedUntil" < NOW())
+		)
+	`, sessionID, userID)
+	return exists, err
+}
+
+func (s *Server) loadSessionUser(ctx context.Context, sessionID uuid.UUID, userID int) (sessionUser, error) {
+	var row struct {
+		ID       int    `db:"id"`
+		Username string `db:"username"`
+		Email    string `db:"email"`
+		Role     int    `db:"role"`
+	}
+
+	if err := s.db.GetContext(ctx, &row, `
+		SELECT u."Id" AS id, u."Username" AS username, u."Email" AS email, u."Role" AS role
+		FROM "UserSessions" s
+		JOIN "Users" u ON u."Id" = s."UserId"
+		WHERE s."Id" = $1
+		  AND s."UserId" = $2
+		  AND s."RevokedAt" IS NULL
+		  AND s."ExpiresAt" > NOW()
+		  AND u."BannedAt" IS NULL
+		  AND (u."SuspendedUntil" IS NULL OR u."SuspendedUntil" < NOW())
+	`, sessionID, userID); err != nil {
+		return sessionUser{}, err
+	}
+
+	return sessionUser{
+		ID:        row.ID,
+		Username:  row.Username,
+		Email:     row.Email,
+		Role:      roleName(row.Role),
+		SessionID: sessionID,
+	}, nil
 }
 
 func (s *Server) requireAuth(next http.Handler) http.Handler {
@@ -902,31 +1282,13 @@ func (s *Server) requireAuth(next http.Handler) http.Handler {
 			return
 		}
 
-		var exists bool
-		if err := s.db.GetContext(r.Context(), &exists, `
-			SELECT EXISTS(
-				SELECT 1
-				FROM "UserSessions" s
-				JOIN "Users" u ON u."Id" = s."UserId"
-				WHERE s."Id" = $1
-				  AND s."UserId" = $2
-				  AND s."RevokedAt" IS NULL
-				  AND s."ExpiresAt" > NOW()
-				  AND u."BannedAt" IS NULL
-				  AND (u."SuspendedUntil" IS NULL OR u."SuspendedUntil" < NOW())
-			)
-		`, sessionID, claims.UserID); err != nil || !exists {
+		user, err := s.loadSessionUser(r.Context(), sessionID, claims.UserID)
+		if err != nil {
 			writeError(w, http.StatusUnauthorized, "Session is no longer valid")
 			return
 		}
 
-		ctx := context.WithValue(r.Context(), authContextKey, sessionUser{
-			ID:        claims.UserID,
-			Username:  claims.Username,
-			Email:     claims.Email,
-			Role:      claims.Role,
-			SessionID: sessionID,
-		})
+		ctx := context.WithValue(r.Context(), authContextKey, user)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
@@ -1163,6 +1525,29 @@ func clamp(value, minValue, maxValue int) int {
 		return maxValue
 	}
 	return value
+}
+
+func buildPagedResponse[T any](items []T, page, pageSize, totalCount int, hasMore bool) pagedResponse[T] {
+	totalPages := 0
+	if pageSize > 0 && totalCount > 0 {
+		totalPages = (totalCount + pageSize - 1) / pageSize
+	}
+
+	hasNext := hasMore
+	if !hasNext && pageSize > 0 && totalCount > 0 {
+		hasNext = page*pageSize < totalCount
+	}
+
+	return pagedResponse[T]{
+		Items:       items,
+		Page:        page,
+		PageSize:    pageSize,
+		HasMore:     hasMore,
+		HasPrevious: page > 1,
+		HasNext:     hasNext,
+		TotalCount:  totalCount,
+		TotalPages:  totalPages,
+	}
 }
 
 func minInt(a, b int) int {

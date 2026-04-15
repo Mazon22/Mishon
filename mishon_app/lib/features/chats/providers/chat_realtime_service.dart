@@ -1,20 +1,16 @@
 import 'dart:async';
-import 'dart:convert';
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:signalr_netcore/signalr_client.dart';
 
-import 'package:mishon_app/core/constants/api_constants.dart';
 import 'package:mishon_app/core/models/social_models.dart';
-import 'package:mishon_app/core/repositories/auth_repository.dart';
 import 'package:mishon_app/core/repositories/social_repository.dart';
-import 'package:mishon_app/core/storage/secure_storage.dart';
+import 'package:mishon_app/core/sync/live_sync_service.dart';
 
 final chatRealtimeServiceProvider = Provider<ChatRealtimeService>((ref) {
   final service = ChatRealtimeService(
-    storage: ref.watch(storageProvider),
     socialRepository: ref.watch(socialRepositoryProvider),
+    liveSyncService: ref.watch(liveSyncServiceProvider),
   );
   ref.onDispose(() {
     unawaited(service.dispose());
@@ -46,6 +42,21 @@ class ChatMessageSentRealtimeEvent extends ChatRealtimeEvent {
   ChatMessageSentRealtimeEvent(this.message) : super(message.conversationId);
 }
 
+class ChatMessageDeletedRealtimeEvent extends ChatRealtimeEvent {
+  final int messageId;
+  final bool deleteForAll;
+
+  ChatMessageDeletedRealtimeEvent({
+    required int conversationId,
+    required this.messageId,
+    required this.deleteForAll,
+  }) : super(conversationId);
+}
+
+class ChatHistoryClearedRealtimeEvent extends ChatRealtimeEvent {
+  ChatHistoryClearedRealtimeEvent(super.conversationId);
+}
+
 class ChatMessageReadRealtimeEvent extends ChatRealtimeEvent {
   final ChatMessageReadEventModel payload;
 
@@ -61,13 +72,16 @@ class ChatMessageDeliveredRealtimeEvent extends ChatRealtimeEvent {
 
 class ChatRealtimeService {
   ChatRealtimeService({
-    required SecureStorage storage,
     required SocialRepository socialRepository,
-  }) : _storage = storage,
-       _socialRepository = socialRepository;
+    required LiveSyncService liveSyncService,
+  }) : _socialRepository = socialRepository,
+       _liveSyncService = liveSyncService {
+    _statusSubscription = _liveSyncService.statuses.listen(_handleStatus);
+    _liveSyncSubscription = _liveSyncService.events.listen(_handleLiveSyncEvent);
+  }
 
-  final SecureStorage _storage;
   final SocialRepository _socialRepository;
+  final LiveSyncService _liveSyncService;
   final StreamController<ChatRealtimeEvent> _eventsController =
       StreamController<ChatRealtimeEvent>.broadcast();
   final StreamController<HubConnectionState> _connectionStatesController =
@@ -76,36 +90,20 @@ class ChatRealtimeService {
   final Map<int, Timer> _typingStopTimers = <int, Timer>{};
   final Set<int> _activeTypingConversations = <int>{};
 
-  HubConnection? _connection;
-  Future<void>? _startOperation;
+  StreamSubscription<LiveSyncEvent>? _liveSyncSubscription;
+  StreamSubscription<LiveSyncStatus>? _statusSubscription;
   bool _disposed = false;
-  bool _realtimeUnavailable = false;
 
   Stream<ChatRealtimeEvent> get events => _eventsController.stream;
   Stream<HubConnectionState> get connectionStates =>
       _connectionStatesController.stream;
 
   Future<void> ensureConnected() async {
-    if (_disposed || _realtimeUnavailable) {
+    if (_disposed) {
       return;
     }
 
-    final state = _connection?.state;
-    if (state == HubConnectionState.Connected ||
-        state == HubConnectionState.Connecting ||
-        state == HubConnectionState.Reconnecting) {
-      return _startOperation ?? Future<void>.value();
-    }
-
-    _startOperation ??= _startConnection();
-    try {
-      await _startOperation;
-    } catch (_) {
-      _realtimeUnavailable = true;
-      _connectionStatesController.add(HubConnectionState.Disconnected);
-    } finally {
-      _startOperation = null;
-    }
+    await _liveSyncService.ensureConnected();
   }
 
   Future<void> reportTypingActivity(
@@ -161,15 +159,8 @@ class ChatRealtimeService {
     _typingStopTimers.clear();
     _activeTypingConversations.clear();
     _lastTypingStartSentAt.clear();
-    final connection = _connection;
-    _connection = null;
-    if (connection != null && !kIsWeb) {
-      try {
-        await connection.stop();
-      } catch (_) {
-        // Best-effort shutdown.
-      }
-    }
+    await _liveSyncSubscription?.cancel();
+    await _statusSubscription?.cancel();
     await _eventsController.close();
     await _connectionStatesController.close();
   }
@@ -182,160 +173,91 @@ class ChatRealtimeService {
     }
   }
 
-  Future<void> _startConnection() async {
-    final connection = _connection ??= _buildConnection();
-    final state = connection.state;
-    if (state == HubConnectionState.Connected ||
-        state == HubConnectionState.Connecting) {
+  void _handleStatus(LiveSyncStatus status) {
+    if (_disposed) {
       return;
     }
 
-    await connection.start();
-    _connectionStatesController.add(
-      connection.state ?? HubConnectionState.Connected,
-    );
+    final mapped = switch (status) {
+      LiveSyncStatus.idle => HubConnectionState.Disconnected,
+      LiveSyncStatus.connecting => HubConnectionState.Connecting,
+      LiveSyncStatus.connected => HubConnectionState.Connected,
+      LiveSyncStatus.reconnecting => HubConnectionState.Reconnecting,
+      LiveSyncStatus.error => HubConnectionState.Reconnecting,
+    };
+    _connectionStatesController.add(mapped);
   }
 
-  HubConnection _buildConnection() {
-    final connection =
-        HubConnectionBuilder()
-            .withUrl(
-              _buildHubUrl(),
-              options: HttpConnectionOptions(
-                accessTokenFactory:
-                    () async => await _storage.readToken() ?? '',
-                transport:
-                    kIsWeb
-                        ? HttpTransportType.LongPolling
-                        : HttpTransportType.WebSockets,
-              ),
-            )
-            .withAutomaticReconnect()
-            .build();
+  void _handleLiveSyncEvent(LiveSyncEvent event) {
+    if (_disposed) {
+      return;
+    }
 
-    connection.on('typing_started', _handleTypingStarted);
-    connection.on('typing_stopped', _handleTypingStopped);
-    connection.on('message_sent', _handleMessageSent);
-    connection.on('message_read', _handleMessageRead);
-    connection.on('message_delivered', _handleMessageDelivered);
-    connection.onclose(({Object? error}) {
-      if (_disposed) {
+    final data = event.data;
+    switch (event.type) {
+      case 'chat.typing.started':
+        _eventsController.add(
+          ChatTypingStartedRealtimeEvent(
+            ChatTypingEventModel(
+              conversationId: data['conversationId'] as int? ?? 0,
+              userId: data['userId'] as int? ?? 0,
+              sentAt: event.occurredAt,
+            ),
+          ),
+        );
         return;
-      }
-      _connectionStatesController.add(HubConnectionState.Disconnected);
-    });
-    connection.onreconnecting(({Object? error}) {
-      if (_disposed) {
+      case 'chat.typing.stopped':
+        _eventsController.add(
+          ChatTypingStoppedRealtimeEvent(
+            ChatTypingEventModel(
+              conversationId: data['conversationId'] as int? ?? 0,
+              userId: data['userId'] as int? ?? 0,
+              sentAt: event.occurredAt,
+            ),
+          ),
+        );
         return;
-      }
-      _connectionStatesController.add(HubConnectionState.Reconnecting);
-    });
-    connection.onreconnected(({String? connectionId}) {
-      if (_disposed) {
+      case 'chat.message.created':
+      case 'chat.message.updated':
+        final messageData = data['message'];
+        if (messageData is Map<String, dynamic>) {
+          _eventsController.add(
+            ChatMessageSentRealtimeEvent(
+              ChatMessageModel.fromJson(messageData),
+            ),
+          );
+        }
         return;
-      }
-      _connectionStatesController.add(HubConnectionState.Connected);
-    });
-
-    return connection;
-  }
-
-  void _handleTypingStarted(List<Object?>? arguments) {
-    final payload = _decodePayload(arguments);
-    if (payload == null) {
-      return;
+      case 'chat.message.deleted':
+        _eventsController.add(
+          ChatMessageDeletedRealtimeEvent(
+            conversationId: data['conversationId'] as int? ?? 0,
+            messageId: data['messageId'] as int? ?? 0,
+            deleteForAll: data['deleteForAll'] as bool? ?? false,
+          ),
+        );
+        return;
+      case 'chat.message.delivered':
+        _eventsController.add(
+          ChatMessageDeliveredRealtimeEvent(
+            ChatMessageDeliveredEventModel.fromJson(data),
+          ),
+        );
+        return;
+      case 'chat.message.read':
+        _eventsController.add(
+          ChatMessageReadRealtimeEvent(
+            ChatMessageReadEventModel.fromJson(data),
+          ),
+        );
+        return;
+      case 'chat.history.cleared':
+        _eventsController.add(
+          ChatHistoryClearedRealtimeEvent(
+            data['conversationId'] as int? ?? 0,
+          ),
+        );
+        return;
     }
-
-    _eventsController.add(
-      ChatTypingStartedRealtimeEvent(ChatTypingEventModel.fromJson(payload)),
-    );
-  }
-
-  void _handleTypingStopped(List<Object?>? arguments) {
-    final payload = _decodePayload(arguments);
-    if (payload == null) {
-      return;
-    }
-
-    _eventsController.add(
-      ChatTypingStoppedRealtimeEvent(ChatTypingEventModel.fromJson(payload)),
-    );
-  }
-
-  void _handleMessageSent(List<Object?>? arguments) {
-    final payload = _decodePayload(arguments);
-    if (payload == null) {
-      return;
-    }
-
-    _eventsController.add(
-      ChatMessageSentRealtimeEvent(ChatMessageModel.fromJson(payload)),
-    );
-  }
-
-  void _handleMessageRead(List<Object?>? arguments) {
-    final payload = _decodePayload(arguments);
-    if (payload == null) {
-      return;
-    }
-
-    _eventsController.add(
-      ChatMessageReadRealtimeEvent(ChatMessageReadEventModel.fromJson(payload)),
-    );
-  }
-
-  void _handleMessageDelivered(List<Object?>? arguments) {
-    final payload = _decodePayload(arguments);
-    if (payload == null) {
-      return;
-    }
-
-    _eventsController.add(
-      ChatMessageDeliveredRealtimeEvent(
-        ChatMessageDeliveredEventModel.fromJson(payload),
-      ),
-    );
-  }
-
-  Map<String, dynamic>? _decodePayload(List<Object?>? arguments) {
-    if (arguments == null || arguments.isEmpty) {
-      return null;
-    }
-
-    final raw = arguments.first;
-    if (raw is Map<String, dynamic>) {
-      return raw;
-    }
-
-    if (raw is Map) {
-      return raw.map((key, value) => MapEntry(key.toString(), value));
-    }
-
-    if (raw is String) {
-      final decoded = jsonDecode(raw);
-      if (decoded is Map<String, dynamic>) {
-        return decoded;
-      }
-      if (decoded is Map) {
-        return decoded.map((key, value) => MapEntry(key.toString(), value));
-      }
-    }
-
-    return null;
-  }
-
-  String _buildHubUrl() {
-    final apiUri = Uri.parse(ApiConstants.baseUrl);
-    final pathSegments = <String>[
-      for (final segment in apiUri.pathSegments)
-        if (segment.isNotEmpty) segment,
-    ];
-    if (pathSegments.isNotEmpty && pathSegments.last == 'api') {
-      pathSegments.removeLast();
-    }
-
-    return apiUri
-        .replace(pathSegments: [...pathSegments, 'hubs', 'chat'])
-        .toString();
   }
 }

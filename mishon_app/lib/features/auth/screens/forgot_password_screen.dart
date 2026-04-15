@@ -101,7 +101,7 @@ class _ForgotPasswordScreenState extends ConsumerState<ForgotPasswordScreen> {
               AuthTextField(
                 controller: _emailController,
                 labelText: strings.emailAddress,
-                hintText: 'you@example.com',
+                hintText: strings.isRu ? 'Введите почту' : 'Enter your email',
                 prefixIcon: Icons.alternate_email_rounded,
                 keyboardType: TextInputType.emailAddress,
                 textInputAction: TextInputAction.done,
@@ -117,13 +117,13 @@ class _ForgotPasswordScreenState extends ConsumerState<ForgotPasswordScreen> {
                   return null;
                 },
               ),
-              const SizedBox(height: 24),
+              const SizedBox(height: 20),
               AuthPrimaryButton(
                 text: strings.sendResetLink,
                 onPressed: _submit,
                 isLoading: _isLoading,
               ),
-              const SizedBox(height: 24),
+              const SizedBox(height: 20),
               AuthFooter(
                 label: strings.rememberedPassword,
                 action: strings.backToLogin,

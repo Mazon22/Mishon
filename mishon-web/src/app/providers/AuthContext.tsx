@@ -1,4 +1,5 @@
 import {
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -103,32 +104,32 @@ export function AuthProvider({ children }: PropsWithChildren) {
     };
   }, []);
 
-  async function login(email: string, password: string) {
+  const login = useCallback(async (email: string, password: string) => {
     const response = await api.auth.login(email, password);
     const nextSession = mapSession(response);
     setSession(nextSession);
     const nextProfile = await api.auth.me();
     setProfile(nextProfile);
-  }
+  }, []);
 
-  async function register(username: string, email: string, password: string) {
+  const register = useCallback(async (username: string, email: string, password: string) => {
     const response = await api.auth.register(username, email, password);
     const nextSession = mapSession(response);
     setSession(nextSession);
     const nextProfile = await api.auth.me();
     setProfile(nextProfile);
-  }
+  }, []);
 
-  async function logout() {
+  const logout = useCallback(async () => {
     try {
       await api.auth.logout();
     } finally {
       setSession(null);
       setProfile(null);
     }
-  }
+  }, []);
 
-  async function refreshProfile() {
+  const refreshProfile = useCallback(async () => {
     if (!sessionRef.current) {
       return null;
     }
@@ -136,7 +137,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
     const nextProfile = await api.auth.me();
     setProfile(nextProfile);
     return nextProfile;
-  }
+  }, []);
 
   const value = useMemo<AuthContextValue>(
     () => ({
@@ -150,7 +151,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
       refreshProfile,
       updateProfileState: setProfile,
     }),
-    [isReady, profile, session],
+    [isReady, login, logout, profile, refreshProfile, register, session],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

@@ -17,7 +17,14 @@ type Config struct {
 	AccessTokenTTL  time.Duration
 	RefreshTokenTTL time.Duration
 	AllowedOrigins  []string
+	PublicBaseURL   string
 	WebDistDir      string
+	UploadsDir      string
+	SMTPHost        string
+	SMTPPort        int
+	SMTPUsername    string
+	SMTPPassword    string
+	SMTPFrom        string
 }
 
 func Load() (Config, error) {
@@ -29,8 +36,15 @@ func Load() (Config, error) {
 		JWTAudience:     getEnv("JWT_AUDIENCE", "MishonUsers"),
 		AccessTokenTTL:  time.Duration(getEnvInt("JWT_EXPIRE_MINUTES", 120)) * time.Minute,
 		RefreshTokenTTL: time.Duration(getEnvInt("JWT_REFRESH_DAYS", 30)) * 24 * time.Hour,
-		AllowedOrigins:  splitCSV(getEnv("CORS_ORIGINS", "http://localhost:5173,http://localhost:3000")),
+		AllowedOrigins:  splitCSV(getEnv("CORS_ORIGINS", defaultCORSOrigins())),
+		PublicBaseURL:   strings.TrimRight(getEnv("PUBLIC_BASE_URL", "http://localhost:8081"), "/"),
 		WebDistDir:      getEnv("WEB_DIST_DIR", "../mishon-web/dist"),
+		UploadsDir:      getEnvOrDefaultWhenUnset("UPLOADS_DIR", ""),
+		SMTPHost:        getEnv("SMTP_HOST", ""),
+		SMTPPort:        getEnvInt("SMTP_PORT", 587),
+		SMTPUsername:    getEnv("SMTP_USERNAME", ""),
+		SMTPPassword:    getEnv("SMTP_PASSWORD", ""),
+		SMTPFrom:        getEnv("SMTP_FROM", ""),
 	}
 
 	if cfg.DatabaseURL == "" {
@@ -50,6 +64,14 @@ func getEnv(key, fallback string) string {
 		return fallback
 	}
 	return value
+}
+
+func getEnvOrDefaultWhenUnset(key, fallback string) string {
+	value, ok := os.LookupEnv(key)
+	if !ok {
+		return fallback
+	}
+	return strings.TrimSpace(value)
 }
 
 func getEnvInt(key string, fallback int) int {
@@ -76,4 +98,13 @@ func splitCSV(value string) []string {
 		}
 	}
 	return items
+}
+
+func defaultCORSOrigins() string {
+	return strings.Join([]string{
+		"http://localhost:*",
+		"http://127.0.0.1:*",
+		"https://localhost:*",
+		"https://127.0.0.1:*",
+	}, ",")
 }

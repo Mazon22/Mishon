@@ -1,132 +1,129 @@
 # Project Structure
 
-Этот файл описывает актуальную структуру репозитория Mishon после перехода на единый backend на Go.
+Этот файл описывает актуальную структуру репозитория Mishon после перехода на единый Go backend и добавления live-sync слоя.
 
 ## Корень репозитория
 
-- `mishon-go-api/` - основной backend
-- `mishon-web/` - веб-клиент для ПК
-- `mishon_app/` - мобильное приложение и Flutter Web
-- `.gitignore` - правила игнорирования файлов
-- `README.md` - общее описание проекта и команды запуска
-- `PROJECT_STRUCTURE.md` - этот файл
-- `ROADMAP.md` - дорожная карта проекта
+- `mishon-go-api/` — основной backend
+- `mishon-web/` — desktop-first сайт
+- `mishon_app/` — Flutter mobile и Flutter Web
+- `README.md` — запуск, архитектура и быстрая проверка
+- `PROJECT_STRUCTURE.md` — эта карта проекта
+- `ROADMAP.md` — дальнейшие этапы развития
 
 ## `mishon-go-api/`
 
-Серверная часть, которая обслуживает и сайт, и мобильное приложение.
+Серверная часть, которая обслуживает сайт, mobile API, SSE sync и раздачу статических файлов.
 
-- `.env.example` - пример переменных окружения
-- `go.mod`, `go.sum` - модуль и lock-файл зависимостей
-- `README.md` - краткое описание backend
-- `cmd/mishon-go-api/main.go` - точка входа сервера
-- `internal/config/config.go` - конфигурация сервера, JWT, БД и путей
-- `internal/app/core.go` - базовая логика API, auth и основной router
-- `internal/app/feed.go` - лента, посты, лайки и комментарии
-- `internal/app/chats.go` - чаты и сообщения
-- `internal/app/friends_notifications.go` - друзья, подписки, discover и уведомления
-- `internal/app/mobile_compat.go` - совместимый API для Flutter-клиента
-- `internal/app/static.go` - раздача собранного сайта и файлов из uploads
+- `cmd/mishon-go-api/main.go` — точка входа
+- `internal/config/config.go` — конфиг окружения, JWT, DB, CORS и пути
+- `internal/app/core.go` — базовый router, auth, профиль и web API
+- `internal/app/feed.go` — посты, лента, лайки, комментарии
+- `internal/app/chats.go` — список диалогов и базовые chat query
+- `internal/app/friends_notifications.go` — друзья, follows, notifications, discover
+- `internal/app/mobile_routes.go` — mobile-compatible роуты `/api`
+- `internal/app/mobile_types.go` — DTO mobile-compatible API
+- `internal/app/mobile_compat.go` — mobile handlers и адаптеры
+- `internal/app/sync.go` — SSE broker, replay, dedup и live event stream
+- `internal/app/static.go` — раздача сайта и `/uploads`
+- `internal/app/media.go` — нормализация и раздача media URL
 
 ## `mishon-web/`
 
-Основной сайт Mishon на React + TypeScript.
+Сайт на React + TypeScript, ориентированный на desktop UX.
 
-- `package.json` - зависимости и команды
-- `vite.config.ts` - конфигурация Vite и proxy до Go backend
-- `index.html` - HTML entrypoint
-- `public/` - публичные статические файлы
-- `src/main.tsx` - bootstrap приложения
+- `package.json` — зависимости и команды
+- `vite.config.ts` — сборка и dev-настройки
+- `src/main.tsx` — bootstrap frontend
 
 ### `mishon-web/src/app/`
 
-Ядро frontend-приложения.
+Каркас приложения.
 
-- `App.tsx` - верхний уровень приложения
-- `providers/AppProviders.tsx` - сборка всех провайдеров
-- `providers/AuthContext.tsx` - auth provider
-- `providers/ThemeContext.tsx` - theme provider
-- `providers/auth-context.ts` - контекст и типы авторизации
-- `providers/theme-context.ts` - контекст и типы темы
-- `providers/useAuth.ts` - хук для auth context
-- `providers/useTheme.ts` - хук для theme context
-- `router/AppRouter.tsx` - маршрутизация страниц
-- `router/ProtectedRoute.tsx` - защита приватных разделов
-- `styles/index.scss` - главный Sass entrypoint
-- `styles/_tokens.scss` - переменные и токены интерфейса
-- `styles/_base.scss` - базовые стили
-- `styles/_chrome.scss` - layout, shell и topbar
-- `styles/_components.scss` - стили повторно используемых UI-блоков
-- `styles/_responsive.scss` - адаптивные правила
+- `App.tsx` — корневой слой
+- `providers/AppProviders.tsx` — сборка всех provider-слоев
+- `providers/AuthContext.tsx` — auth state
+- `providers/ThemeContext.tsx` — тема
+- `providers/LiveSyncContext.tsx` — web live-sync stream
+- `providers/live-sync-context.ts` — типы live-sync
+- `providers/useAuth.ts` — auth hook
+- `providers/useTheme.ts` — theme hook
+- `providers/useLiveSync.ts` — live-sync hook
+- `router/AppRouter.tsx` — маршруты и lazy pages
+- `router/ProtectedRoute.tsx` — защита приватных страниц
+- `styles/` — Sass design system и layout-слой
 
 ### `mishon-web/src/pages/`
 
 Страницы верхнего уровня.
 
-- `pages/login/LoginPage.tsx` - вход и регистрация
-- `pages/feed/FeedPage.tsx` - главная лента
-- `pages/chats/ChatsPage.tsx` - чаты
-- `pages/friends/FriendsPage.tsx` - друзья, заявки и поиск людей
-- `pages/notifications/NotificationsPage.tsx` - уведомления
-- `pages/profile/ProfilePage.tsx` - профиль
-- `pages/settings/SettingsPage.tsx` - настройки
+- `pages/login/LoginPage.tsx` — вход и регистрация
+- `pages/feed/FeedPage.tsx` — основная лента
+- `pages/chats/ChatsPage.tsx` — чаты и сообщения
+- `pages/friends/FriendsPage.tsx` — люди, друзья, заявки, discover
+- `pages/notifications/NotificationsPage.tsx` — уведомления
+- `pages/profile/ProfilePage.tsx` — собственный и чужие профили
+- `pages/settings/SettingsPage.tsx` — тема, профиль, privacy, sessions, blocked users
 
 ### `mishon-web/src/widgets/`
 
-Повторно используемые визуальные блоки.
+Переиспользуемые UI-блоки.
 
-- `widgets/shell/AppShell.tsx` - каркас приложения и навигация
-- `widgets/post/PostCard.tsx` - карточка поста
-- `widgets/post/PostComposer.tsx` - создание поста
+- `widgets/shell/` — shell, sidebar, right rail, search, trends, recommendations
+- `widgets/feed/` — header и tabs ленты
+- `widgets/post/` — composer, post card, media, actions, comments
 
 ### `mishon-web/src/shared/`
 
-Общие модули.
+Общие типы, API и утилиты.
 
-- `shared/api/api.ts` - axios-клиент и вызовы backend API
-- `shared/lib/chatContent.ts` - форматирование chat content
-- `shared/lib/format.ts` - форматирование дат и текста
-- `shared/types/api.ts` - типы API
+- `shared/api/core/` — http client, session, error handling, normalizers
+- `shared/api/domains/` — доменные API для auth/feed/profile/chats/friends/notifications
+- `shared/lib/` — форматирование, media helpers, chat content helpers
+- `shared/types/api.ts` — контракты frontend API
 
 ## `mishon_app/`
 
-Flutter-клиент Mishon.
+Flutter-клиент для телефона и web mobile.
 
-- `pubspec.yaml` - зависимости и конфигурация Flutter
-- `android/` - Android host project
-- `web/` - оболочка Flutter Web
-- `lib/main.dart` - точка входа приложения
-- `test/` - тесты
+- `lib/main.dart` — точка входа
+- `pubspec.yaml` — зависимости
+- `android/` — Android host project
+- `web/` — Flutter Web оболочка
 
 ### `mishon_app/lib/core/`
 
 Общая инфраструктура приложения.
 
-- `constants/` - URL API и базовые константы
-- `network/` - клиент API и сетевой слой
-- `repositories/` - repositories приложения
-- `router/` - маршрутизация
-- `theme/` - тема и дизайн-токены
-- `widgets/` - общие виджеты
-- `utils/` - вспомогательные инструменты, вложения и voice notes
+- `constants/` — базовые URL и константы API
+- `network/` — Dio client, API service, exceptions
+- `repositories/` — auth, posts, social и cache-слои
+- `providers/` — bootstrap, auth session events, connection state
+- `sync/live_sync_service.dart` — Flutter live-sync слой поверх SSE
+- `sync/app_live_sync_bootstrap.dart` — глобальная реакция приложения на sync events
+- `router/` — маршруты приложения
+- `theme/` — темы и токены
+- `widgets/` — общие UI-виджеты
+- `utils/` — media, external URL, device metadata и вспомогательные функции
 
 ### `mishon_app/lib/features/`
 
 Функциональные модули.
 
-- `auth/` - вход, регистрация и onboarding
-- `feed/` - лента
-- `post/` - создание постов
-- `comments/` - комментарии
-- `chats/` - чаты и сообщения
-- `friends/` - друзья
-- `people/` - поиск и discover
-- `notifications/` - уведомления
-- `profile/` - профиль, приватность и связанные экраны
+- `auth/` — auth flow, onboarding, verification UI
+- `feed/` — лента и посты
+- `post/` — создание постов
+- `comments/` — комментарии и discussion thread
+- `chats/` — диалоги, сообщения и realtime adapters
+- `friends/` — друзья и заявки
+- `people/` — поиск и discover
+- `notifications/` — уведомления и summary
+- `profile/` — профиль, privacy, sessions
 
 ## Как всё связано
 
-1. `mishon-web` собирается в production build.
-2. `mishon-go-api` раздаёт этот build как сайт.
-3. `mishon_app` работает с тем же backend через mobile-compatible API.
-4. И сайт, и мобильное приложение используют одну серверную логику и одну модель данных.
+1. `mishon-go-api` хранит единую бизнес-логику и публикует sync events.
+2. `mishon-web` работает через `/api/v1` и live stream `/api/v1/sync/stream`.
+3. `mishon_app` работает через `/api` и live stream `/api/sync/stream`.
+4. Оба клиента используют одну базу данных, один backend и согласованные модели данных.
+5. При reconnect клиенты выполняют повторную синхронизацию и актуализируют counters, ленты, чаты и профиль.

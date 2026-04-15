@@ -2,23 +2,24 @@ import { useEffect, useMemo, useState, type PropsWithChildren } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 
 import { useAuth } from '../../app/providers/useAuth';
+import { useLiveSync } from '../../app/providers/useLiveSync';
 import { api } from '../../shared/api/api';
-import { initials } from '../../shared/lib/format';
-import type { NotificationSummary } from '../../shared/types/api';
+import { hasMinimumRole } from '../../shared/lib/roles';
+import type { NotificationSummary, Post } from '../../shared/types/api';
+import { AppIcon } from '../../shared/ui/AppIcon';
+import { MishonMark } from '../../shared/ui/MishonMark';
+import { UserAvatar } from '../../shared/ui/UserAvatar';
+import { ComposePostModal } from '../post/ComposePostModal';
+import { SidebarNav } from './SidebarNav';
+import { ShellIcon } from './ShellIcon';
+import type { SidebarNavItem } from './types';
 
 type AppShellProps = PropsWithChildren<{
   title: string;
   subtitle?: string;
+  hideTopbar?: boolean;
+  shellVariant?: 'default' | 'messages' | 'wide';
 }>;
-
-type NavIconName = 'feed' | 'chats' | 'friends' | 'profile' | 'settings' | 'notifications';
-
-type NavItem = {
-  to: string;
-  label: string;
-  icon: NavIconName;
-  badge?: number;
-};
 
 const defaultSummary: NotificationSummary = {
   unreadNotifications: 0,
@@ -27,87 +28,27 @@ const defaultSummary: NotificationSummary = {
   pendingFollowRequests: 0,
 };
 
-function ShellIcon({ name }: { name: NavIconName }) {
-  switch (name) {
-    case 'feed':
-      return (
-        <svg aria-hidden="true" className="shell-icon" fill="none" viewBox="0 0 24 24">
-          <rect height="15" rx="4" stroke="currentColor" strokeWidth="1.8" width="14" x="5" y="4.5" />
-          <path d="M8.5 9h7" stroke="currentColor" strokeLinecap="round" strokeWidth="1.8" />
-          <path d="M8.5 12.5h7" stroke="currentColor" strokeLinecap="round" strokeWidth="1.8" />
-          <path d="M8.5 16h4.5" stroke="currentColor" strokeLinecap="round" strokeWidth="1.8" />
-        </svg>
-      );
-    case 'chats':
-      return (
-        <svg aria-hidden="true" className="shell-icon" fill="none" viewBox="0 0 24 24">
-          <path
-            d="M6.25 7.25A3.25 3.25 0 0 1 9.5 4h5A3.25 3.25 0 0 1 17.75 7.25v6.5A3.25 3.25 0 0 1 14.5 17h-3.2L7 19.8V17A3.25 3.25 0 0 1 4.25 13.75v-6.5Z"
-            stroke="currentColor"
-            strokeLinejoin="round"
-            strokeWidth="1.8"
-          />
-          <path d="M8.75 9.5h6.5" stroke="currentColor" strokeLinecap="round" strokeWidth="1.8" />
-          <path d="M8.75 12.5h4.5" stroke="currentColor" strokeLinecap="round" strokeWidth="1.8" />
-        </svg>
-      );
-    case 'friends':
-      return (
-        <svg aria-hidden="true" className="shell-icon" fill="none" viewBox="0 0 24 24">
-          <path
-            d="M12 19.25s-6.25-3.66-6.25-8.44A3.56 3.56 0 0 1 9.3 7.25c1.12 0 2.15.5 2.7 1.31a3.35 3.35 0 0 1 2.7-1.31 3.56 3.56 0 0 1 3.55 3.56C18.25 15.6 12 19.25 12 19.25Z"
-            stroke="currentColor"
-            strokeLinejoin="round"
-            strokeWidth="1.8"
-          />
-        </svg>
-      );
-    case 'profile':
-      return (
-        <svg aria-hidden="true" className="shell-icon" fill="none" viewBox="0 0 24 24">
-          <circle cx="12" cy="8.5" r="3.25" stroke="currentColor" strokeWidth="1.8" />
-          <path
-            d="M6.75 18.25a5.25 5.25 0 0 1 10.5 0"
-            stroke="currentColor"
-            strokeLinecap="round"
-            strokeWidth="1.8"
-          />
-        </svg>
-      );
-    case 'settings':
-      return (
-        <svg aria-hidden="true" className="shell-icon" fill="none" viewBox="0 0 24 24">
-          <path
-            d="M9.5 6.5h8.25M6.25 6.5h1M14.5 12h3.25M6.25 12h5M10.5 17.5h7.25M6.25 17.5h1"
-            stroke="currentColor"
-            strokeLinecap="round"
-            strokeWidth="1.8"
-          />
-          <circle cx="8.25" cy="6.5" fill="currentColor" r="2" />
-          <circle cx="12.5" cy="12" fill="currentColor" r="2" />
-          <circle cx="8.25" cy="17.5" fill="currentColor" r="2" />
-        </svg>
-      );
-    case 'notifications':
-      return (
-        <svg aria-hidden="true" className="shell-icon" fill="none" viewBox="0 0 24 24">
-          <path
-            d="M8.25 17.25h7.5l-1.14-1.78a4 4 0 0 1-.61-2.16V10.5a4 4 0 1 0-8 0v2.81c0 .77-.22 1.52-.62 2.16l-1.13 1.78h4"
-            stroke="currentColor"
-            strokeLinejoin="round"
-            strokeWidth="1.8"
-          />
-          <path d="M10.25 19a1.75 1.75 0 0 0 3.5 0" stroke="currentColor" strokeLinecap="round" strokeWidth="1.8" />
-        </svg>
-      );
-  }
-}
-
-export function AppShell({ title, subtitle, children }: AppShellProps) {
+export function AppShell({
+  title,
+  subtitle,
+  hideTopbar = false,
+  shellVariant = 'default',
+  children,
+}: AppShellProps) {
   const location = useLocation();
   const navigate = useNavigate();
-  const { profile, logout } = useAuth();
+  const { profile, logout, refreshProfile } = useAuth();
+  const { subscribe } = useLiveSync();
   const [summary, setSummary] = useState<NotificationSummary>(defaultSummary);
+  const [composeOpen, setComposeOpen] = useState(false);
+  const [composeBusy, setComposeBusy] = useState(false);
+  const [sidebarMode, setSidebarMode] = useState<'expanded' | 'compact'>(
+    shellVariant === 'messages' ? 'compact' : 'expanded',
+  );
+
+  useEffect(() => {
+    setSidebarMode(shellVariant === 'messages' ? 'compact' : 'expanded');
+  }, [shellVariant]);
 
   useEffect(() => {
     let cancelled = false;
@@ -119,53 +60,188 @@ export function AppShell({ title, subtitle, children }: AppShellProps) {
           setSummary(nextSummary);
         }
       } catch {
-        // Summary refresh is non-blocking for navigation.
+        // Non-blocking.
       }
     }
 
     void loadSummary();
-    const id = window.setInterval(() => void loadSummary(), 30000);
+
+    const intervalId = window.setInterval(() => void loadSummary(), 30000);
+    const unsubscribe = subscribe((event) => {
+      const eventData = event.data as { userId?: number } | undefined;
+      const eventUserId = Number(eventData?.userId ?? 0);
+
+      if (
+        event.type === 'notification.summary.changed' ||
+        event.type === 'notifications.changed' ||
+        event.type.startsWith('chat.') ||
+        event.type.startsWith('friends.') ||
+        event.type.startsWith('follow.') ||
+        event.type === 'sync.resync'
+      ) {
+        void loadSummary();
+      }
+
+      if (event.type === 'sync.resync' || (event.type === 'profile.updated' && (!eventUserId || eventUserId === profile?.id))) {
+        void refreshProfile().catch(() => {
+          // Non-blocking.
+        });
+      }
+    });
 
     return () => {
       cancelled = true;
-      window.clearInterval(id);
+      unsubscribe();
+      window.clearInterval(intervalId);
     };
-  }, []);
+  }, [profile?.id, refreshProfile, subscribe]);
 
-  const navItems = useMemo<NavItem[]>(
+  const navItems = useMemo<SidebarNavItem[]>(
     () => [
       { to: '/feed', label: 'Лента', icon: 'feed' },
-      { to: '/chats', label: 'Чаты', icon: 'chats', badge: summary.unreadChats },
+      {
+        to: '/notifications',
+        label: 'Уведомления',
+        icon: 'notifications',
+        badge: summary.unreadNotifications,
+      },
       {
         to: '/friends',
-        label: 'Друзья',
+        label: 'Люди',
         icon: 'friends',
         badge: summary.incomingFriendRequests + summary.pendingFollowRequests,
       },
+      { to: '/chats', label: 'Чаты', icon: 'chats', badge: summary.unreadChats },
+      { to: '/bookmarks', label: 'Закладки', icon: 'bookmark' },
       { to: '/profile', label: 'Профиль', icon: 'profile' },
       { to: '/settings', label: 'Настройки', icon: 'settings' },
     ],
     [summary],
   );
 
+  const shellNavItems = useMemo<SidebarNavItem[]>(() => {
+    if (!hasMinimumRole(profile?.role ?? null, 'Admin')) {
+      return navItems;
+    }
+    return [...navItems, { to: '/admin', label: 'Админ', icon: 'shield' }];
+  }, [navItems, profile?.role]);
+
+  const mobileNavItems = useMemo(() => shellNavItems.slice(0, 5), [shellNavItems]);
+
   const displayName = profile?.displayName || profile?.username || 'Mishon';
-  const username = profile?.username ? `@${profile.username}` : 'Ваш аккаунт';
+  const username = profile?.username ? `@${profile.username}` : '@mishon';
+  const isMessagesShell = shellVariant === 'messages';
+  const isWideShell = shellVariant === 'wide';
+
+  async function handleComposeSubmit(payload: { content: string; imageUrl?: string; imageFile?: File | null }) {
+    setComposeBusy(true);
+
+    try {
+      const createdPost = await api.feed.create(payload.content, payload.imageUrl, payload.imageFile);
+      window.dispatchEvent(new CustomEvent<Post>('mishon:post-created', { detail: createdPost }));
+    } finally {
+      setComposeBusy(false);
+    }
+  }
 
   return (
-    <div className="shell">
-      <aside className="shell__sidebar">
-        <div className="brand-card">
-          <div className="brand-card__badge">M</div>
-          <div className="brand-card__title">Mishon</div>
-          <div className="brand-card__subtitle">Социальная сеть</div>
+    <>
+      <div
+        className={`shell${isMessagesShell ? ' shell--messages' : ''}${isWideShell ? ' shell--wide' : ''}${sidebarMode === 'compact' ? ' shell--rail-compact' : ''}`}
+      >
+        <aside className="shell__sidebar">
+          {isMessagesShell ? (
+            <button
+              aria-label={sidebarMode === 'compact' ? 'Развернуть навигацию' : 'Свернуть навигацию'}
+              className={`shell__rail-toggle${sidebarMode === 'expanded' ? ' shell__rail-toggle--expanded' : ''}`}
+              type="button"
+              onClick={() => setSidebarMode((current) => (current === 'compact' ? 'expanded' : 'compact'))}
+            >
+              <AppIcon className="shell-icon shell-icon--sm shell__rail-toggle-icon" name="chevron-right" />
+            </button>
+          ) : null}
+
+          <div className="brand-card">
+            <button className="brand-card__badge" type="button" onClick={() => navigate('/feed')}>
+              <MishonMark className="brand-card__logo" monochrome />
+            </button>
+            <div className="brand-card__meta">
+              <strong>Mishon</strong>
+            </div>
+          </div>
+
+          <SidebarNav items={shellNavItems} onCompose={() => setComposeOpen(true)} />
+
+          <div className="profile-card">
+            <button className="profile-card__row" type="button" onClick={() => navigate('/profile')}>
+              <UserAvatar
+                className="profile-card__avatar"
+                imageUrl={profile?.avatarUrl}
+                name={displayName}
+                offsetX={profile?.avatarOffsetX}
+                offsetY={profile?.avatarOffsetY}
+                scale={profile?.avatarScale}
+                size="lg"
+              />
+              <span className="profile-card__meta">
+                <span className="profile-card__name">{displayName}</span>
+                <span className="profile-card__hint">{username}</span>
+              </span>
+              <span className="profile-card__menu">
+                <AppIcon className="shell-icon shell-icon--sm" name="chevron-right" />
+              </span>
+            </button>
+            <button
+              aria-label="Выйти"
+              className="ghost-button ghost-button--wide profile-card__logout"
+              type="button"
+              onClick={() => void logout()}
+            >
+              <AppIcon className="button-icon" name="logout" />
+              <span>Выйти</span>
+            </button>
+          </div>
+        </aside>
+
+        <div className="shell__layout">
+          <section className={`shell__center${hideTopbar ? ' shell__center--no-topbar' : ''}`}>
+            {!hideTopbar ? (
+              <header className="topbar">
+                <div className="topbar__title">
+                  <span className="page-title">{title}</span>
+                  {subtitle && location.pathname !== '/feed' ? <span className="page-subtitle">{subtitle}</span> : null}
+                </div>
+                <div className="topbar__actions">
+                  <button className="topbar__profile" type="button" onClick={() => navigate('/profile')}>
+                    <UserAvatar
+                      imageUrl={profile?.avatarUrl}
+                      name={displayName}
+                      offsetX={profile?.avatarOffsetX}
+                      offsetY={profile?.avatarOffsetY}
+                      scale={profile?.avatarScale}
+                      size="mini"
+                    />
+                    <span className="topbar__profile-copy">
+                      <strong>{displayName}</strong>
+                      <span>{username}</span>
+                    </span>
+                  </button>
+                </div>
+              </header>
+            ) : null}
+
+            <main className="shell__content shell__content--enter" key={location.pathname}>
+              {children}
+            </main>
+          </section>
         </div>
 
-        <nav className="shell__nav" aria-label="Основная навигация">
-          {navItems.map((item) => (
+        <nav className="mobile-nav" aria-label="Нижняя навигация">
+          {mobileNavItems.map((item) => (
             <NavLink
               key={item.to}
               to={item.to}
-              className={({ isActive }) => `nav-link${isActive ? ' nav-link--active' : ''}`}
+              className={({ isActive }) => `mobile-nav__link${isActive ? ' mobile-nav__link--active' : ''}`}
             >
               <span className="nav-link__icon">
                 <ShellIcon name={item.icon} />
@@ -175,86 +251,18 @@ export function AppShell({ title, subtitle, children }: AppShellProps) {
             </NavLink>
           ))}
         </nav>
-
-        <div className="profile-card">
-          <button className="avatar avatar--large profile-card__avatar" type="button" onClick={() => navigate('/profile')}>
-            {profile?.avatarUrl ? (
-              <img alt={profile.username} className="avatar__image" src={profile.avatarUrl} />
-            ) : (
-              initials(displayName)
-            )}
-          </button>
-          <div className="profile-card__meta">
-            <div className="profile-card__name">{displayName}</div>
-            <div className="profile-card__hint">{username}</div>
-          </div>
-          <button className="ghost-button ghost-button--wide" type="button" onClick={() => void logout()}>
-            Выйти
-          </button>
-        </div>
-      </aside>
-
-      <div className="shell__main">
-        <header className="topbar">
-          <div className="topbar__title">
-            <span className="topbar__dot" />
-            <div>
-              <div className="page-title">{title}</div>
-              {subtitle ? <div className="page-subtitle">{subtitle}</div> : null}
-            </div>
-          </div>
-
-          <div className="topbar__actions">
-            <button
-              aria-label="Уведомления"
-              className="icon-button"
-              type="button"
-              onClick={() => navigate('/notifications')}
-            >
-              <ShellIcon name="notifications" />
-              {summary.unreadNotifications ? (
-                <span className="icon-button__badge">
-                  {summary.unreadNotifications > 99 ? '99+' : summary.unreadNotifications}
-                </span>
-              ) : null}
-            </button>
-
-            <button className="topbar__profile" type="button" onClick={() => navigate('/profile')}>
-              <span className="avatar topbar__profile-avatar">
-                {profile?.avatarUrl ? (
-                  <img alt={profile.username} className="avatar__image" src={profile.avatarUrl} />
-                ) : (
-                  initials(displayName)
-                )}
-              </span>
-              <span className="topbar__profile-meta">
-                <span className="topbar__profile-name">{displayName}</span>
-                <span className="topbar__profile-hint">{username}</span>
-              </span>
-            </button>
-          </div>
-        </header>
-
-        <main className="shell__content shell__content--enter" key={location.pathname}>
-          {children}
-        </main>
       </div>
 
-      <nav className="mobile-nav" aria-label="Нижняя навигация">
-        {navItems.map((item) => (
-          <NavLink
-            key={item.to}
-            to={item.to}
-            className={({ isActive }) => `mobile-nav__link${isActive ? ' mobile-nav__link--active' : ''}`}
-          >
-            <span className="nav-link__icon">
-              <ShellIcon name={item.icon} />
-            </span>
-            <span className="nav-link__label">{item.label}</span>
-            {item.badge ? <span className="nav-link__badge">{item.badge > 99 ? '99+' : item.badge}</span> : null}
-          </NavLink>
-        ))}
-      </nav>
-    </div>
+      <ComposePostModal
+        busy={composeBusy}
+        open={composeOpen}
+        onClose={() => {
+          if (!composeBusy) {
+            setComposeOpen(false);
+          }
+        }}
+        onSubmit={handleComposeSubmit}
+      />
+    </>
   );
 }

@@ -4,13 +4,9 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"io"
 	"mime/multipart"
 	"net/http"
 	"net/mail"
-	"net/url"
-	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -19,455 +15,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgconn"
 )
-
-type mobilePagedResponse[T any] struct {
-	Items       []T  `json:"items"`
-	Page        int  `json:"page"`
-	PageSize    int  `json:"pageSize"`
-	TotalCount  int  `json:"totalCount"`
-	TotalPages  int  `json:"totalPages"`
-	HasPrevious bool `json:"hasPrevious"`
-	HasNext     bool `json:"hasNext"`
-}
-
-type mobileProfileResponse struct {
-	ID                      int       `json:"id"`
-	Username                string    `json:"username"`
-	Email                   string    `json:"email"`
-	DisplayName             *string   `json:"displayName,omitempty"`
-	AboutMe                 *string   `json:"aboutMe,omitempty"`
-	AvatarURL               *string   `json:"avatarUrl,omitempty"`
-	BannerURL               *string   `json:"bannerUrl,omitempty"`
-	AvatarScale             float64   `json:"avatarScale"`
-	AvatarOffsetX           float64   `json:"avatarOffsetX"`
-	AvatarOffsetY           float64   `json:"avatarOffsetY"`
-	BannerScale             float64   `json:"bannerScale"`
-	BannerOffsetX           float64   `json:"bannerOffsetX"`
-	BannerOffsetY           float64   `json:"bannerOffsetY"`
-	CreatedAt               time.Time `json:"createdAt"`
-	LastSeenAt              time.Time `json:"lastSeenAt"`
-	IsOnline                bool      `json:"isOnline"`
-	FollowersCount          int       `json:"followersCount"`
-	FollowingCount          int       `json:"followingCount"`
-	PostsCount              int       `json:"postsCount"`
-	IsBlockedByViewer       bool      `json:"isBlockedByViewer"`
-	HasBlockedViewer        bool      `json:"hasBlockedViewer"`
-	IsFollowing             bool      `json:"isFollowing"`
-	EmailVerified           bool      `json:"emailVerified"`
-	Role                    string    `json:"role"`
-	IsPrivateAccount        bool      `json:"isPrivateAccount"`
-	ProfileVisibility       string    `json:"profileVisibility"`
-	MessagePrivacy          string    `json:"messagePrivacy"`
-	CommentPrivacy          string    `json:"commentPrivacy"`
-	PresenceVisibility      string    `json:"presenceVisibility"`
-	CanViewProfile          bool      `json:"canViewProfile"`
-	CanViewPosts            bool      `json:"canViewPosts"`
-	CanSendMessages         bool      `json:"canSendMessages"`
-	CanComment              bool      `json:"canComment"`
-	CanViewPresence         bool      `json:"canViewPresence"`
-	HasPendingFollowRequest bool      `json:"hasPendingFollowRequest"`
-}
-
-type mobilePrivacyResponse struct {
-	IsPrivateAccount   bool   `json:"isPrivateAccount"`
-	ProfileVisibility  string `json:"profileVisibility"`
-	MessagePrivacy     string `json:"messagePrivacy"`
-	CommentPrivacy     string `json:"commentPrivacy"`
-	PresenceVisibility string `json:"presenceVisibility"`
-}
-
-type mobilePostResponse struct {
-	ID                int       `json:"id"`
-	UserID            int       `json:"userId"`
-	Username          string    `json:"username"`
-	UserAvatarURL     *string   `json:"userAvatarUrl,omitempty"`
-	UserAvatarScale   float64   `json:"userAvatarScale"`
-	UserAvatarOffsetX float64   `json:"userAvatarOffsetX"`
-	UserAvatarOffsetY float64   `json:"userAvatarOffsetY"`
-	Content           string    `json:"content"`
-	ImageURL          *string   `json:"imageUrl,omitempty"`
-	CreatedAt         time.Time `json:"createdAt"`
-	LikesCount        int       `json:"likesCount"`
-	CommentsCount     int       `json:"commentsCount"`
-	IsLiked           bool      `json:"isLiked"`
-	IsFollowingAuthor bool      `json:"isFollowingAuthor"`
-	CanComment        bool      `json:"canComment"`
-	IsHidden          bool      `json:"isHidden"`
-	IsRemoved         bool      `json:"isRemoved"`
-}
-
-type mobileCommentResponse struct {
-	ID                int        `json:"id"`
-	UserID            int        `json:"userId"`
-	Username          string     `json:"username"`
-	UserAvatarURL     *string    `json:"userAvatarUrl,omitempty"`
-	UserAvatarScale   float64    `json:"userAvatarScale"`
-	UserAvatarOffsetX float64    `json:"userAvatarOffsetX"`
-	UserAvatarOffsetY float64    `json:"userAvatarOffsetY"`
-	Content           string     `json:"content"`
-	CreatedAt         time.Time  `json:"createdAt"`
-	EditedAt          *time.Time `json:"editedAt,omitempty"`
-	ParentCommentID   *int       `json:"parentCommentId,omitempty"`
-	ReplyToUsername   *string    `json:"replyToUsername,omitempty"`
-	IsHidden          bool       `json:"isHidden"`
-	IsRemoved         bool       `json:"isRemoved"`
-}
-
-type mobileFollowResponse struct {
-	ID               int     `json:"id"`
-	Username         string  `json:"username"`
-	AvatarURL        *string `json:"avatarUrl,omitempty"`
-	AvatarScale      float64 `json:"avatarScale"`
-	AvatarOffsetX    float64 `json:"avatarOffsetX"`
-	AvatarOffsetY    float64 `json:"avatarOffsetY"`
-	IsFollowing      bool    `json:"isFollowing"`
-	IsPrivateAccount bool    `json:"isPrivateAccount"`
-}
-
-type mobileDiscoverUserResponse struct {
-	ID                 int       `json:"id"`
-	Username           string    `json:"username"`
-	AboutMe            *string   `json:"aboutMe,omitempty"`
-	AvatarURL          *string   `json:"avatarUrl,omitempty"`
-	AvatarScale        float64   `json:"avatarScale"`
-	AvatarOffsetX      float64   `json:"avatarOffsetX"`
-	AvatarOffsetY      float64   `json:"avatarOffsetY"`
-	LastSeenAt         time.Time `json:"lastSeenAt"`
-	IsOnline           bool      `json:"isOnline"`
-	FollowersCount     int       `json:"followersCount"`
-	PostsCount         int       `json:"postsCount"`
-	MutualFriendsCount int       `json:"mutualFriendsCount"`
-	EngagementScore    int       `json:"engagementScore"`
-	IsFollowing        bool      `json:"isFollowing"`
-	IsFriend           bool      `json:"isFriend"`
-	IncomingRequestID  *int      `json:"incomingFriendRequestId,omitempty"`
-	OutgoingRequestID  *int      `json:"outgoingFriendRequestId,omitempty"`
-	IsPrivateAccount   bool      `json:"isPrivateAccount"`
-	ProfileVisibility  string    `json:"profileVisibility"`
-	CanViewProfile     bool      `json:"canViewProfile"`
-	CanSendMessages    bool      `json:"canSendMessages"`
-	HasPendingFollow   bool      `json:"hasPendingFollowRequest"`
-}
-
-type mobileFriendResponse struct {
-	ID            int       `json:"id"`
-	Username      string    `json:"username"`
-	AboutMe       *string   `json:"aboutMe,omitempty"`
-	AvatarURL     *string   `json:"avatarUrl,omitempty"`
-	AvatarScale   float64   `json:"avatarScale"`
-	AvatarOffsetX float64   `json:"avatarOffsetX"`
-	AvatarOffsetY float64   `json:"avatarOffsetY"`
-	LastSeenAt    time.Time `json:"lastSeenAt"`
-	IsOnline      bool      `json:"isOnline"`
-}
-
-type mobileFriendRequestResponse struct {
-	ID            int       `json:"id"`
-	UserID        int       `json:"userId"`
-	Username      string    `json:"username"`
-	AboutMe       *string   `json:"aboutMe,omitempty"`
-	AvatarURL     *string   `json:"avatarUrl,omitempty"`
-	AvatarScale   float64   `json:"avatarScale"`
-	AvatarOffsetX float64   `json:"avatarOffsetX"`
-	AvatarOffsetY float64   `json:"avatarOffsetY"`
-	LastSeenAt    time.Time `json:"lastSeenAt"`
-	IsOnline      bool      `json:"isOnline"`
-	IsIncoming    bool      `json:"isIncoming"`
-	CreatedAt     time.Time `json:"createdAt"`
-}
-
-type mobileConversationResponse struct {
-	ID                           int        `json:"id"`
-	PeerID                       int        `json:"peerId"`
-	Username                     string     `json:"username"`
-	AvatarURL                    *string    `json:"avatarUrl,omitempty"`
-	AvatarScale                  float64    `json:"avatarScale"`
-	AvatarOffsetX                float64    `json:"avatarOffsetX"`
-	AvatarOffsetY                float64    `json:"avatarOffsetY"`
-	LastSeenAt                   time.Time  `json:"lastSeenAt"`
-	IsOnline                     bool       `json:"isOnline"`
-	PinOrder                     *int       `json:"pinOrder,omitempty"`
-	IsPinned                     bool       `json:"isPinned"`
-	IsArchived                   bool       `json:"isArchived"`
-	IsFavorite                   bool       `json:"isFavorite"`
-	IsMuted                      bool       `json:"isMuted"`
-	IsBlockedByViewer            bool       `json:"isBlockedByViewer"`
-	HasBlockedViewer             bool       `json:"hasBlockedViewer"`
-	LastMessage                  *string    `json:"lastMessage,omitempty"`
-	LastMessageAt                *time.Time `json:"lastMessageAt,omitempty"`
-	LastMessageIsMine            bool       `json:"lastMessageIsMine"`
-	LastMessageIsDeliveredToPeer bool       `json:"lastMessageIsDeliveredToPeer"`
-	LastMessageIsReadByPeer      bool       `json:"lastMessageIsReadByPeer"`
-	UnreadCount                  int        `json:"unreadCount"`
-	CanSendMessages              bool       `json:"canSendMessages"`
-}
-
-type mobileDirectConversationResponse struct {
-	ID              int       `json:"id"`
-	PeerID          int       `json:"peerId"`
-	Username        string    `json:"username"`
-	AvatarURL       *string   `json:"avatarUrl,omitempty"`
-	AvatarScale     float64   `json:"avatarScale"`
-	AvatarOffsetX   float64   `json:"avatarOffsetX"`
-	AvatarOffsetY   float64   `json:"avatarOffsetY"`
-	LastSeenAt      time.Time `json:"lastSeenAt"`
-	IsOnline        bool      `json:"isOnline"`
-	CanSendMessages bool      `json:"canSendMessages"`
-}
-
-type mobileAttachmentResponse struct {
-	ID          int    `json:"id"`
-	FileName    string `json:"fileName"`
-	FileURL     string `json:"fileUrl"`
-	ContentType string `json:"contentType"`
-	SizeBytes   int64  `json:"sizeBytes"`
-	IsImage     bool   `json:"isImage"`
-}
-
-type mobileMessageResponse struct {
-	ID                             int                        `json:"id"`
-	ConversationID                 int                        `json:"conversationId"`
-	SenderID                       int                        `json:"senderId"`
-	SenderUsername                 string                     `json:"senderUsername"`
-	Content                        string                     `json:"content"`
-	CreatedAt                      time.Time                  `json:"createdAt"`
-	EditedAt                       *time.Time                 `json:"editedAt,omitempty"`
-	IsMine                         bool                       `json:"isMine"`
-	IsDeliveredToPeer              bool                       `json:"isDeliveredToPeer"`
-	DeliveredToPeerAt              *time.Time                 `json:"deliveredToPeerAt,omitempty"`
-	IsReadByPeer                   bool                       `json:"isReadByPeer"`
-	ReadByPeerAt                   *time.Time                 `json:"readByPeerAt,omitempty"`
-	ReplyToMessageID               *int                       `json:"replyToMessageId,omitempty"`
-	ReplyToSenderUsername          *string                    `json:"replyToSenderUsername,omitempty"`
-	ReplyToContent                 *string                    `json:"replyToContent,omitempty"`
-	ForwardedFromMessageID         *int                       `json:"forwardedFromMessageId,omitempty"`
-	ForwardedFromUserID            *int                       `json:"forwardedFromUserId,omitempty"`
-	ForwardedFromSenderUsername    *string                    `json:"forwardedFromSenderUsername,omitempty"`
-	ForwardedFromUserAvatarURL     *string                    `json:"forwardedFromUserAvatarUrl,omitempty"`
-	ForwardedFromUserAvatarScale   float64                    `json:"forwardedFromUserAvatarScale"`
-	ForwardedFromUserAvatarOffsetX float64                    `json:"forwardedFromUserAvatarOffsetX"`
-	ForwardedFromUserAvatarOffsetY float64                    `json:"forwardedFromUserAvatarOffsetY"`
-	Attachments                    []mobileAttachmentResponse `json:"attachments"`
-	IsHidden                       bool                       `json:"isHidden"`
-	IsRemoved                      bool                       `json:"isRemoved"`
-}
-
-type mobileMessagePageResponse struct {
-	Items               []mobileMessageResponse `json:"items"`
-	HasMore             bool                    `json:"hasMore"`
-	NextBeforeMessageID *int                    `json:"nextBeforeMessageId,omitempty"`
-}
-
-type mobileNotificationResponse struct {
-	ID                 int       `json:"id"`
-	Type               string    `json:"type"`
-	Text               string    `json:"text"`
-	IsRead             bool      `json:"isRead"`
-	CreatedAt          time.Time `json:"createdAt"`
-	ActorUserID        *int      `json:"actorUserId,omitempty"`
-	ActorUsername      *string   `json:"actorUsername,omitempty"`
-	ActorAvatarURL     *string   `json:"actorAvatarUrl,omitempty"`
-	ActorAvatarScale   float64   `json:"actorAvatarScale"`
-	ActorAvatarOffsetX float64   `json:"actorAvatarOffsetX"`
-	ActorAvatarOffsetY float64   `json:"actorAvatarOffsetY"`
-	PostID             *int      `json:"postId,omitempty"`
-	CommentID          *int      `json:"commentId,omitempty"`
-	ConversationID     *int      `json:"conversationId,omitempty"`
-	MessageID          *int      `json:"messageId,omitempty"`
-	RelatedUserID      *int      `json:"relatedUserId,omitempty"`
-}
-
-type mobileSessionResponse struct {
-	ID               string     `json:"id"`
-	CreatedAt        time.Time  `json:"createdAt"`
-	LastUsedAt       time.Time  `json:"lastUsedAt"`
-	ExpiresAt        time.Time  `json:"expiresAt"`
-	RevokedAt        *time.Time `json:"revokedAt,omitempty"`
-	DeviceName       *string    `json:"deviceName,omitempty"`
-	Platform         *string    `json:"platform,omitempty"`
-	UserAgent        *string    `json:"userAgent,omitempty"`
-	IPAddress        *string    `json:"ipAddress,omitempty"`
-	IsCurrent        bool       `json:"isCurrent"`
-	IsActive         bool       `json:"isActive"`
-	RevocationReason *string    `json:"revocationReason,omitempty"`
-}
-
-type mobileAvailabilityResponse struct {
-	Available bool `json:"available"`
-}
-
-type mobileUpdateProfileRequest struct {
-	DisplayName   *string  `json:"displayName"`
-	Username      *string  `json:"username"`
-	AboutMe       *string  `json:"aboutMe"`
-	AvatarURL     *string  `json:"avatarUrl"`
-	BannerURL     *string  `json:"bannerUrl"`
-	AvatarScale   *float64 `json:"avatarScale"`
-	AvatarOffsetX *float64 `json:"avatarOffsetX"`
-	AvatarOffsetY *float64 `json:"avatarOffsetY"`
-	BannerScale   *float64 `json:"bannerScale"`
-	BannerOffsetX *float64 `json:"bannerOffsetX"`
-	BannerOffsetY *float64 `json:"bannerOffsetY"`
-	RemoveAvatar  *bool    `json:"removeAvatar"`
-	RemoveBanner  *bool    `json:"removeBanner"`
-}
-
-type mobileUpdatePrivacyRequest struct {
-	IsPrivateAccount   bool   `json:"isPrivateAccount"`
-	ProfileVisibility  string `json:"profileVisibility"`
-	MessagePrivacy     string `json:"messagePrivacy"`
-	CommentPrivacy     string `json:"commentPrivacy"`
-	PresenceVisibility string `json:"presenceVisibility"`
-}
-
-type mobileDeleteConversationRequest struct {
-	ConversationID int  `json:"conversationId"`
-	DeleteForBoth  bool `json:"deleteForBoth"`
-}
-
-type mobileClearConversationHistoryRequest struct {
-	ConversationID int `json:"conversationId"`
-}
-
-type mobileToggleConversationPinRequest struct {
-	ConversationID int  `json:"conversationId"`
-	IsPinned       bool `json:"isPinned"`
-}
-
-type mobileToggleConversationArchiveRequest struct {
-	ConversationID int  `json:"conversationId"`
-	IsArchived     bool `json:"isArchived"`
-}
-
-type mobileToggleConversationFavoriteRequest struct {
-	ConversationID int  `json:"conversationId"`
-	IsFavorite     bool `json:"isFavorite"`
-}
-
-type mobileToggleConversationMuteRequest struct {
-	ConversationID int  `json:"conversationId"`
-	IsMuted        bool `json:"isMuted"`
-}
-
-type mobileToggleUserBlockRequest struct {
-	UserID int `json:"userId"`
-}
-
-type mobileDeleteForAllRequest struct {
-	ConversationID int `json:"conversationId"`
-	MessageID      int `json:"messageId"`
-}
-
-type mobilePushTokenRequest struct {
-	DeviceID   string `json:"deviceId"`
-	Token      string `json:"token"`
-	Platform   string `json:"platform"`
-	DeviceName string `json:"deviceName"`
-	AppVersion string `json:"appVersion"`
-}
-
-type mobileForwardMessageRequest struct {
-	MessageID int `json:"messageId"`
-}
-
-type mobileUpdateMessageRequest struct {
-	Content string `json:"content"`
-}
-
-func (s *Server) registerMobileRoutes(router chi.Router) {
-	router.Route("/api", func(r chi.Router) {
-		r.Route("/auth", func(r chi.Router) {
-			r.Post("/register", s.handleRegister)
-			r.Post("/login", s.handleLogin)
-			r.Post("/refresh", s.handleRefresh)
-			r.Post("/refresh-token", s.handleRefresh)
-			r.Get("/check-username", s.mobileHandleCheckRegistrationUsername)
-			r.Get("/check-email", s.mobileHandleCheckRegistrationEmail)
-			r.Post("/verify-email", s.mobileHandleNoop)
-			r.Post("/resend-verification", s.mobileHandleNoop)
-			r.Post("/forgot-password", s.mobileHandleNoop)
-			r.Post("/reset-password", s.mobileHandleNoop)
-
-			r.Group(func(r chi.Router) {
-				r.Use(s.requireAuth)
-				r.Post("/logout", s.handleLogout)
-				r.Post("/logout-all", s.mobileHandleLogoutAllSessions)
-				r.Get("/sessions", s.mobileHandleGetSessions)
-				r.Delete("/sessions/{sessionID}", s.mobileHandleRevokeSession)
-				r.Get("/profile", s.mobileHandleProfile)
-				r.Get("/profile/{userID}", s.mobileHandleUserProfile)
-				r.Put("/profile", s.mobileHandleUpdateProfile)
-				r.Put("/profile/media", s.mobileHandleUpdateProfileMedia)
-			})
-		})
-
-		r.Group(func(r chi.Router) {
-			r.Use(s.requireAuth)
-			r.Get("/users/check-username", s.mobileHandleCheckUsername)
-			r.Get("/users", s.mobileHandleUsers)
-			r.Get("/users/search", s.mobileHandleSearchUsers)
-			r.Get("/users/me/privacy", s.mobileHandleGetPrivacy)
-			r.Put("/users/me/privacy", s.mobileHandleUpdatePrivacy)
-			r.Get("/feed", s.mobileHandleFeed)
-			r.Get("/feed/following", s.mobileHandleFollowingFeed)
-			r.Post("/posts", s.mobileHandleCreatePost)
-			r.Get("/posts/{postID}", s.mobileHandleGetPost)
-			r.Delete("/posts/{postID}", s.handleDeletePost)
-			r.Get("/posts/user/{userID}", s.mobileHandleUserPosts)
-			r.Post("/posts/{postID}/like", s.mobileHandleToggleLike)
-			r.Get("/posts/{postID}/comments", s.mobileHandleComments)
-			r.Post("/posts/{postID}/comments", s.mobileHandleCreateComment)
-			r.Put("/posts/{postID}/comments/{commentID}", s.mobileHandleUpdateComment)
-			r.Delete("/posts/{postID}/comments/{commentID}", s.mobileHandleDeleteComment)
-			r.Post("/follows/{userID}", s.mobileHandleToggleFollow)
-			r.Get("/follows/{userID}/following", s.mobileHandleFollowingList)
-			r.Get("/follows/{userID}/followers", s.mobileHandleFollowersList)
-			r.Get("/follows/followings", s.mobileHandleMyFollowingList)
-			r.Get("/follows/followers", s.mobileHandleMyFollowersList)
-			r.Get("/follows/check/{userID}", s.mobileHandleIsFollowing)
-			r.Get("/follows/{userID}/followers/count", s.mobileHandleFollowersCount)
-			r.Get("/follows/requests", s.mobileHandleIncomingFollowRequests)
-			r.Post("/follows/requests/{requestID}/approve", s.mobileHandleApproveFollowRequest)
-			r.Post("/follows/requests/{requestID}/reject", s.mobileHandleRejectFollowRequest)
-			r.Get("/friends", s.mobileHandleFriends)
-			r.Get("/friends/requests/incoming", s.mobileHandleIncomingFriendRequests)
-			r.Get("/friends/requests/outgoing", s.mobileHandleOutgoingFriendRequests)
-			r.Post("/friends/requests/{userID}", s.mobileHandleSendFriendRequestCompat)
-			r.Post("/friends/requests/{requestID}/accept", s.handleAcceptFriendRequest)
-			r.Delete("/friends/requests/{requestID}", s.handleDeleteFriendRequest)
-			r.Delete("/friends/{userID}", s.handleRemoveFriend)
-			r.Get("/conversations", s.mobileHandleConversations)
-			r.Post("/conversations/direct/{userID}", s.mobileHandleDirectConversation)
-			r.Get("/conversations/{conversationID}/messages", s.mobileHandleMessages)
-			r.Post("/conversations/{conversationID}/messages", s.mobileHandleSendMessage)
-			r.Post("/conversations/{conversationID}/messages/forward", s.mobileHandleForwardMessage)
-			r.Put("/conversations/{conversationID}/messages/{messageID}", s.mobileHandleUpdateMessage)
-			r.Delete("/conversations/{conversationID}/messages/{messageID}", s.mobileHandleDeleteMessage)
-			r.Post("/message/delete-for-all", s.mobileHandleDeleteMessageForAll)
-			r.Post("/chat/pin", s.mobileHandlePinConversation)
-			r.Post("/chat/archive", s.mobileHandleArchiveConversation)
-			r.Post("/chat/favorite", s.mobileHandleFavoriteConversation)
-			r.Post("/chat/mute", s.mobileHandleMuteConversation)
-			r.Delete("/chat", s.mobileHandleDeleteConversation)
-			r.Post("/chat/clear-history", s.mobileHandleClearConversationHistory)
-			r.Post("/chat/block-user", s.mobileHandleBlockUser)
-			r.Post("/chat/unblock-user", s.mobileHandleUnblockUser)
-			r.Get("/chat/blocked-users", s.mobileHandleBlockedUsers)
-			r.Post("/chat/typing-start", s.mobileHandleTypingNoop)
-			r.Post("/chat/typing-stop", s.mobileHandleTypingNoop)
-			r.Get("/notifications", s.mobileHandleNotifications)
-			r.Get("/notifications/summary", s.handleNotificationSummary)
-			r.Post("/notifications/{notificationID}/read", s.handleReadNotification)
-			r.Post("/notifications/read-all", s.handleReadAllNotifications)
-			r.Post("/notifications/push-token", s.mobileHandleRegisterPushToken)
-			r.Delete("/notifications/push-token", s.mobileHandleRemovePushToken)
-		})
-	})
-}
-
-func (s *Server) mobileHandleNoop(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
-}
 
 func (s *Server) mobileHandleCheckRegistrationUsername(w http.ResponseWriter, r *http.Request) {
 	username := normalizeUsername(r.URL.Query().Get("username"))
@@ -619,8 +166,25 @@ func (s *Server) mobileHandleUpdateProfile(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	avatarURL := stringValue(req.AvatarURL, current.AvatarURL)
-	bannerURL := stringValue(req.BannerURL, current.BannerURL)
+	avatarURL := current.AvatarURL
+	if req.AvatarURL != nil {
+		trimmed := strings.TrimSpace(*req.AvatarURL)
+		if trimmed == "" {
+			avatarURL = nil
+		} else {
+			avatarURL = &trimmed
+		}
+	}
+
+	bannerURL := current.BannerURL
+	if req.BannerURL != nil {
+		trimmed := strings.TrimSpace(*req.BannerURL)
+		if trimmed == "" {
+			bannerURL = nil
+		} else {
+			bannerURL = &trimmed
+		}
+	}
 	if boolValue(req.RemoveAvatar) {
 		avatarURL = nil
 	}
@@ -641,7 +205,9 @@ func (s *Server) mobileHandleUpdateProfile(w http.ResponseWriter, r *http.Reques
 		    "AvatarOffsetY" = $10,
 		    "BannerScale" = $11,
 		    "BannerOffsetX" = $12,
-		    "BannerOffsetY" = $13
+		    "BannerOffsetY" = $13,
+		    "AvatarMediaId" = CASE WHEN $14 THEN NULL ELSE "AvatarMediaId" END,
+		    "BannerMediaId" = CASE WHEN $15 THEN NULL ELSE "BannerMediaId" END
 		WHERE "Id" = $1
 	`, user.ID,
 		stringValue(req.DisplayName, current.DisplayName),
@@ -656,6 +222,8 @@ func (s *Server) mobileHandleUpdateProfile(w http.ResponseWriter, r *http.Reques
 		floatValue(req.BannerScale, current.BannerScale),
 		floatValue(req.BannerOffsetX, current.BannerOffsetX),
 		floatValue(req.BannerOffsetY, current.BannerOffsetY),
+		req.AvatarURL != nil || boolValue(req.RemoveAvatar),
+		req.BannerURL != nil || boolValue(req.RemoveBanner),
 	)
 	if err != nil {
 		var pgErr *pgconn.PgError
@@ -667,11 +235,17 @@ func (s *Server) mobileHandleUpdateProfile(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
+	s.cleanupManagedMediaIfOrphaned(r.Context(), stringValueOrEmpty(current.AvatarURL), stringValueOrEmpty(current.BannerURL))
+
 	profile, err := s.loadMobileProfile(r.Context(), r, user.ID, user.ID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "Failed to load updated profile")
 		return
 	}
+	s.emitSyncGlobal("profile.updated", map[string]any{
+		"userId": user.ID,
+	})
+	s.emitNotificationSummarySync(r.Context(), user.ID)
 	writeJSON(w, http.StatusOK, profile)
 }
 
@@ -687,50 +261,85 @@ func (s *Server) mobileHandleUpdateProfileMedia(w http.ResponseWriter, r *http.R
 		writeError(w, http.StatusInternalServerError, "Failed to load current profile")
 		return
 	}
+	var currentMedia struct {
+		AvatarMediaID sql.NullString `db:"avatar_media_id"`
+		BannerMediaID sql.NullString `db:"banner_media_id"`
+	}
+	if err := s.db.GetContext(r.Context(), &currentMedia, `
+		SELECT
+			COALESCE("AvatarMediaId"::text, '') AS avatar_media_id,
+			COALESCE("BannerMediaId"::text, '') AS banner_media_id
+		FROM "Users"
+		WHERE "Id" = $1
+	`, user.ID); err != nil {
+		writeError(w, http.StatusInternalServerError, "Failed to load profile media metadata")
+		return
+	}
 
 	avatarURL := current.AvatarURL
 	bannerURL := current.BannerURL
+	avatarMediaKey := strings.TrimSpace(currentMedia.AvatarMediaID.String)
+	bannerMediaKey := strings.TrimSpace(currentMedia.BannerMediaID.String)
+	var uploadedAvatar storedMedia
+	var uploadedBanner storedMedia
+	hasUploadedAvatar := false
+	hasUploadedBanner := false
 	if truthyFormValue(r.FormValue("removeAvatar")) {
 		avatarURL = nil
+		avatarMediaKey = ""
 	}
 	if truthyFormValue(r.FormValue("removeBanner")) {
 		bannerURL = nil
+		bannerMediaKey = ""
 	}
 
 	if file, header, err := r.FormFile("avatar"); err == nil {
 		defer file.Close()
-		savedPath, saveErr := saveUploadedFile("profile", file, header)
+		savedMedia, saveErr := s.saveUploadedFile(r.Context(), "profile", file, header)
 		if saveErr != nil {
 			writeError(w, http.StatusInternalServerError, "Failed to save avatar")
 			return
 		}
-		avatarURL = &savedPath
+		uploadedAvatar = savedMedia
+		hasUploadedAvatar = true
+		avatarURL = &savedMedia.StoredValue
+		avatarMediaKey = savedMedia.Key
 	}
 
 	if file, header, err := r.FormFile("banner"); err == nil {
 		defer file.Close()
-		savedPath, saveErr := saveUploadedFile("profile", file, header)
+		savedMedia, saveErr := s.saveUploadedFile(r.Context(), "profile", file, header)
 		if saveErr != nil {
+			if hasUploadedAvatar {
+				s.deleteStoredMedia(r.Context(), uploadedAvatar)
+			}
 			writeError(w, http.StatusInternalServerError, "Failed to save banner")
 			return
 		}
-		bannerURL = &savedPath
+		uploadedBanner = savedMedia
+		hasUploadedBanner = true
+		bannerURL = &savedMedia.StoredValue
+		bannerMediaKey = savedMedia.Key
 	}
 
 	_, err = s.db.ExecContext(r.Context(), `
 		UPDATE "Users"
 		SET "AvatarUrl" = $2,
-		    "BannerUrl" = $3,
-		    "AvatarScale" = $4,
-		    "AvatarOffsetX" = $5,
-		    "AvatarOffsetY" = $6,
-		    "BannerScale" = $7,
-		    "BannerOffsetX" = $8,
-		    "BannerOffsetY" = $9
+		    "AvatarMediaId" = NULLIF($3, '')::uuid,
+		    "BannerUrl" = $4,
+		    "BannerMediaId" = NULLIF($5, '')::uuid,
+		    "AvatarScale" = $6,
+		    "AvatarOffsetX" = $7,
+		    "AvatarOffsetY" = $8,
+		    "BannerScale" = $9,
+		    "BannerOffsetX" = $10,
+		    "BannerOffsetY" = $11
 		WHERE "Id" = $1
 	`, user.ID,
 		avatarURL,
+		avatarMediaKey,
 		bannerURL,
+		bannerMediaKey,
 		parseFormFloatWithDefault(r.FormValue("avatarScale"), current.AvatarScale),
 		parseFormFloatWithDefault(r.FormValue("avatarOffsetX"), current.AvatarOffsetX),
 		parseFormFloatWithDefault(r.FormValue("avatarOffsetY"), current.AvatarOffsetY),
@@ -739,15 +348,27 @@ func (s *Server) mobileHandleUpdateProfileMedia(w http.ResponseWriter, r *http.R
 		parseFormFloatWithDefault(r.FormValue("bannerOffsetY"), current.BannerOffsetY),
 	)
 	if err != nil {
+		if hasUploadedAvatar {
+			s.deleteStoredMedia(r.Context(), uploadedAvatar)
+		}
+		if hasUploadedBanner {
+			s.deleteStoredMedia(r.Context(), uploadedBanner)
+		}
 		writeError(w, http.StatusInternalServerError, "Failed to update media")
 		return
 	}
+
+	s.cleanupManagedMediaIfOrphaned(r.Context(), stringValueOrEmpty(current.AvatarURL), stringValueOrEmpty(current.BannerURL))
 
 	profile, err := s.loadMobileProfile(r.Context(), r, user.ID, user.ID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "Failed to load updated profile")
 		return
 	}
+	s.emitSyncGlobal("profile.updated", map[string]any{
+		"userId": user.ID,
+	})
+	s.emitNotificationSummarySync(r.Context(), user.ID)
 	writeJSON(w, http.StatusOK, profile)
 }
 
@@ -816,6 +437,10 @@ func (s *Server) mobileHandleUpdatePrivacy(w http.ResponseWriter, r *http.Reques
 		CommentPrivacy:     req.CommentPrivacy,
 		PresenceVisibility: req.PresenceVisibility,
 	})
+	s.emitSyncGlobal("profile.updated", map[string]any{
+		"userId": user.ID,
+	})
+	s.emitNotificationSummarySync(r.Context(), user.ID)
 }
 
 func (s *Server) mobileHandleUsers(w http.ResponseWriter, r *http.Request) {
@@ -874,9 +499,16 @@ func (s *Server) mobileHandleUserPosts(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	page, pageSize := paginationFromRequest(r)
-	items, _, err := s.loadUserPosts(r.Context(), user.ID, targetID, page, pageSize)
+	items, _, err := s.loadProfileTabPosts(r.Context(), user.ID, targetID, "posts", page, pageSize)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "Failed to load posts")
+		switch {
+		case errors.Is(err, sql.ErrNoRows):
+			writeError(w, http.StatusNotFound, "Profile not found")
+		case errors.Is(err, errProfilePostsForbidden):
+			writeError(w, http.StatusForbidden, "Posts are not available for this profile")
+		default:
+			writeError(w, http.StatusInternalServerError, "Failed to load posts")
+		}
 		return
 	}
 	writeJSON(w, http.StatusOK, mapMobilePosts(r, items))
@@ -894,15 +526,6 @@ func (s *Server) mobileHandleCreatePost(w http.ResponseWriter, r *http.Request) 
 			return
 		}
 		content = normalizeText(r.FormValue("content"))
-		if file, header, err := r.FormFile("image"); err == nil {
-			defer file.Close()
-			savedPath, saveErr := saveUploadedFile("posts", file, header)
-			if saveErr != nil {
-				writeError(w, http.StatusInternalServerError, "Failed to save image")
-				return
-			}
-			imageURL = &savedPath
-		}
 	} else {
 		var req createPostRequest
 		if err := decodeJSON(r, &req); err != nil {
@@ -920,12 +543,33 @@ func (s *Server) mobileHandleCreatePost(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	var uploadedImage storedMedia
+	hasUploadedImage := false
+	imageMediaKey := ""
+	if usesMultipartForm(r) {
+		if file, header, err := r.FormFile("image"); err == nil {
+			defer file.Close()
+			savedMedia, saveErr := s.saveUploadedFile(r.Context(), "posts", file, header)
+			if saveErr != nil {
+				writeError(w, http.StatusInternalServerError, "Failed to save image")
+				return
+			}
+			uploadedImage = savedMedia
+			hasUploadedImage = true
+			imageURL = &savedMedia.StoredValue
+			imageMediaKey = savedMedia.Key
+		}
+	}
+
 	var postID int
 	if err := s.db.GetContext(r.Context(), &postID, `
-		INSERT INTO "Posts" ("UserId", "Content", "ImageUrl", "CreatedAt")
-		VALUES ($1, $2, $3, NOW())
+		INSERT INTO "Posts" ("UserId", "Content", "ImageUrl", "ImageMediaId", "CreatedAt")
+		VALUES ($1, $2, $3, NULLIF($4, '')::uuid, NOW())
 		RETURNING "Id"
-	`, user.ID, content, imageURL); err != nil {
+	`, user.ID, content, imageURL, imageMediaKey); err != nil {
+		if hasUploadedImage {
+			s.deleteStoredMedia(r.Context(), uploadedImage)
+		}
 		writeError(w, http.StatusInternalServerError, "Failed to create post")
 		return
 	}
@@ -1067,11 +711,22 @@ func (s *Server) mobileHandleCreateComment(w http.ResponseWriter, r *http.Reques
 		writeError(w, http.StatusInternalServerError, "Failed to load comment")
 		return
 	}
+	s.emitSyncGlobal("comment.created", map[string]any{
+		"postId":    postID,
+		"commentId": commentID,
+		"userId":    user.ID,
+	})
+	s.emitNotificationSummarySync(r.Context(), user.ID)
 	writeJSON(w, http.StatusCreated, mapMobileComment(r, comment))
 }
 
 func (s *Server) mobileHandleUpdateComment(w http.ResponseWriter, r *http.Request) {
 	user := authUser(r.Context())
+	postID, err := parseIDParam(r, "postID")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	commentID, err := parseIDParam(r, "commentID")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
@@ -1109,11 +764,22 @@ func (s *Server) mobileHandleUpdateComment(w http.ResponseWriter, r *http.Reques
 		writeError(w, http.StatusInternalServerError, "Failed to load comment")
 		return
 	}
+	s.emitSyncGlobal("comment.updated", map[string]any{
+		"postId":    postID,
+		"commentId": commentID,
+		"userId":    user.ID,
+	})
+	s.emitNotificationSummarySync(r.Context(), user.ID)
 	writeJSON(w, http.StatusOK, mapMobileComment(r, comment))
 }
 
 func (s *Server) mobileHandleDeleteComment(w http.ResponseWriter, r *http.Request) {
 	user := authUser(r.Context())
+	postID, err := parseIDParam(r, "postID")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	commentID, err := parseIDParam(r, "commentID")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
@@ -1129,6 +795,12 @@ func (s *Server) mobileHandleDeleteComment(w http.ResponseWriter, r *http.Reques
 		writeError(w, http.StatusNotFound, "Comment not found")
 		return
 	}
+	s.emitSyncGlobal("comment.deleted", map[string]any{
+		"postId":    postID,
+		"commentId": commentID,
+		"userId":    user.ID,
+	})
+	s.emitNotificationSummarySync(r.Context(), user.ID)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -1144,6 +816,18 @@ func (s *Server) mobileHandleToggleFollow(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusInternalServerError, "Failed to update follow state")
 		return
 	}
+	s.emitSyncToUsers("follow.changed", []int{user.ID, targetID}, map[string]any{
+		"actorUserId":  user.ID,
+		"targetUserId": targetID,
+		"isFollowing":  response.IsFollowing,
+		"isRequested":  response.IsRequested,
+	})
+	s.emitSyncGlobal("post.author-follow.changed", map[string]any{
+		"actorUserId":  user.ID,
+		"targetUserId": targetID,
+		"isFollowing":  response.IsFollowing,
+	})
+	s.emitNotificationSummarySync(r.Context(), user.ID, targetID)
 	writeJSON(w, http.StatusOK, response)
 }
 
@@ -1243,6 +927,15 @@ func (s *Server) mobileHandleApproveFollowRequest(w http.ResponseWriter, r *http
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	var requesterID int
+	if err := s.db.GetContext(r.Context(), &requesterID, `SELECT "RequesterId" FROM "FollowRequests" WHERE "Id" = $1`, requestID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			writeError(w, http.StatusNotFound, "Follow request not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "Failed to approve request")
+		return
+	}
 	if err := s.approveFollowRequest(r.Context(), user.ID, requestID); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			writeError(w, http.StatusNotFound, "Follow request not found")
@@ -1251,6 +944,13 @@ func (s *Server) mobileHandleApproveFollowRequest(w http.ResponseWriter, r *http
 		writeError(w, http.StatusInternalServerError, "Failed to approve request")
 		return
 	}
+	s.emitSyncToUsers("follow.changed", []int{user.ID, requesterID}, map[string]any{
+		"actorUserId":  user.ID,
+		"targetUserId": requesterID,
+		"kind":         "follow_request_approved",
+		"isFollowing":  true,
+	})
+	s.emitNotificationSummarySync(r.Context(), user.ID, requesterID)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -1261,6 +961,15 @@ func (s *Server) mobileHandleRejectFollowRequest(w http.ResponseWriter, r *http.
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	var requesterID int
+	if err := s.db.GetContext(r.Context(), &requesterID, `SELECT "RequesterId" FROM "FollowRequests" WHERE "Id" = $1`, requestID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			writeError(w, http.StatusNotFound, "Follow request not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "Failed to reject request")
+		return
+	}
 	if err := s.rejectFollowRequest(r.Context(), user.ID, requestID); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			writeError(w, http.StatusNotFound, "Follow request not found")
@@ -1269,6 +978,13 @@ func (s *Server) mobileHandleRejectFollowRequest(w http.ResponseWriter, r *http.
 		writeError(w, http.StatusInternalServerError, "Failed to reject request")
 		return
 	}
+	s.emitSyncToUsers("follow.changed", []int{user.ID, requesterID}, map[string]any{
+		"actorUserId":  user.ID,
+		"targetUserId": requesterID,
+		"kind":         "follow_request_rejected",
+		"isFollowing":  false,
+	})
+	s.emitNotificationSummarySync(r.Context(), user.ID, requesterID)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -1321,6 +1037,12 @@ func (s *Server) mobileHandleSendFriendRequestCompat(w http.ResponseWriter, r *h
 		writeError(w, http.StatusInternalServerError, "Failed to send friend request")
 		return
 	}
+	s.emitSyncToUsers("friends.changed", []int{user.ID, targetID}, map[string]any{
+		"actorUserId":  user.ID,
+		"targetUserId": targetID,
+		"kind":         "friend_request_created",
+	})
+	s.emitNotificationSummarySync(r.Context(), user.ID, targetID)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -1441,6 +1163,7 @@ func (s *Server) mobileHandleSendMessage(w http.ResponseWriter, r *http.Request)
 
 	var content string
 	var replyToMessageID *int
+	attachmentHeaders := []*multipart.FileHeader{}
 	attachments := make([]savedAttachment, 0)
 
 	if usesMultipartForm(r) {
@@ -1451,14 +1174,7 @@ func (s *Server) mobileHandleSendMessage(w http.ResponseWriter, r *http.Request)
 		content = normalizeText(r.FormValue("content"))
 		replyToMessageID = parseOptionalInt(r.FormValue("replyToMessageId"))
 		if r.MultipartForm != nil {
-			for _, header := range r.MultipartForm.File["files"] {
-				attachment, saveErr := saveUploadedFileHeader("messages", header)
-				if saveErr != nil {
-					writeError(w, http.StatusInternalServerError, "Failed to save attachment")
-					return
-				}
-				attachments = append(attachments, attachment)
-			}
+			attachmentHeaders = r.MultipartForm.File["files"]
 		}
 	} else {
 		var req createMessageRequest
@@ -1469,7 +1185,7 @@ func (s *Server) mobileHandleSendMessage(w http.ResponseWriter, r *http.Request)
 		content = normalizeText(req.Content)
 	}
 
-	if content == "" && len(attachments) == 0 {
+	if content == "" && len(attachmentHeaders) == 0 {
 		writeError(w, http.StatusBadRequest, "Message must contain text or attachments")
 		return
 	}
@@ -1478,14 +1194,42 @@ func (s *Server) mobileHandleSendMessage(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	uploadedAttachments := make([]storedMedia, 0)
+	if len(attachmentHeaders) > 0 {
+		for _, header := range attachmentHeaders {
+			attachment, saveErr := s.saveUploadedFileHeader(r.Context(), "messages", header)
+			if saveErr != nil {
+				s.deleteStoredMediaBatch(r.Context(), uploadedAttachments...)
+				writeError(w, http.StatusInternalServerError, "Failed to save attachment")
+				return
+			}
+			attachments = append(attachments, attachment)
+			if ref, ok := s.media.ParseStoredValue(attachment.RelativePath); ok {
+				uploadedAttachments = append(uploadedAttachments, storedMedia{Key: ref.Key, StoredValue: attachment.RelativePath})
+			}
+		}
+	}
+
 	message, err := s.createMobileMessage(r.Context(), r, user.ID, conversationID, content, replyToMessageID, nil, nil, attachments)
 	if err != nil {
+		s.deleteStoredMediaBatch(r.Context(), uploadedAttachments...)
 		if errors.Is(err, sql.ErrNoRows) {
 			writeError(w, http.StatusNotFound, "Conversation not found")
 			return
 		}
 		writeError(w, http.StatusInternalServerError, "Failed to send message")
 		return
+	}
+	if participantIDs, loadErr := s.loadConversationParticipantIDs(r.Context(), conversationID); loadErr == nil {
+		s.emitSyncToUsers("chat.message.created", participantIDs, map[string]any{
+			"conversationId": conversationID,
+			"message":        message,
+		})
+		s.emitSyncToUsers("chat.conversation.changed", participantIDs, map[string]any{
+			"conversationId": conversationID,
+			"kind":           "message_created",
+		})
+		s.emitNotificationSummarySync(r.Context(), participantIDs...)
 	}
 	writeJSON(w, http.StatusOK, message)
 }
@@ -1522,6 +1266,17 @@ func (s *Server) mobileHandleForwardMessage(w http.ResponseWriter, r *http.Reque
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "Failed to forward message")
 		return
+	}
+	if participantIDs, loadErr := s.loadConversationParticipantIDs(r.Context(), conversationID); loadErr == nil {
+		s.emitSyncToUsers("chat.message.created", participantIDs, map[string]any{
+			"conversationId": conversationID,
+			"message":        message,
+		})
+		s.emitSyncToUsers("chat.conversation.changed", participantIDs, map[string]any{
+			"conversationId": conversationID,
+			"kind":           "message_forwarded",
+		})
+		s.emitNotificationSummarySync(r.Context(), participantIDs...)
 	}
 	writeJSON(w, http.StatusOK, message)
 }
@@ -1569,6 +1324,16 @@ func (s *Server) mobileHandleUpdateMessage(w http.ResponseWriter, r *http.Reques
 		writeError(w, http.StatusInternalServerError, "Failed to load message")
 		return
 	}
+	if participantIDs, loadErr := s.loadConversationParticipantIDs(r.Context(), conversationID); loadErr == nil {
+		s.emitSyncToUsers("chat.message.updated", participantIDs, map[string]any{
+			"conversationId": conversationID,
+			"message":        message,
+		})
+		s.emitSyncToUsers("chat.conversation.changed", participantIDs, map[string]any{
+			"conversationId": conversationID,
+			"kind":           "message_updated",
+		})
+	}
 	writeJSON(w, http.StatusOK, message)
 }
 
@@ -1604,6 +1369,18 @@ func (s *Server) mobileHandleDeleteMessage(w http.ResponseWriter, r *http.Reques
 		writeError(w, http.StatusNotFound, "Message not found")
 		return
 	}
+	if participantIDs, loadErr := s.loadConversationParticipantIDs(r.Context(), conversationID); loadErr == nil {
+		s.emitSyncToUsers("chat.message.deleted", participantIDs, map[string]any{
+			"conversationId": conversationID,
+			"messageId":      messageID,
+			"deleteForAll":   false,
+		})
+		s.emitSyncToUsers("chat.conversation.changed", participantIDs, map[string]any{
+			"conversationId": conversationID,
+			"kind":           "message_deleted",
+		})
+		s.emitNotificationSummarySync(r.Context(), participantIDs...)
+	}
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -1614,7 +1391,15 @@ func (s *Server) mobileHandleDeleteMessageForAll(w http.ResponseWriter, r *http.
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	result, err := s.db.ExecContext(r.Context(), `
+
+	tx, err := s.db.BeginTxx(r.Context(), nil)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "Failed to delete message")
+		return
+	}
+	defer tx.Rollback()
+
+	result, err := tx.ExecContext(r.Context(), `
 		UPDATE "Messages"
 		SET "IsRemoved" = true
 		WHERE "Id" = $1 AND "ConversationId" = $2 AND "SenderId" = $3
@@ -1626,6 +1411,41 @@ func (s *Server) mobileHandleDeleteMessageForAll(w http.ResponseWriter, r *http.
 	if rows, _ := result.RowsAffected(); rows == 0 {
 		writeError(w, http.StatusNotFound, "Message not found")
 		return
+	}
+
+	attachmentRows := []struct {
+		FileURL string `db:"file_url"`
+	}{}
+	if err := tx.SelectContext(r.Context(), &attachmentRows, `SELECT "FileUrl" AS file_url FROM "MessageAttachments" WHERE "MessageId" = $1`, req.MessageID); err != nil {
+		writeError(w, http.StatusInternalServerError, "Failed to delete message")
+		return
+	}
+	if _, err := tx.ExecContext(r.Context(), `DELETE FROM "MessageAttachments" WHERE "MessageId" = $1`, req.MessageID); err != nil {
+		writeError(w, http.StatusInternalServerError, "Failed to delete message")
+		return
+	}
+	if err := tx.Commit(); err != nil {
+		writeError(w, http.StatusInternalServerError, "Failed to delete message")
+		return
+	}
+
+	orphanCandidates := make([]string, 0, len(attachmentRows))
+	for _, attachment := range attachmentRows {
+		orphanCandidates = append(orphanCandidates, attachment.FileURL)
+	}
+	s.cleanupManagedMediaIfOrphaned(r.Context(), orphanCandidates...)
+
+	if participantIDs, loadErr := s.loadConversationParticipantIDs(r.Context(), req.ConversationID); loadErr == nil {
+		s.emitSyncToUsers("chat.message.deleted", participantIDs, map[string]any{
+			"conversationId": req.ConversationID,
+			"messageId":      req.MessageID,
+			"deleteForAll":   true,
+		})
+		s.emitSyncToUsers("chat.conversation.changed", participantIDs, map[string]any{
+			"conversationId": req.ConversationID,
+			"kind":           "message_deleted_for_all",
+		})
+		s.emitNotificationSummarySync(r.Context(), participantIDs...)
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -1640,6 +1460,10 @@ func (s *Server) mobileHandlePinConversation(w http.ResponseWriter, r *http.Requ
 		writeError(w, http.StatusInternalServerError, "Failed to update conversation")
 		return
 	}
+	s.emitSyncToUsers("chat.conversation.changed", []int{authUser(r.Context()).ID}, map[string]any{
+		"conversationId": req.ConversationID,
+		"kind":           "pin_updated",
+	})
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -1653,6 +1477,10 @@ func (s *Server) mobileHandleArchiveConversation(w http.ResponseWriter, r *http.
 		writeError(w, http.StatusInternalServerError, "Failed to update conversation")
 		return
 	}
+	s.emitSyncToUsers("chat.conversation.changed", []int{authUser(r.Context()).ID}, map[string]any{
+		"conversationId": req.ConversationID,
+		"kind":           "archive_updated",
+	})
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -1666,6 +1494,10 @@ func (s *Server) mobileHandleFavoriteConversation(w http.ResponseWriter, r *http
 		writeError(w, http.StatusInternalServerError, "Failed to update conversation")
 		return
 	}
+	s.emitSyncToUsers("chat.conversation.changed", []int{authUser(r.Context()).ID}, map[string]any{
+		"conversationId": req.ConversationID,
+		"kind":           "favorite_updated",
+	})
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -1679,6 +1511,10 @@ func (s *Server) mobileHandleMuteConversation(w http.ResponseWriter, r *http.Req
 		writeError(w, http.StatusInternalServerError, "Failed to update conversation")
 		return
 	}
+	s.emitSyncToUsers("chat.conversation.changed", []int{authUser(r.Context()).ID}, map[string]any{
+		"conversationId": req.ConversationID,
+		"kind":           "mute_updated",
+	})
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -1697,6 +1533,18 @@ func (s *Server) mobileHandleDeleteConversation(w http.ResponseWriter, r *http.R
 		writeError(w, http.StatusInternalServerError, "Failed to delete conversation")
 		return
 	}
+	targetUsers := []int{user.ID}
+	if req.DeleteForBoth {
+		if participantIDs, loadErr := s.loadConversationParticipantIDs(r.Context(), req.ConversationID); loadErr == nil {
+			targetUsers = participantIDs
+		}
+	}
+	s.emitSyncToUsers("chat.conversation.changed", targetUsers, map[string]any{
+		"conversationId": req.ConversationID,
+		"kind":           "conversation_deleted",
+		"deleteForBoth":  req.DeleteForBoth,
+	})
+	s.emitNotificationSummarySync(r.Context(), targetUsers...)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -1720,6 +1568,13 @@ func (s *Server) mobileHandleClearConversationHistory(w http.ResponseWriter, r *
 		writeError(w, http.StatusInternalServerError, "Failed to clear history")
 		return
 	}
+	s.emitSyncToUsers("chat.history.cleared", []int{user.ID}, map[string]any{
+		"conversationId": req.ConversationID,
+	})
+	s.emitSyncToUsers("chat.conversation.changed", []int{user.ID}, map[string]any{
+		"conversationId": req.ConversationID,
+		"kind":           "history_cleared",
+	})
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -1738,6 +1593,15 @@ func (s *Server) mobileHandleBlockUser(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "Failed to block user")
 		return
 	}
+	s.emitSyncToUsers("friends.changed", []int{user.ID, req.UserID}, map[string]any{
+		"actorUserId":  user.ID,
+		"targetUserId": req.UserID,
+		"kind":         "user_blocked",
+	})
+	s.emitSyncToUsers("chat.conversation.changed", []int{user.ID, req.UserID}, map[string]any{
+		"peerId": req.UserID,
+		"kind":   "block_updated",
+	})
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -1752,6 +1616,15 @@ func (s *Server) mobileHandleUnblockUser(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusInternalServerError, "Failed to unblock user")
 		return
 	}
+	s.emitSyncToUsers("friends.changed", []int{user.ID, req.UserID}, map[string]any{
+		"actorUserId":  user.ID,
+		"targetUserId": req.UserID,
+		"kind":         "user_unblocked",
+	})
+	s.emitSyncToUsers("chat.conversation.changed", []int{user.ID, req.UserID}, map[string]any{
+		"peerId": req.UserID,
+		"kind":   "block_updated",
+	})
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -1765,7 +1638,41 @@ func (s *Server) mobileHandleBlockedUsers(w http.ResponseWriter, r *http.Request
 	writeJSON(w, http.StatusOK, items)
 }
 
-func (s *Server) mobileHandleTypingNoop(w http.ResponseWriter, r *http.Request) {
+func (s *Server) mobileHandleTypingStart(w http.ResponseWriter, r *http.Request) {
+	s.mobileHandleTypingEvent(w, r, "chat.typing.started")
+}
+
+func (s *Server) mobileHandleTypingStop(w http.ResponseWriter, r *http.Request) {
+	s.mobileHandleTypingEvent(w, r, "chat.typing.stopped")
+}
+
+func (s *Server) mobileHandleTypingEvent(w http.ResponseWriter, r *http.Request, eventType string) {
+	user := authUser(r.Context())
+	var req mobileTypingRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	participantIDs, err := s.loadConversationParticipantIDs(r.Context(), req.ConversationID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			writeError(w, http.StatusNotFound, "Conversation not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "Failed to update typing state")
+		return
+	}
+	targets := make([]int, 0, len(participantIDs))
+	for _, participantID := range participantIDs {
+		if participantID != user.ID {
+			targets = append(targets, participantID)
+		}
+	}
+	s.emitSyncToUsers(eventType, targets, map[string]any{
+		"conversationId": req.ConversationID,
+		"userId":         user.ID,
+		"username":       user.Username,
+	})
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -1946,14 +1853,14 @@ func (s *Server) loadMobileSessions(ctx context.Context, userID int, currentSess
 func (s *Server) countDiscoverUsers(ctx context.Context, viewerID int, query string) (int, error) {
 	search := "%"
 	if query != "" {
-		search = "%" + query + "%"
+		search = "%" + strings.ToLower(query) + "%"
 	}
 	var count int
 	err := s.db.GetContext(ctx, &count, `
 		SELECT COUNT(*)
 		FROM "Users" u
 		WHERE u."Id" <> $1
-		  AND (LOWER(u."Username") LIKE LOWER($2) OR LOWER(COALESCE(u."DisplayName", '')) LIKE LOWER($2))
+		  AND (u."NormalizedUsername" LIKE $2 OR LOWER(COALESCE(u."DisplayName", '')) LIKE $2)
 	`, viewerID, search)
 	return count, err
 }
@@ -1977,70 +1884,44 @@ func (s *Server) countFeedPosts(ctx context.Context, viewerID int, followingOnly
 
 func (s *Server) countNotifications(ctx context.Context, viewerID int) (int, error) {
 	var count int
-	err := s.db.GetContext(ctx, &count, `SELECT COUNT(*) FROM "Notifications" WHERE "UserId" = $1`, viewerID)
+	err := s.db.GetContext(ctx, &count, `SELECT COUNT(*) FROM "Notifications" WHERE "UserId" = $1 AND "Type" <> 'message'`, viewerID)
 	return count, err
 }
 
-func (s *Server) loadCommentByID(ctx context.Context, _ int, commentID int) (commentResponse, error) {
-	rows := []struct {
-		ID              int            `db:"id"`
-		PostID          int            `db:"post_id"`
-		UserID          int            `db:"user_id"`
-		Username        string         `db:"username"`
-		DisplayName     sql.NullString `db:"display_name"`
-		AvatarURL       sql.NullString `db:"avatar_url"`
-		AvatarScale     float64        `db:"avatar_scale"`
-		AvatarOffsetX   float64        `db:"avatar_offset_x"`
-		AvatarOffsetY   float64        `db:"avatar_offset_y"`
-		Content         string         `db:"content"`
-		CreatedAt       time.Time      `db:"created_at"`
-		EditedAt        sql.NullTime   `db:"edited_at"`
-		ParentCommentID sql.NullInt64  `db:"parent_comment_id"`
-		ReplyToUsername sql.NullString `db:"reply_to_username"`
-		LastSeenAt      time.Time      `db:"last_seen_at"`
-	}{}
-	if err := s.db.SelectContext(ctx, &rows, `
+func (s *Server) loadCommentByID(ctx context.Context, viewerID, commentID int) (commentResponse, error) {
+	rows, err := s.selectCommentRows(ctx, `
 		SELECT
 			c."Id" AS id, c."PostId" AS post_id, c."UserId" AS user_id,
-			u."Username" AS username, u."DisplayName" AS display_name, u."AvatarUrl" AS avatar_url,
+			u."Username" AS username, u."DisplayName" AS display_name, u."IsEmailVerified" AS is_verified, u."AvatarUrl" AS avatar_url,
 			u."AvatarScale" AS avatar_scale, u."AvatarOffsetX" AS avatar_offset_x, u."AvatarOffsetY" AS avatar_offset_y,
 			c."Content" AS content, c."CreatedAt" AS created_at, c."EditedAt" AS edited_at,
 			c."ParentCommentId" AS parent_comment_id, parent_user."Username" AS reply_to_username,
+			COUNT(DISTINCT cl."UserId") AS likes_count,
+			EXISTS(SELECT 1 FROM "CommentLikes" viewer_like WHERE viewer_like."UserId" = $1 AND viewer_like."CommentId" = c."Id") AS is_liked,
+			COALESCE(reply_counts.replies_count, 0) AS replies_count,
 			u."LastSeenAt" AS last_seen_at
 		FROM "Comments" c
 		JOIN "Users" u ON u."Id" = c."UserId"
 		LEFT JOIN "Comments" parent_comment ON parent_comment."Id" = c."ParentCommentId"
 		LEFT JOIN "Users" parent_user ON parent_user."Id" = parent_comment."UserId"
-		WHERE c."Id" = $1 AND c."IsHidden" = false AND c."IsRemoved" = false
-	`, commentID); err != nil {
+		LEFT JOIN "CommentLikes" cl ON cl."CommentId" = c."Id"
+		LEFT JOIN (
+			SELECT "ParentCommentId" AS parent_comment_id, COUNT(*)::int AS replies_count
+			FROM "Comments"
+			WHERE "IsHidden" = false AND "IsRemoved" = false AND "ParentCommentId" IS NOT NULL
+			GROUP BY "ParentCommentId"
+		) reply_counts ON reply_counts.parent_comment_id = c."Id"
+		WHERE c."Id" = $2 AND c."IsHidden" = false AND c."IsRemoved" = false
+		GROUP BY c."Id", u."Id", parent_user."Username", reply_counts.replies_count
+	`, viewerID, commentID)
+	if err != nil {
 		return commentResponse{}, err
 	}
 	if len(rows) == 0 {
 		return commentResponse{}, sql.ErrNoRows
 	}
-	row := rows[0]
-	lastSeen := row.LastSeenAt
-	return commentResponse{
-		ID:     row.ID,
-		PostID: row.PostID,
-		UserID: row.UserID,
-		Author: userPreview{
-			ID:            row.UserID,
-			Username:      row.Username,
-			DisplayName:   nullableString(row.DisplayName),
-			AvatarURL:     nullableString(row.AvatarURL),
-			AvatarScale:   row.AvatarScale,
-			AvatarOffsetX: row.AvatarOffsetX,
-			AvatarOffsetY: row.AvatarOffsetY,
-			LastSeenAt:    &lastSeen,
-			IsOnline:      isOnline(row.LastSeenAt),
-		},
-		Content:         row.Content,
-		CreatedAt:       row.CreatedAt,
-		EditedAt:        nullableTime(row.EditedAt),
-		ParentCommentID: nullableInt(row.ParentCommentID),
-		ReplyToUsername: nullableString(row.ReplyToUsername),
-	}, nil
+
+	return mapCommentRows(rows)[0], nil
 }
 
 func (s *Server) loadMobileFollowList(ctx context.Context, r *http.Request, viewerID, targetID int, followers bool) ([]mobileFollowResponse, error) {
@@ -2274,6 +2155,7 @@ func mapMobilePost(r *http.Request, item postResponse) mobilePostResponse {
 		LikesCount:        item.LikesCount,
 		CommentsCount:     item.CommentsCount,
 		IsLiked:           item.IsLiked,
+		IsBookmarked:      item.IsBookmarked,
 		IsFollowingAuthor: item.IsFollowingAuthor,
 		CanComment:        true,
 	}
@@ -2301,6 +2183,9 @@ func mapMobileComment(r *http.Request, item commentResponse) mobileCommentRespon
 		EditedAt:          item.EditedAt,
 		ParentCommentID:   item.ParentCommentID,
 		ReplyToUsername:   item.ReplyToUsername,
+		LikesCount:        item.LikesCount,
+		IsLiked:           item.IsLiked,
+		RepliesCount:      item.RepliesCount,
 	}
 }
 
@@ -2434,6 +2319,13 @@ func stringValue(value *string, fallback *string) any {
 	return trimmed
 }
 
+func stringValueOrEmpty(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return strings.TrimSpace(*value)
+}
+
 func floatValue(value *float64, fallback float64) float64 {
 	if value == nil {
 		return fallback
@@ -2471,26 +2363,11 @@ func usesMultipartForm(r *http.Request) bool {
 }
 
 func absoluteStringPointer(r *http.Request, value *string) *string {
-	if value == nil {
-		return nil
-	}
-	absolute := absoluteURL(r, *value)
-	return &absolute
+	return resolveOptionalMediaURL(r, value)
 }
 
 func absoluteURL(r *http.Request, raw string) string {
-	trimmed := strings.TrimSpace(raw)
-	if trimmed == "" {
-		return ""
-	}
-	parsed, err := url.Parse(trimmed)
-	if err == nil && parsed.IsAbs() {
-		return trimmed
-	}
-	if !strings.HasPrefix(trimmed, "/") || r == nil {
-		return trimmed
-	}
-	return requestScheme(r) + "://" + r.Host + trimmed
+	return resolveMediaURL(r, raw)
 }
 
 func requestScheme(r *http.Request) string {
@@ -2519,62 +2396,7 @@ type savedAttachment struct {
 	ContentType  string
 	SizeBytes    int64
 	IsImage      bool
-}
-
-func saveUploadedFile(category string, file multipart.File, header *multipart.FileHeader) (string, error) {
-	saved, err := saveUploadedFileInternal(category, file, header)
-	if err != nil {
-		return "", err
-	}
-	return saved.RelativePath, nil
-}
-
-func saveUploadedFileHeader(category string, header *multipart.FileHeader) (savedAttachment, error) {
-	file, err := header.Open()
-	if err != nil {
-		return savedAttachment{}, err
-	}
-	defer file.Close()
-	return saveUploadedFileInternal(category, file, header)
-}
-
-func saveUploadedFileInternal(category string, file io.Reader, header *multipart.FileHeader) (savedAttachment, error) {
-	safeCategory := strings.Trim(strings.ToLower(category), "/\\ ")
-	if safeCategory == "" {
-		safeCategory = "misc"
-	}
-	uploadsDir := filepath.Join("uploads", safeCategory)
-	if err := os.MkdirAll(uploadsDir, 0o755); err != nil {
-		return savedAttachment{}, err
-	}
-
-	extension := strings.ToLower(filepath.Ext(header.Filename))
-	if extension == "" {
-		extension = ".bin"
-	}
-	fileName := uuid.NewString() + extension
-	fullPath := filepath.Join(uploadsDir, fileName)
-	target, err := os.Create(fullPath)
-	if err != nil {
-		return savedAttachment{}, err
-	}
-	defer target.Close()
-
-	written, err := io.Copy(target, file)
-	if err != nil {
-		return savedAttachment{}, err
-	}
-	contentType := strings.TrimSpace(header.Header.Get("Content-Type"))
-	if contentType == "" {
-		contentType = "application/octet-stream"
-	}
-	return savedAttachment{
-		FileName:     header.Filename,
-		RelativePath: "/" + filepath.ToSlash(filepath.Join("uploads", safeCategory, fileName)),
-		ContentType:  contentType,
-		SizeBytes:    written,
-		IsImage:      strings.HasPrefix(strings.ToLower(contentType), "image/"),
-	}, nil
+	MediaKey     string
 }
 
 func (s *Server) mapMobileConversations(r *http.Request, viewerID int, items []conversationResponse) []mobileConversationResponse {
@@ -2695,6 +2517,8 @@ func (s *Server) loadMobileMessages(ctx context.Context, r *http.Request, viewer
 		readColumn = `"UserBReadAt"`
 		peerReadAt = nullableTime(conversation.UserARead)
 	}
+	isSelfChat := conversation.UserAID == conversation.UserBID
+	participantIDs := uniqueSyncUserIDs([]int{conversation.UserAID, conversation.UserBID})
 
 	args := []any{conversationID, limit + 1}
 	beforeFilter := ""
@@ -2777,8 +2601,69 @@ func (s *Server) loadMobileMessages(ctx context.Context, r *http.Request, viewer
 		return mobileMessagePageResponse{}, err
 	}
 
-	_, _ = s.db.ExecContext(ctx, `UPDATE "Conversations" SET `+readColumn+` = NOW() WHERE "Id" = $1`, conversationID)
-	_, _ = s.db.ExecContext(ctx, `UPDATE "Messages" SET "DeliveredToPeerAt" = COALESCE("DeliveredToPeerAt", NOW()) WHERE "ConversationId" = $1 AND "SenderId" <> $2`, conversationID, viewerID)
+	deliveredRows := []struct {
+		MessageID   int       `db:"message_id"`
+		DeliveredAt time.Time `db:"delivered_at"`
+	}{}
+	if !isSelfChat {
+		_ = s.db.SelectContext(ctx, &deliveredRows, `
+			UPDATE "Messages" m
+			SET "DeliveredToPeerAt" = NOW()
+			WHERE m."ConversationId" = $1
+			  AND m."SenderId" <> $2
+			  AND m.`+deleteColumn+` = false
+			  AND m."IsHidden" = false
+			  AND m."IsRemoved" = false
+			  AND m."DeliveredToPeerAt" IS NULL
+			RETURNING m."Id" AS message_id, m."DeliveredToPeerAt" AS delivered_at
+		`, conversationID, viewerID)
+	}
+
+	var conversationReadAt time.Time
+	readStateUpdated := false
+	if !isSelfChat {
+		err = s.db.GetContext(ctx, &conversationReadAt, `
+			WITH unread AS (
+				SELECT 1
+				FROM "Messages" m
+				WHERE m."ConversationId" = $1
+				  AND m."SenderId" <> $2
+				  AND m.`+deleteColumn+` = false
+				  AND m."IsHidden" = false
+				  AND m."IsRemoved" = false
+				  AND m."CreatedAt" > COALESCE((SELECT `+readColumn+` FROM "Conversations" WHERE "Id" = $1), TIMESTAMP 'epoch')
+				LIMIT 1
+			)
+			UPDATE "Conversations"
+			SET `+readColumn+` = NOW()
+			WHERE "Id" = $1
+			  AND EXISTS (SELECT 1 FROM unread)
+			RETURNING `+readColumn+`
+		`, conversationID, viewerID)
+		if err == nil {
+			readStateUpdated = true
+		} else if !errors.Is(err, sql.ErrNoRows) {
+			return mobileMessagePageResponse{}, err
+		}
+	}
+
+	if len(participantIDs) > 0 {
+		for _, row := range deliveredRows {
+			s.emitSyncToUsers("chat.message.delivered", participantIDs, map[string]any{
+				"conversationId": conversationID,
+				"messageId":      row.MessageID,
+				"deliveredAt":    row.DeliveredAt,
+			})
+		}
+		if readStateUpdated {
+			s.emitSyncToUsers("chat.message.read", participantIDs, map[string]any{
+				"conversationId": conversationID,
+				"userId":         viewerID,
+				"readAt":         conversationReadAt,
+			})
+			s.emitNotificationSummarySync(ctx, participantIDs...)
+		}
+	}
 
 	items := make([]mobileMessageResponse, 0, len(rows))
 	for index := len(rows) - 1; index >= 0; index-- {
@@ -2867,9 +2752,9 @@ func (s *Server) createMobileMessage(ctx context.Context, r *http.Request, viewe
 
 	for _, attachment := range attachments {
 		if _, err := tx.ExecContext(ctx, `
-			INSERT INTO "MessageAttachments" ("MessageId", "FileName", "FileUrl", "ContentType", "SizeBytes", "IsImage")
-			VALUES ($1, $2, $3, $4, $5, $6)
-		`, messageID, attachment.FileName, attachment.RelativePath, attachment.ContentType, attachment.SizeBytes, attachment.IsImage); err != nil {
+			INSERT INTO "MessageAttachments" ("MessageId", "MediaAssetId", "FileName", "FileUrl", "ContentType", "SizeBytes", "IsImage")
+			VALUES ($1, NULLIF($2, '')::uuid, $3, $4, $5, $6, $7)
+		`, messageID, attachment.MediaKey, attachment.FileName, attachment.RelativePath, attachment.ContentType, attachment.SizeBytes, attachment.IsImage); err != nil {
 			return mobileMessageResponse{}, err
 		}
 	}
@@ -2877,7 +2762,6 @@ func (s *Server) createMobileMessage(ctx context.Context, r *http.Request, viewe
 	if _, err := tx.ExecContext(ctx, `UPDATE "Conversations" SET "UpdatedAt" = NOW(), "UserADeleted" = false, "UserBDeleted" = false WHERE "Id" = $1`, conversationID); err != nil {
 		return mobileMessageResponse{}, err
 	}
-	_ = s.insertNotificationTx(ctx, tx, peerID, &viewerID, "message", "sent you a new message", nil, nil, &conversationID, &messageID, &viewerID)
 	if err := tx.Commit(); err != nil {
 		return mobileMessageResponse{}, err
 	}

@@ -3,7 +3,6 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:mishon_app/core/constants/api_constants.dart';
 import 'package:mishon_app/core/localization/app_strings.dart';
 import 'package:mishon_app/core/models/auth_model.dart';
 import 'package:mishon_app/core/models/post_model.dart';
@@ -13,6 +12,7 @@ import 'package:mishon_app/core/settings/app_settings_provider.dart';
 import 'package:mishon_app/core/repositories/post_repository.dart';
 import 'package:mishon_app/core/repositories/social_repository.dart';
 import 'package:mishon_app/core/theme/app_theme.dart';
+import 'package:mishon_app/core/utils/media_url.dart' as media_url;
 import 'package:mishon_app/core/widgets/minimal_components.dart';
 import 'package:mishon_app/core/widgets/app_shell.dart';
 import 'package:mishon_app/core/widgets/app_toast.dart';
@@ -3023,11 +3023,5 @@ bool _hasMedia(Post post) {
 }
 
 String _resolvedImageUrl(String? imageUrl) {
-  if (imageUrl == null || imageUrl.isEmpty) {
-    return '';
-  }
-
-  return imageUrl.startsWith('http')
-      ? imageUrl
-      : '${ApiConstants.baseUrl.replaceFirst('/api', '')}$imageUrl';
+  return media_url.resolveOptionalMediaUrl(imageUrl) ?? '';
 }

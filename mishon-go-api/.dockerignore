@@ -1,0 +1,8 @@
+.git
+.gitignore
+.env
+uploads
+tmp
+bin
+dist
+node_modules

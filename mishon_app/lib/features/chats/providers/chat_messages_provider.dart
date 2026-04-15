@@ -82,8 +82,10 @@ class ChatMessagesState {
 @riverpod
 class ChatMessagesNotifier extends _$ChatMessagesNotifier {
   static const int _pageSize = 20;
+  static const Duration _pollInterval = Duration(seconds: 3);
 
   StreamSubscription<ChatRealtimeEvent>? _realtimeSubscription;
+  Timer? _pollTimer;
   Timer? _typingExpiryTimer;
   bool _liveUpdatesEnabled = true;
   bool _isDisposed = false;
@@ -94,10 +96,12 @@ class ChatMessagesNotifier extends _$ChatMessagesNotifier {
     ref.onDispose(() {
       _isDisposed = true;
       _realtimeSubscription?.cancel();
+      _pollTimer?.cancel();
       _typingExpiryTimer?.cancel();
     });
 
     _subscribeToRealtime();
+    _startPolling();
     Future<void>.microtask(() async {
       unawaited(ref.read(chatRealtimeServiceProvider).ensureConnected());
       await _loadInitialPage();
@@ -239,7 +243,11 @@ class ChatMessagesNotifier extends _$ChatMessagesNotifier {
 
     _liveUpdatesEnabled = enabled;
     if (enabled) {
+      _startPolling();
       unawaited(refresh(silent: true, force: true));
+    } else {
+      _pollTimer?.cancel();
+      _pollTimer = null;
     }
   }
 
@@ -375,6 +383,21 @@ class ChatMessagesNotifier extends _$ChatMessagesNotifier {
         .listen(_handleRealtimeEvent);
   }
 
+  void _startPolling() {
+    _pollTimer?.cancel();
+    if (!_liveUpdatesEnabled || !_canUpdateState) {
+      return;
+    }
+
+    _pollTimer = Timer.periodic(_pollInterval, (_) {
+      if (!_canUpdateState || !_liveUpdatesEnabled) {
+        return;
+      }
+
+      unawaited(refresh(silent: true, force: true));
+    });
+  }
+
   void _handleRealtimeEvent(ChatRealtimeEvent event) {
     if (!_canUpdateState || event.conversationId != conversationId) {
       return;
@@ -394,6 +417,16 @@ class ChatMessagesNotifier extends _$ChatMessagesNotifier {
 
     if (event is ChatMessageSentRealtimeEvent) {
       upsertMessage(event.message);
+      return;
+    }
+
+    if (event is ChatMessageDeletedRealtimeEvent) {
+      removeMessage(event.messageId);
+      return;
+    }
+
+    if (event is ChatHistoryClearedRealtimeEvent) {
+      clearHistory();
       return;
     }
 

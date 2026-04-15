@@ -28,7 +28,6 @@ logs/
 
 # Secrets and local config
 .env
-.env.*
 *.env
 secrets.json
 password.txt

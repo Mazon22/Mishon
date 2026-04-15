@@ -10,10 +10,12 @@ import (
 )
 
 func (s *Server) registerStaticRoutes(router chi.Router) {
-	uploadsDir := filepath.Clean("uploads")
-	if info, err := os.Stat(uploadsDir); err == nil && info.IsDir() {
-		fileServer := http.StripPrefix("/uploads/", http.FileServer(http.Dir(uploadsDir)))
-		router.Handle("/uploads/*", fileServer)
+	uploadsDir := filepath.Clean(strings.TrimSpace(s.cfg.UploadsDir))
+	if uploadsDir != "." && uploadsDir != "" {
+		if info, err := os.Stat(uploadsDir); err == nil && info.IsDir() {
+			fileServer := http.StripPrefix("/uploads/", http.FileServer(http.Dir(uploadsDir)))
+			router.Handle("/uploads/*", fileServer)
+		}
 	}
 
 	distDir := filepath.Clean(s.cfg.WebDistDir)

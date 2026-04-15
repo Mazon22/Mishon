@@ -1,5 +1,6 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:mishon_app/core/utils/media_url.dart';
 
 class AppAvatar extends StatelessWidget {
   final String username;
@@ -29,12 +30,13 @@ class AppAvatar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final resolvedImageUrl = resolveOptionalMediaUrl(imageUrl);
     final radius = borderRadius ?? BorderRadius.circular(size * 0.32);
     final child = SizedBox(
       width: size,
       height: size,
       child: _MediaViewport(
-        imageUrl: imageUrl,
+        imageUrl: resolvedImageUrl,
         scale: scale,
         offsetX: offsetX,
         offsetY: offsetY,
@@ -87,6 +89,7 @@ class ProfileBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final resolvedImageUrl = resolveOptionalMediaUrl(imageUrl);
     return ClipRRect(
       borderRadius: borderRadius,
       child: SizedBox(
@@ -108,9 +111,9 @@ class ProfileBanner extends StatelessWidget {
                 ),
               ),
             ),
-            if (imageUrl != null && imageUrl!.isNotEmpty)
+            if (resolvedImageUrl != null && resolvedImageUrl.isNotEmpty)
               _MediaViewport(
-                imageUrl: imageUrl,
+                imageUrl: resolvedImageUrl,
                 scale: scale,
                 offsetX: offsetX,
                 offsetY: offsetY,

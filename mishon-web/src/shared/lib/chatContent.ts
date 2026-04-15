@@ -1,3 +1,5 @@
+import { resolveMediaUrl } from './media';
+
 export type SharedPostPayload = {
   postId: number;
   userId: number;
@@ -37,12 +39,12 @@ export function parseSharedPostMessage(rawContent?: string | null): SharedPostPa
       postId: asNumber(decoded.postId),
       userId: asNumber(decoded.userId),
       username: typeof decoded.username === 'string' && decoded.username.trim() ? decoded.username : 'mishon',
-      userAvatarUrl: typeof decoded.userAvatarUrl === 'string' ? decoded.userAvatarUrl : null,
+      userAvatarUrl: resolveMediaUrl(typeof decoded.userAvatarUrl === 'string' ? decoded.userAvatarUrl : null),
       userAvatarScale: asNumber(decoded.userAvatarScale, 1),
       userAvatarOffsetX: asNumber(decoded.userAvatarOffsetX),
       userAvatarOffsetY: asNumber(decoded.userAvatarOffsetY),
       contentPreview: typeof decoded.contentPreview === 'string' ? decoded.contentPreview.trim() : '',
-      imageUrl: typeof decoded.imageUrl === 'string' ? decoded.imageUrl : null,
+      imageUrl: resolveMediaUrl(typeof decoded.imageUrl === 'string' ? decoded.imageUrl : null),
       createdAt: typeof decoded.createdAt === 'string' ? decoded.createdAt : null,
     };
   } catch {
@@ -57,10 +59,14 @@ export function getConversationPreview(rawContent?: string | null) {
   }
 
   const normalized = normalizeText(rawContent);
-  return normalized || 'Вложение из мобильной версии';
+  return normalized || 'Вложение';
 }
 
 export function getMessageText(rawContent?: string | null) {
-  const normalized = normalizeText(rawContent);
-  return normalized || 'Вложение из мобильной версии';
+  const sharedPost = parseSharedPostMessage(rawContent);
+  if (sharedPost) {
+    return `Пост от @${sharedPost.username}`;
+  }
+
+  return normalizeText(rawContent);
 }

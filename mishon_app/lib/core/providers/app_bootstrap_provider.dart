@@ -26,6 +26,7 @@ class AppBootstrapState {
   final AppBootstrapPhase phase;
   final bool isAuthenticated;
   final bool hasConnection;
+  final bool hasCompletedBootstrap;
   final int? userId;
   final String? errorMessage;
   final DateTime? lastRemoteSyncAt;
@@ -34,6 +35,7 @@ class AppBootstrapState {
     required this.phase,
     required this.isAuthenticated,
     required this.hasConnection,
+    required this.hasCompletedBootstrap,
     required this.userId,
     this.errorMessage,
     this.lastRemoteSyncAt,
@@ -43,6 +45,7 @@ class AppBootstrapState {
     : phase = AppBootstrapPhase.idle,
       isAuthenticated = false,
       hasConnection = false,
+      hasCompletedBootstrap = false,
       userId = null,
       errorMessage = null,
       lastRemoteSyncAt = null;
@@ -52,12 +55,13 @@ class AppBootstrapState {
       phase == AppBootstrapPhase.offlineReady ||
       phase == AppBootstrapPhase.failed;
 
-  bool get allowsInteraction => isReady;
+  bool get allowsInteraction => hasCompletedBootstrap || isReady;
 
   AppBootstrapState copyWith({
     AppBootstrapPhase? phase,
     bool? isAuthenticated,
     bool? hasConnection,
+    bool? hasCompletedBootstrap,
     Object? userId = _userIdSentinel,
     Object? errorMessage = _errorSentinel,
     DateTime? lastRemoteSyncAt,
@@ -66,6 +70,8 @@ class AppBootstrapState {
       phase: phase ?? this.phase,
       isAuthenticated: isAuthenticated ?? this.isAuthenticated,
       hasConnection: hasConnection ?? this.hasConnection,
+      hasCompletedBootstrap:
+          hasCompletedBootstrap ?? this.hasCompletedBootstrap,
       userId: identical(userId, _userIdSentinel) ? this.userId : userId as int?,
       errorMessage:
           identical(errorMessage, _errorSentinel)
@@ -166,6 +172,7 @@ class AppBootstrapNotifier extends Notifier<AppBootstrapState> {
                   ? AppBootstrapPhase.ready
                   : AppBootstrapPhase.offlineReady,
           isAuthenticated: false,
+          hasCompletedBootstrap: true,
           userId: null,
         );
         return;
@@ -174,6 +181,7 @@ class AppBootstrapNotifier extends Notifier<AppBootstrapState> {
       if (!hasConnection) {
         state = state.copyWith(
           phase: AppBootstrapPhase.offlineReady,
+          hasCompletedBootstrap: true,
           errorMessage: null,
         );
         return;
@@ -183,12 +191,14 @@ class AppBootstrapNotifier extends Notifier<AppBootstrapState> {
       state = state.copyWith(
         phase: AppBootstrapPhase.ready,
         hasConnection: true,
+        hasCompletedBootstrap: true,
         lastRemoteSyncAt: DateTime.now(),
         errorMessage: null,
       );
     } catch (error) {
       state = state.copyWith(
         phase: AppBootstrapPhase.failed,
+        hasCompletedBootstrap: true,
         errorMessage: error.toString(),
       );
     } finally {

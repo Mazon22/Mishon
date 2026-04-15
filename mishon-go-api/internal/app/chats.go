@@ -6,8 +6,40 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 )
+
+const sharedPostMessagePrefix = "__mishon_shared_post__:"
+
+func buildConversationLastMessagePreview(rawContent sql.NullString, attachmentCount, imageCount int) *string {
+	content := normalizeText(rawContent.String)
+	if content != "" {
+		if strings.HasPrefix(content, sharedPostMessagePrefix) {
+			preview := "Поделился постом"
+			return &preview
+		}
+		return &content
+	}
+
+	if attachmentCount <= 0 {
+		return nil
+	}
+
+	preview := "Вложение"
+	switch {
+	case attachmentCount == 1 && imageCount == 1:
+		preview = "Фото"
+	case attachmentCount > 1 && imageCount == attachmentCount:
+		preview = "Фотографии"
+	case attachmentCount == 1:
+		preview = "Файл"
+	default:
+		preview = "Файлы"
+	}
+
+	return &preview
+}
 
 func (s *Server) handleChats(w http.ResponseWriter, r *http.Request) {
 	user := authUser(r.Context())
@@ -17,7 +49,7 @@ func (s *Server) handleChats(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"items": items})
+	writeJSON(w, http.StatusOK, map[string]any{"items": normalizeConversationsMedia(r, items)})
 }
 
 func (s *Server) handleCreateOrGetDirectChat(w http.ResponseWriter, r *http.Request) {
@@ -72,7 +104,7 @@ func (s *Server) handleCreateOrGetDirectChat(w http.ResponseWriter, r *http.Requ
 	}
 	for _, chat := range chats {
 		if chat.ID == chatID {
-			writeJSON(w, http.StatusOK, chat)
+			writeJSON(w, http.StatusOK, normalizeConversationMedia(r, chat))
 			return
 		}
 	}
@@ -100,7 +132,7 @@ func (s *Server) handleChatMessages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"items": items})
+	writeJSON(w, http.StatusOK, map[string]any{"items": normalizeMessagesMedia(r, items)})
 }
 
 func (s *Server) handleSendMessage(w http.ResponseWriter, r *http.Request) {
@@ -159,8 +191,6 @@ func (s *Server) handleSendMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_ = s.insertNotificationTx(r.Context(), tx, peerID, &user.ID, "message", "sent you a new message", nil, nil, &chatID, &messageID, &user.ID)
-
 	if err := tx.Commit(); err != nil {
 		writeError(w, http.StatusInternalServerError, "Failed to save message")
 		return
@@ -172,7 +202,7 @@ func (s *Server) handleSendMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, items[len(items)-1])
+	writeJSON(w, http.StatusCreated, normalizeMessageMedia(r, items[len(items)-1]))
 }
 
 func (s *Server) loadChats(ctx context.Context, viewerID int) ([]conversationResponse, error) {
@@ -191,6 +221,8 @@ func (s *Server) loadChats(ctx context.Context, viewerID int) ([]conversationRes
 		IsFavorite           bool           `db:"is_favorite"`
 		IsMuted              bool           `db:"is_muted"`
 		LastMessage          sql.NullString `db:"last_message"`
+		LastMessageAttachments int          `db:"last_message_attachments"`
+		LastMessageImageCount  int          `db:"last_message_image_count"`
 		LastMessageAt        sql.NullTime   `db:"last_message_at"`
 		LastMessageIsMine    bool           `db:"last_message_is_mine"`
 		LastMessageDelivered bool           `db:"last_message_delivered"`
@@ -214,6 +246,8 @@ func (s *Server) loadChats(ctx context.Context, viewerID int) ([]conversationRes
 			CASE WHEN c."UserAId" = $1 THEN c."UserAFavorite" ELSE c."UserBFavorite" END AS is_favorite,
 			CASE WHEN c."UserAId" = $1 THEN c."UserAMuted" ELSE c."UserBMuted" END AS is_muted,
 			last_message."Content" AS last_message,
+			COALESCE(last_message_attachments.attachment_count, 0) AS last_message_attachments,
+			COALESCE(last_message_attachments.image_count, 0) AS last_message_image_count,
 			last_message."CreatedAt" AS last_message_at,
 			COALESCE(last_message."SenderId" = $1, false) AS last_message_is_mine,
 			COALESCE(last_message."DeliveredToPeerAt" IS NOT NULL, false) AS last_message_delivered,
@@ -237,6 +271,13 @@ func (s *Server) loadChats(ctx context.Context, viewerID int) ([]conversationRes
 			ORDER BY m."CreatedAt" DESC
 			LIMIT 1
 		) last_message ON true
+		LEFT JOIN LATERAL (
+			SELECT
+				COUNT(*)::int AS attachment_count,
+				COUNT(*) FILTER (WHERE ma."IsImage")::int AS image_count
+			FROM "MessageAttachments" ma
+			WHERE ma."MessageId" = last_message."Id"
+		) last_message_attachments ON true
 		LEFT JOIN LATERAL (
 			SELECT COUNT(*) AS unread_count
 			FROM "Messages" m
@@ -275,7 +316,7 @@ func (s *Server) loadChats(ctx context.Context, viewerID int) ([]conversationRes
 			IsArchived:           row.IsArchived,
 			IsFavorite:           row.IsFavorite,
 			IsMuted:              row.IsMuted,
-			LastMessage:          nullableString(row.LastMessage),
+			LastMessage:          buildConversationLastMessagePreview(row.LastMessage, row.LastMessageAttachments, row.LastMessageImageCount),
 			LastMessageAt:        nullableTime(row.LastMessageAt),
 			LastMessageIsMine:    row.LastMessageIsMine,
 			LastMessageDelivered: row.LastMessageDelivered,

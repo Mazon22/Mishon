@@ -5,7 +5,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:mishon_app/core/localization/app_strings.dart';
 import 'package:mishon_app/core/repositories/auth_repository.dart';
+import 'package:mishon_app/features/auth/widgets/auth_legal_block.dart';
 import 'package:mishon_app/features/auth/widgets/auth_shell.dart';
+import 'package:mishon_app/features/auth/widgets/auth_social_section.dart';
 
 import '../auth_flow_destination.dart';
 import '../providers/auth_provider.dart';
@@ -78,9 +80,9 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
       return false;
     }
 
-    return RegExp(r'^(?!.*\.\.)(?!\.)(?!.*\.$)[a-z0-9._]{5,32}$').hasMatch(
-      username,
-    );
+    return RegExp(
+      r'^(?!.*\.\.)(?!\.)(?!.*\.$)[a-z0-9._]{5,32}$',
+    ).hasMatch(username);
   }
 
   bool _isEmailSyntaxValid(String email) {
@@ -157,7 +159,9 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
         if (!mounted) {
           return;
         }
-        setState(() => _usernameAvailabilityState = _AvailabilityState.checking);
+        setState(
+          () => _usernameAvailabilityState = _AvailabilityState.checking,
+        );
       }
 
       final available = await repository.checkRegistrationUsernameAvailability(
@@ -171,8 +175,11 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
       }
 
       setState(
-        () => _usernameAvailabilityState =
-            available ? _AvailabilityState.available : _AvailabilityState.unavailable,
+        () =>
+            _usernameAvailabilityState =
+                available
+                    ? _AvailabilityState.available
+                    : _AvailabilityState.unavailable,
       );
     } catch (_) {
       if (!mounted ||
@@ -211,8 +218,11 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
       }
 
       setState(
-        () => _emailAvailabilityState =
-            available ? _AvailabilityState.available : _AvailabilityState.unavailable,
+        () =>
+            _emailAvailabilityState =
+                available
+                    ? _AvailabilityState.available
+                    : _AvailabilityState.unavailable,
       );
     } catch (_) {
       if (!mounted ||
@@ -307,15 +317,17 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
       return;
     }
 
-    final message = ref.read(authNotifierProvider).when<String?>(
-      data: (_) => null,
-      error:
-          (error, _) => formatAuthErrorMessage(
-            error,
-            fallback: strings.operationError,
-          ),
-      loading: () => null,
-    );
+    final message = ref
+        .read(authNotifierProvider)
+        .when<String?>(
+          data: (_) => null,
+          error:
+              (error, _) => formatAuthErrorMessage(
+                error,
+                fallback: strings.operationError,
+              ),
+          loading: () => null,
+        );
 
     setState(() => _errorMessage = message);
   }
@@ -330,6 +342,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
       title: strings.createAccountTitle,
       subtitle: strings.createAccountSubtitle,
       children: [
+        const AuthSocialSection(),
         Form(
           key: _formKey,
           autovalidateMode: AutovalidateMode.onUserInteraction,
@@ -352,9 +365,9 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
               AuthTextField(
                 controller: _usernameController,
                 labelText: strings.username,
-                hintText: 'michael_design',
+                hintText:
+                    strings.isRu ? 'Введите username' : 'Enter a username',
                 prefixIcon: Icons.person_outline_rounded,
-                helperText: strings.usernameHelperText,
                 textInputAction: TextInputAction.next,
                 validator: (value) {
                   final username = value?.trim() ?? '';
@@ -384,11 +397,11 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                   failedText: strings.usernameVerifyFailed,
                 ),
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 14),
               AuthTextField(
                 controller: _emailController,
                 labelText: strings.emailAddress,
-                hintText: 'you@example.com',
+                hintText: strings.isRu ? 'Введите почту' : 'Enter your email',
                 prefixIcon: Icons.alternate_email_rounded,
                 keyboardType: TextInputType.emailAddress,
                 textInputAction: TextInputAction.next,
@@ -414,13 +427,13 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                   failedText: strings.emailVerifyFailed,
                 ),
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 14),
               AuthTextField(
                 controller: _passwordController,
                 labelText: strings.passwordLabel,
-                hintText: strings.newPasswordHint,
+                hintText:
+                    strings.isRu ? 'Введите пароль' : 'Enter your password',
                 prefixIcon: Icons.lock_outline_rounded,
-                helperText: strings.passwordHelperText,
                 obscureText: true,
                 textInputAction: TextInputAction.next,
                 validator: (value) {
@@ -443,11 +456,12 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                   return null;
                 },
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 14),
               AuthTextField(
                 controller: _confirmPasswordController,
                 labelText: strings.confirmNewPasswordLabel,
-                hintText: strings.confirmPasswordHint,
+                hintText:
+                    strings.isRu ? 'Повторите пароль' : 'Repeat your password',
                 prefixIcon: Icons.verified_user_outlined,
                 obscureText: true,
                 textInputAction: TextInputAction.done,
@@ -462,13 +476,15 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                   return null;
                 },
               ),
-              const SizedBox(height: 24),
+              const SizedBox(height: 20),
               AuthPrimaryButton(
                 text: strings.createAccountAction,
                 onPressed: _register,
                 isLoading: isLoading,
               ),
-              const SizedBox(height: 24),
+              const SizedBox(height: 12),
+              const AuthLegalBlock(),
+              const SizedBox(height: 18),
               AuthFooter(
                 label: strings.alreadyHaveAccountLabel,
                 action: strings.signInAction,
@@ -532,9 +548,9 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
             child: Text(
               text,
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: color,
-                    fontWeight: FontWeight.w600,
-                  ),
+                color: color,
+                fontWeight: FontWeight.w600,
+              ),
             ),
           ),
         ],

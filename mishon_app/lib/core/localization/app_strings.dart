@@ -1,4 +1,4 @@
-﻿import 'package:flutter/foundation.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
@@ -310,14 +310,14 @@ class AppStrings {
       isRu
           ? 'Не удалось проверить имя пользователя.'
           : 'Could not verify username right now.';
-  String get checkingEmail =>
-      isRu ? 'Проверяем email...' : 'Checking email...';
-  String get emailAvailable =>
-      isRu ? 'Email доступен' : 'Email available';
+  String get checkingEmail => isRu ? 'Проверяем email...' : 'Checking email...';
+  String get emailAvailable => isRu ? 'Email доступен' : 'Email available';
   String get emailUnavailable =>
       isRu ? 'Этот email уже используется.' : 'This email is already in use.';
   String get emailVerifyFailed =>
-      isRu ? 'Не удалось проверить email.' : 'Could not verify email right now.';
+      isRu
+          ? 'Не удалось проверить email.'
+          : 'Could not verify email right now.';
 
   String get noFollowersYet =>
       isRu ? 'Пока нет подписчиков' : 'No followers yet';
@@ -334,26 +334,41 @@ class AppStrings {
   String get friendsWillAppearHere =>
       isRu ? 'Ваши друзья появятся здесь.' : 'Your friends will appear here.';
 
-  String get signInTitle =>
-      isRu ? 'Вход в Mishon' : 'Sign in to Mishon';
+  String get signInTitle => isRu ? 'Вход' : 'Sign in';
   String get signInSubtitle =>
-      isRu ? 'Продолжите работу со своим аккаунтом' : 'Continue to your account';
+      isRu ? 'Продолжите работу с аккаунтом.' : 'Continue with your account.';
   String get signInAction => isRu ? 'Войти' : 'Sign in';
   String get signUpAction => isRu ? 'Регистрация' : 'Sign up';
+  String get continueWithGoogle =>
+      isRu ? 'Продолжить через Google' : 'Continue with Google';
+  String get continueWithApple =>
+      isRu ? 'Продолжить через Apple' : 'Continue with Apple';
+  String get orDivider => isRu ? 'или' : 'or';
   String get noAccountLabel =>
       isRu ? 'Ещё нет аккаунта?' : 'Don\'t have an account?';
   String get forgotPasswordAction =>
       isRu ? 'Забыли пароль?' : 'Forgot password?';
-  String get createAccountTitle =>
-      isRu ? 'Создание аккаунта' : 'Create your account';
+  String get createAccountTitle => isRu ? 'Создать аккаунт' : 'Create account';
   String get createAccountSubtitle =>
       isRu
-          ? 'Подключаем новый аккаунт к актуальным настройкам безопасности.'
-          : 'Join Mishon with the latest secure account setup.';
+          ? 'Создайте аккаунт и начните общение.'
+          : 'Create your account and start connecting.';
   String get alreadyHaveAccountLabel =>
       isRu ? 'Уже есть аккаунт?' : 'Already have an account?';
-  String get createAccountAction =>
-      isRu ? 'Создать аккаунт' : 'Create account';
+  String get createAccountAction => isRu ? 'Создать аккаунт' : 'Create account';
+  String get legalLead =>
+      isRu
+          ? 'Создавая аккаунт, вы принимаете'
+          : 'By creating an account, you agree to';
+  String get legalAnd => isRu ? 'и' : 'and';
+  String get legalTermsLink => isRu ? 'условия' : 'terms';
+  String get legalPrivacyLink =>
+      isRu ? 'политику приватности' : 'privacy policy';
+  String get legalCookieLink => isRu ? 'cookie' : 'cookie policy';
+  String socialProviderComingSoon(String provider) =>
+      isRu
+          ? 'Вход через $provider скоро появится. Пока используйте email и пароль.'
+          : '$provider sign in is coming soon. For now, use email and password.';
   String get chooseUsernameValidation =>
       isRu ? 'Придумайте username.' : 'Choose a username.';
   String get usernameMinThreeValidation =>
@@ -384,8 +399,7 @@ class AppStrings {
           : 'At least 8 characters with uppercase, lowercase, and a number.';
   String get emailAddress => isRu ? 'Email' : 'Email';
   String get passwordLabel => isRu ? 'Пароль' : 'Password';
-  String get passwordHint =>
-      isRu ? 'Введите пароль' : 'Enter your password';
+  String get passwordHint => isRu ? 'Введите пароль' : 'Enter your password';
   String get enterEmailValidation =>
       isRu ? 'Введите email.' : 'Enter your email.';
   String get emailInvalidValidation =>
@@ -405,32 +419,28 @@ class AppStrings {
       isRu ? 'Подтвердите новый пароль' : 'Confirm new password';
   String get confirmPasswordHint =>
       isRu ? 'Повторите пароль' : 'Repeat your password';
-  String get backToLogin =>
-      isRu ? 'Вернуться ко входу' : 'Back to login';
+  String get backToLogin => isRu ? 'Вернуться ко входу' : 'Back to login';
   String get rememberedPassword =>
       isRu ? 'Вспомнили пароль?' : 'Remembered your password?';
   String get forgotPasswordTitle =>
       isRu ? 'Восстановление пароля' : 'Forgot password';
   String get forgotPasswordSubtitle =>
       isRu
-          ? 'Введите email, и мы отправим ссылку для сброса пароля.'
-          : 'Enter your email and we will send a password reset link.';
+          ? 'Введите email, и мы отправим ссылку.'
+          : 'Enter your email and we will send a reset link.';
   String get forgotPasswordSuccessTitle =>
       isRu ? 'Проверьте почту' : 'Check your email';
   String get forgotPasswordSuccessSubtitle =>
       isRu
           ? 'Если аккаунт существует, письмо для сброса уже в пути.'
           : 'If the account exists, a reset email is already on the way.';
-  String get sendResetLink =>
-      isRu ? 'Отправить ссылку' : 'Send reset link';
-  String get resetPasswordTitle =>
-      isRu ? 'Сброс пароля' : 'Reset password';
+  String get sendResetLink => isRu ? 'Отправить ссылку' : 'Send reset link';
+  String get resetPasswordTitle => isRu ? 'Сброс пароля' : 'Reset password';
   String get resetPasswordSubtitle =>
       isRu
-          ? 'Задайте новый пароль для входа в Mishon.'
-          : 'Set a new password for your Mishon account.';
-  String get resetPasswordAction =>
-      isRu ? 'Сохранить пароль' : 'Save password';
+          ? 'Задайте новый пароль для входа.'
+          : 'Set a new password to sign in.';
+  String get resetPasswordAction => isRu ? 'Сохранить пароль' : 'Save password';
   String get resetPasswordSuccessTitle =>
       isRu ? 'Пароль обновлён' : 'Password updated';
   String get resetPasswordSuccessSubtitle =>
@@ -451,8 +461,7 @@ class AppStrings {
       isRu ? 'Отправить письмо ещё раз' : 'Resend verification email';
   String get verificationEmailResent =>
       isRu ? 'Письмо отправлено повторно.' : 'Verification email sent again.';
-  String get continueToApp =>
-      isRu ? 'Продолжить' : 'Continue';
+  String get continueToApp => isRu ? 'Продолжить' : 'Continue';
   String get verificationLinkInvalid =>
       isRu
           ? 'Ссылка подтверждения недействительна.'
@@ -528,29 +537,24 @@ class AppStrings {
       isRu
           ? 'Текущую сессию нельзя отозвать отсюда.'
           : 'You cannot revoke the current session from here.';
-  String get sessionRevoked =>
-      isRu ? 'Сессия отозвана.' : 'Session revoked.';
+  String get sessionRevoked => isRu ? 'Сессия отозвана.' : 'Session revoked.';
   String get noOtherSessions =>
       isRu ? 'Других сессий нет.' : 'There are no other sessions.';
   String get otherSessionsLoggedOut =>
       isRu ? 'Остальные сессии завершены.' : 'Other sessions were logged out.';
   String get logoutOtherSessions =>
       isRu ? 'Выйти на других устройствах' : 'Log out other devices';
-  String get logoutAllSessionsAction =>
-      isRu ? 'Выйти везде' : 'Log out all';
+  String get logoutAllSessionsAction => isRu ? 'Выйти везде' : 'Log out all';
   String get unknownDevice =>
       isRu ? 'Неизвестное устройство' : 'Unknown device';
   String get currentSessionChip => isRu ? 'Текущая' : 'Current';
   String get platformLabel => isRu ? 'Платформа' : 'Platform';
-  String get unknownPlatform =>
-      isRu ? 'Неизвестно' : 'Unknown';
-  String get lastUsedLabel =>
-      isRu ? 'Последняя активность' : 'Last used';
+  String get unknownPlatform => isRu ? 'Неизвестно' : 'Unknown';
+  String get lastUsedLabel => isRu ? 'Последняя активность' : 'Last used';
   String get signedInLabel => isRu ? 'Вход выполнен' : 'Signed in';
   String get sessionExpiresLabel => isRu ? 'Истекает' : 'Expires';
   String get ipAddressLabel => 'IP';
-  String get revokeSessionAction =>
-      isRu ? 'Завершить' : 'Revoke';
+  String get revokeSessionAction => isRu ? 'Завершить' : 'Revoke';
   String get privacyTitle => isRu ? 'Приватность' : 'Privacy';
   String get privacyCardSubtitle =>
       isRu
@@ -587,16 +591,13 @@ class AppStrings {
           ? 'Кто видит ваш онлайн и last active.'
           : 'Choose who can see your online and last active status.';
   String get privacyAudienceEveryone => isRu ? 'Все' : 'Everyone';
-  String get privacyAudienceFollowers =>
-      isRu ? 'Подписчики' : 'Followers';
+  String get privacyAudienceFollowers => isRu ? 'Подписчики' : 'Followers';
   String get privacyAudienceFriends => isRu ? 'Друзья' : 'Friends';
   String get privacyAudienceNobody => isRu ? 'Никто' : 'Nobody';
   String get privacyAudiencePublic =>
       isRu ? 'Открытый профиль' : 'Public profile';
   String get privacySaved =>
-      isRu
-          ? 'Настройки приватности сохранены.'
-          : 'Privacy settings saved.';
+      isRu ? 'Настройки приватности сохранены.' : 'Privacy settings saved.';
   String get followRequestsTitle =>
       isRu ? 'Запросы на подписку' : 'Follow requests';
   String get followRequestsSubtitle =>
@@ -606,9 +607,7 @@ class AppStrings {
   String get noFollowRequestsTitle =>
       isRu ? 'Запросов пока нет' : 'No follow requests yet';
   String get noFollowRequestsSubtitle =>
-      isRu
-          ? 'Новые запросы появятся здесь.'
-          : 'New requests will appear here.';
+      isRu ? 'Новые запросы появятся здесь.' : 'New requests will appear here.';
   String get followRequestDefaultHint =>
       isRu
           ? 'Хочет подписаться на ваш профиль.'
@@ -631,10 +630,8 @@ class AppStrings {
   String get statusLabel => isRu ? 'Статус' : 'Status';
   String get resolutionLabel => isRu ? 'Решение' : 'Resolution';
   String get targetLabel => isRu ? 'Цель' : 'Target';
-  String get assignToMeAction =>
-      isRu ? 'Назначить на меня' : 'Assign to me';
-  String get resolveReportAction =>
-      isRu ? 'Закрыть жалобу' : 'Resolve report';
+  String get assignToMeAction => isRu ? 'Назначить на меня' : 'Assign to me';
+  String get resolveReportAction => isRu ? 'Закрыть жалобу' : 'Resolve report';
   String get warnUserAction => isRu ? 'Предупредить' : 'Warn';
   String get suspendUserAction => isRu ? 'Заморозить' : 'Suspend';
   String get banUserAction => isRu ? 'Забанить' : 'Ban';
@@ -643,8 +640,7 @@ class AppStrings {
       isRu ? 'Назначить модератором' : 'Assign moderator';
   String get removeModeratorAction =>
       isRu ? 'Снять модератора' : 'Remove moderator';
-  String get resolutionWarning =>
-      isRu ? 'Предупреждение' : 'Warning issued';
+  String get resolutionWarning => isRu ? 'Предупреждение' : 'Warning issued';
   String get resolutionContentHidden =>
       isRu ? 'Скрыть контент' : 'Hide content';
   String get resolutionContentRemoved =>
@@ -653,15 +649,12 @@ class AppStrings {
       isRu ? 'Временно заморозить' : 'Suspend user';
   String get resolutionUserBanned =>
       isRu ? 'Забанить пользователя' : 'Ban user';
-  String get resolutionRejected =>
-      isRu ? 'Отклонить жалобу' : 'Reject report';
+  String get resolutionRejected => isRu ? 'Отклонить жалобу' : 'Reject report';
   String get optionalModeratorNote =>
       isRu ? 'Заметка модератора' : 'Moderator note';
   String get noReportsTitle => isRu ? 'Жалоб нет' : 'No reports';
   String get noReportsSubtitle =>
-      isRu
-          ? 'Список жалоб сейчас пуст.'
-          : 'There are no reports right now.';
+      isRu ? 'Список жалоб сейчас пуст.' : 'There are no reports right now.';
   String get openReportDetails => isRu ? 'Открыть' : 'Open';
   String get adminShort => isRu ? 'Admin' : 'Admin';
   String get moderatorShort => isRu ? 'Moderator' : 'Moderator';
@@ -670,8 +663,7 @@ class AppStrings {
   String get reportAction => isRu ? 'Пожаловаться' : 'Report';
   String get reportUserAction =>
       isRu ? 'Пожаловаться на пользователя' : 'Report user';
-  String get reportPostAction =>
-      isRu ? 'Пожаловаться на пост' : 'Report post';
+  String get reportPostAction => isRu ? 'Пожаловаться на пост' : 'Report post';
   String get reportCommentAction =>
       isRu ? 'Пожаловаться на комментарий' : 'Report comment';
   String get reportMessageAction =>
@@ -683,8 +675,7 @@ class AppStrings {
       isRu ? 'Жалоба отправлена.' : 'Report submitted.';
   String get reportTargetUserTitle =>
       isRu ? 'Жалоба на пользователя' : 'Report user';
-  String get reportTargetPostTitle =>
-      isRu ? 'Жалоба на пост' : 'Report post';
+  String get reportTargetPostTitle => isRu ? 'Жалоба на пост' : 'Report post';
   String get reportTargetCommentTitle =>
       isRu ? 'Жалоба на комментарий' : 'Report comment';
   String get reportTargetMessageTitle =>
@@ -705,10 +696,8 @@ class AppStrings {
   String get reasonSuspiciousActivity =>
       isRu ? 'Подозрительная активность' : 'Suspicious activity';
   String get reasonOther => isRu ? 'Другое' : 'Other';
-  String get requestPendingLabel =>
-      isRu ? 'Запрос отправлен' : 'Request sent';
-  String get cancelRequestAction =>
-      isRu ? 'Отменить запрос' : 'Cancel request';
+  String get requestPendingLabel => isRu ? 'Запрос отправлен' : 'Request sent';
+  String get cancelRequestAction => isRu ? 'Отменить запрос' : 'Cancel request';
   String get privateProfileLockedTitle =>
       isRu ? 'Профиль закрыт' : 'Private profile';
   String get privateProfileLockedSubtitle =>
@@ -719,10 +708,11 @@ class AppStrings {
       isRu
           ? 'Запрос уже отправлен. Доступ откроется после одобрения.'
           : 'Your follow request is pending approval.';
-  String get verifyEmailAction =>
-      isRu ? 'Подтвердить email' : 'Verify email';
+  String get verifyEmailAction => isRu ? 'Подтвердить email' : 'Verify email';
   String get verifyEmailReminderTitle =>
-      isRu ? 'Подтвердите email для полного доступа' : 'Verify your email for full access';
+      isRu
+          ? 'Подтвердите email для полного доступа'
+          : 'Verify your email for full access';
   String get verifyEmailReminderSubtitle =>
       isRu
           ? 'Некоторые действия остаются ограничены, пока email не подтверждён.'

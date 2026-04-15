@@ -6,7 +6,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
-import 'package:mishon_app/core/constants/api_constants.dart';
 import 'package:mishon_app/core/localization/app_strings.dart';
 import 'package:mishon_app/core/models/post_model.dart';
 import 'package:mishon_app/core/models/social_models.dart';
@@ -14,7 +13,9 @@ import 'package:mishon_app/core/network/exceptions.dart';
 import 'package:mishon_app/core/providers/app_bootstrap_provider.dart';
 import 'package:mishon_app/core/repositories/post_repository.dart';
 import 'package:mishon_app/core/repositories/social_repository.dart';
+import 'package:mishon_app/core/sync/live_sync_service.dart';
 import 'package:mishon_app/core/utils/external_url.dart';
+import 'package:mishon_app/core/utils/media_url.dart' as media_url;
 import 'package:mishon_app/core/widgets/app_toast.dart';
 import 'package:mishon_app/core/widgets/interactive_content_text.dart';
 import 'package:mishon_app/core/widgets/profile_media.dart';
@@ -43,6 +44,7 @@ class _TelegramCommentsScreenState
   final _controller = TextEditingController();
   final _focusNode = FocusNode();
   final _scrollController = ScrollController();
+  StreamSubscription<LiveSyncEvent>? _liveSyncSubscription;
   bool _isSubmitting = false;
   bool _isTogglingLike = false;
   Comment? _replyingTo;
@@ -54,10 +56,15 @@ class _TelegramCommentsScreenState
     unawaited(
       ref.read(commentsProvider(widget.args.postId).notifier).refresh(),
     );
+    _liveSyncSubscription = ref.read(liveSyncServiceProvider).events.listen(
+      _handleLiveSyncEvent,
+    );
+    unawaited(ref.read(liveSyncServiceProvider).ensureConnected());
   }
 
   @override
   void dispose() {
+    _liveSyncSubscription?.cancel();
     _controller.dispose();
     _focusNode.dispose();
     _scrollController.dispose();
@@ -294,6 +301,31 @@ class _TelegramCommentsScreenState
       depth++;
     }
     return depth;
+  }
+
+  void _handleLiveSyncEvent(LiveSyncEvent event) {
+    if (event.type == 'sync.resync') {
+      unawaited(_refresh());
+      unawaited(_refreshThreadPost());
+      return;
+    }
+
+    final postId = event.data['postId'] as int?;
+    if (postId != widget.args.postId) {
+      return;
+    }
+
+    switch (event.type) {
+      case 'post.updated':
+      case 'post.deleted':
+      case 'post.interaction.changed':
+      case 'comment.created':
+      case 'comment.updated':
+      case 'comment.deleted':
+        unawaited(_refresh());
+        unawaited(_refreshThreadPost());
+        return;
+    }
   }
 
   @override
@@ -1128,13 +1160,5 @@ class _TelegramCommentBubble extends StatelessWidget {
 }
 
 String? _resolveMediaUrl(String? url) {
-  final trimmed = url?.trim();
-  if (trimmed == null || trimmed.isEmpty) {
-    return null;
-  }
-  if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
-    return trimmed;
-  }
-  final origin = ApiConstants.baseUrl.replaceFirst('/api', '');
-  return trimmed.startsWith('/') ? '$origin$trimmed' : '$origin/$trimmed';
+  return media_url.resolveOptionalMediaUrl(url);
 }
